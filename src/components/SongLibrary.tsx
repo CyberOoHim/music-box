@@ -1,0 +1,227 @@
+import React, { useState } from 'react';
+import { MusicBoxSong } from '../types';
+import { Music, Sparkles, Download, Upload, Trash2, Search, Play, Check } from 'lucide-react';
+
+interface SongLibraryProps {
+  songs: MusicBoxSong[];
+  currentSongId: string;
+  onSelectSong: (song: MusicBoxSong) => void;
+  onDeleteCustomSong?: (songId: string) => void;
+  onImportSong: (song: MusicBoxSong) => void;
+  onOpenGeminiModal: () => void;
+}
+
+export const SongLibrary: React.FC<SongLibraryProps> = ({
+  songs,
+  currentSongId,
+  onSelectSong,
+  onDeleteCustomSong,
+  onImportSong,
+  onOpenGeminiModal,
+}) => {
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const filteredSongs = songs.filter((s) => {
+    const matchesSearch =
+      s.title.toLowerCase().includes(search.toLowerCase()) ||
+      (s.description && s.description.toLowerCase().includes(search.toLowerCase()));
+    const matchesCategory =
+      selectedCategory === 'all' || s.category === selectedCategory || (selectedCategory === 'ai' && s.isAiGenerated);
+    return matchesSearch && matchesCategory;
+  });
+
+  // Export current active song or any song to JSON file
+  const handleExport = (song: MusicBoxSong, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(song, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `${song.title.replace(/\s+/g, '_')}_musicbox.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Import JSON song file
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (parsed.title && Array.isArray(parsed.pins)) {
+          const imported: MusicBoxSong = {
+            id: `imported-${Date.now()}`,
+            title: parsed.title,
+            category: 'custom',
+            description: parsed.description || 'Imported custom music box cylinder',
+            tempoBpm: parsed.tempoBpm || 88,
+            totalSteps: parsed.totalSteps || 64,
+            pins: parsed.pins,
+            createdAt: Date.now(),
+          };
+          onImportSong(imported);
+        }
+      } catch (err) {
+        console.error('Invalid JSON file', err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_4px_24px_rgba(67,52,34,0.06)] text-[#2d2419] space-y-4">
+      {/* Header & Quick Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#e5dcce]">
+        <div>
+          <h3 className="text-base sm:text-lg font-serif font-bold text-[#433422] flex items-center gap-2">
+            <Music className="w-4 h-4 text-[#8a6b3e]" />
+            <span>Music Box Repertoire & Cylinders</span>
+          </h3>
+          <p className="text-xs text-[#75644e] font-serif-sub italic">
+            Select authentic 18-note arrangements, AI-composed melodies, or load your own custom score.
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {/* AI Compose button */}
+          <button
+            onClick={onOpenGeminiModal}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Compose</span>
+          </button>
+
+          {/* Import JSON Button */}
+          <label className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 cursor-pointer transition shadow-2xs">
+            <Upload className="w-3.5 h-3.5 text-[#8a765e]" />
+            <span>Import</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#8a765e]" />
+          <input
+            type="text"
+            placeholder="Search melodies..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl bg-[#f8f5ee] border border-[#ded3be] pl-9 pr-3 py-2 text-xs text-[#2d2419] placeholder-[#a4937d] focus:border-[#bfa175] outline-none shadow-2xs"
+          />
+        </div>
+
+        {/* Category Tabs */}
+        <div className="flex items-center space-x-1 bg-[#eee7da] p-1 rounded-xl border border-[#ded3be] overflow-x-auto text-xs shadow-2xs">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'classic', label: 'Classic' },
+            { id: 'anime', label: 'Anime & Ghibli' },
+            { id: 'lullaby', label: 'Lullaby' },
+            { id: 'nature', label: 'Relaxing' },
+            { id: 'ai', label: 'Gemini AI' },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-2.5 py-1 rounded-lg font-serif transition whitespace-nowrap ${
+                selectedCategory === cat.id
+                  ? 'bg-[#433422] text-[#fbf8f2] font-semibold shadow-xs'
+                  : 'text-[#6f5e49] hover:text-[#2d2419]'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Songs Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+        {filteredSongs.map((song) => {
+          const isSelected = song.id === currentSongId;
+          return (
+            <div
+              key={song.id}
+              id={`song-card-${song.id}`}
+              onClick={() => onSelectSong(song)}
+              className={`relative p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between group shadow-2xs ${
+                isSelected
+                  ? 'bg-[#f3ece0] border-2 border-[#bfa175] shadow-xs'
+                  : 'bg-[#f8f5ee] hover:bg-[#f4efe4] border-[#ded3be] hover:border-[#bfa175]/60'
+              }`}
+            >
+              <div>
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className={`text-sm font-serif font-bold leading-tight ${isSelected ? 'text-[#433422]' : 'text-[#433422] group-hover:text-[#8a6b3e]'}`}>
+                    {song.title}
+                  </span>
+                  {song.isAiGenerated && (
+                    <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      Gemini
+                    </span>
+                  )}
+                </div>
+
+                {song.description && (
+                  <p className="text-xs text-[#75644e] font-serif-sub line-clamp-2 mt-1 italic">
+                    {song.description}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-[#e5dcce] flex items-center justify-between text-[11px] text-[#8a765e]">
+                <span className="font-mono text-[#8a765e]">
+                  {song.tempoBpm} BPM • {song.pins.length} pins
+                </span>
+
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    onClick={(e) => handleExport(song, e)}
+                    title="Export score to JSON"
+                    className="p-1 rounded hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+
+                  {song.category === 'custom' && onDeleteCustomSong && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteCustomSong(song.id);
+                      }}
+                      title="Delete custom score"
+                      className="p-1 rounded hover:bg-[#fce9e6] text-[#8a765e] hover:text-[#9c3826] transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {isSelected && (
+                    <span className="w-5 h-5 rounded-full bg-[#433422] text-[#fbf8f2] flex items-center justify-center">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

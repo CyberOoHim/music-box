@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(67, 52, 34, 0.06);
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(191, 161, 117, 0.45);
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(154, 123, 79, 0.7);
+  }
+
+  .font-serif-display {
+    font-family: "Cinzel", "Playfair Display", Georgia, serif;
+  }
+  .font-serif-sub {
+    font-family: "Playfair Display", Georgia, serif;
+  }
+}
+

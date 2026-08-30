@@ -1,0 +1,7 @@
+{
+  "name": "Classic Mechanical Music Box",
+  "description": "An authentic 18-note mechanical music box simulation with physics-accurate acoustic chime sound, interactive rotating cylinder, manual winding key & hand-crank, classic melodies, and AI music composition powered by Gemini 3.7 Flash.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
