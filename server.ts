@@ -43,10 +43,10 @@ app.get('/api/gemini/status', (req, res) => {
 
 // Helper: Procedural algorithmic music box generator (used as graceful fallback if API is unavailable)
 function generateProceduralMusic(prompt: string, style: string, totalSteps: number) {
-  const isWaltz = style === 'waltz' || /waltz|3\/4/i.test(prompt);
-  const isCeltic = style === 'celtic' || /celtic|irish|folk/i.test(prompt);
-  const isLullaby = style === 'lullaby' || /lullaby|sleep|baby|star/i.test(prompt);
-  const isNostalgic = style === 'nostalgic' || /ghibli|nostalg/i.test(prompt);
+  const isWaltz = style === 'waltz' || /waltz|3\/4/i.test(prompt) || /waltz/i.test(style);
+  const isCeltic = style === 'celtic' || /celtic|irish|folk/i.test(prompt) || /celtic|folk/i.test(style);
+  const isLullaby = style === 'lullaby' || /lullaby|sleep|baby|star/i.test(prompt) || /lullaby|sleep/i.test(style);
+  const isNostalgic = style === 'nostalgic' || /ghibli|nostalg/i.test(prompt) || /nostalg/i.test(style);
 
   // Scales mapped to Sankyo 18 tines:
   // 0:C5, 1:D5, 2:E5, 3:F5, 4:F#5, 5:G5, 6:A5, 7:B5, 8:C6, 9:D6, 10:E6, 11:F6, 12:F#6, 13:G6, 14:A6, 15:B6, 16:C7, 17:D7
@@ -93,16 +93,28 @@ function generateProceduralMusic(prompt: string, style: string, totalSteps: numb
     }
   }
 
+  const formattedStyle = style ? style.charAt(0).toUpperCase() + style.slice(1) : 'Music Box';
   let title = 'Whispering Music Box';
   if (isLullaby) title = 'Starlit Lullaby';
   else if (isNostalgic) title = 'Nostalgic Clockwork Meadow';
   else if (isCeltic) title = 'Enchanted Glen Air';
   else if (isWaltz) title = 'Montmartre Carousel Waltz';
+  else if (style && style !== 'melodic') title = `${formattedStyle} Chime`;
+
+  const mood = isLullaby
+    ? 'Peaceful Lullaby'
+    : isWaltz
+    ? 'Vintage Waltz'
+    : isCeltic
+    ? 'Mystical Folk'
+    : isNostalgic
+    ? 'Nostalgic'
+    : formattedStyle;
 
   return {
     title,
-    composerNote: `Composed for 18-note cylinder movement inspired by: "${prompt}".`,
-    mood: isLullaby ? 'Peaceful Lullaby' : isWaltz ? 'Vintage Waltz' : isCeltic ? 'Mystical Folk' : 'Nostalgic',
+    composerNote: `Composed for 18-note cylinder movement in ${style || 'melodic'} style inspired by: "${prompt}".`,
+    mood,
     tempoBpm: isLullaby ? 74 : isWaltz ? 96 : 88,
     totalSteps,
     pins,

@@ -1,7 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MusicBoxSong } from '../types';
-import { Sparkles, X, Wand2, Music, Loader2, Play, Check, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { MusicBoxSong, COMB_SCALES_MAP, ROMANTIC_FLAT_22_TINES } from '../types';
+import {
+  Sparkles,
+  X,
+  Wand2,
+  Music,
+  Loader2,
+  Play,
+  Square,
+  Check,
+  RefreshCw,
+  PlusCircle,
+  Volume2,
+  Pencil,
+} from 'lucide-react';
 import { generateProceduralMusic } from '../utils/proceduralComposer';
+import { musicBoxAudio } from '../audio/musicBoxAudio';
 
 interface GeminiComposerModalProps {
   isOpen: boolean;
@@ -43,6 +57,16 @@ const INSPIRATION_PROMPTS = [
   },
 ];
 
+const STYLE_PRESETS = [
+  { id: 'nostalgic', label: 'Nostalgic', desc: 'Ghibli & Japanese Folk' },
+  { id: 'lullaby', label: 'Lullaby', desc: 'Gentle & Dreamy' },
+  { id: 'waltz', label: 'Waltz', desc: '3/4 Clockwork Dance' },
+  { id: 'classical', label: 'Classical', desc: 'Baroque & Romantic' },
+  { id: 'celtic', label: 'Celtic Folk', desc: 'Enchanted Airs' },
+  { id: 'relaxing', label: 'Relaxing', desc: 'Tranquil Zen' },
+  { id: 'custom', label: '✨ Custom Style...', desc: 'Type any custom genre or mood' },
+];
+
 export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   isOpen,
   onClose,
@@ -50,31 +74,67 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   hasAiComposer = false,
 }) => {
   const [prompt, setPrompt] = useState('');
-  const [style, setStyle] = useState('nostalgic');
+  const [selectedStylePreset, setSelectedStylePreset] = useState('nostalgic');
+  const [customStyleText, setCustomStyleText] = useState('');
   const [totalSteps, setTotalSteps] = useState<number>(64);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
+  // In-modal preview playback state
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [previewStep, setPreviewStep] = useState(0);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
+
+  const stopAudioPreview = useCallback(() => {
+    if (previewTimerRef.current !== null) {
+      clearInterval(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    setIsPreviewPlaying(false);
+    setPreviewStep(0);
+  }, []);
+
+  // Cleanup on unmount or close
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      stopAudioPreview();
     };
-  }, []);
+  }, [stopAudioPreview]);
 
   if (!isOpen || !hasAiComposer) return null;
 
+  const handleClose = () => {
+    stopAudioPreview();
+    onClose();
+  };
+
+  // Compute effective musical style string
+  const getEffectiveStyle = (styleOverride?: string) => {
+    if (styleOverride) return styleOverride;
+    if (selectedStylePreset === 'custom') {
+      return customStyleText.trim() || 'melodic';
+    }
+    return selectedStylePreset;
+  };
+
+  // Generate or Regenerate music
   const handleGenerate = async (customPrompt?: string, customStyle?: string) => {
-    const textToUse = customPrompt || prompt;
-    const styleToUse = customStyle || style;
+    const textToUse = customPrompt !== undefined ? customPrompt : prompt;
+    const styleToUse = getEffectiveStyle(customStyle);
 
     if (!textToUse.trim()) {
-      setError('Please enter a melody idea or select an inspiration preset.');
+      setError('Please enter a melody idea or select an inspiration theme.');
       return;
     }
+
+    // Stop active audio preview before generating
+    stopAudioPreview();
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -84,7 +144,6 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
     setIsLoading(true);
     setError(null);
-    setGeneratedSong(null);
 
     try {
       const response = await fetch('/api/gemini/compose', {
@@ -119,7 +178,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
-      // Graceful algorithmic fallback (e.g., when hosted statically on GitHub Pages)
+      // Graceful algorithmic fallback (e.g. static host or network surge)
       const data = generateProceduralMusic(textToUse, styleToUse, totalSteps);
       const newSong: MusicBoxSong = {
         id: `procedural-${Date.now()}`,
@@ -138,8 +197,66 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     }
   };
 
+  // Toggle in-modal audio preview of the generated melody
+  const handleTogglePreview = async () => {
+    if (!generatedSong) return;
+
+    if (isPreviewPlaying) {
+      stopAudioPreview();
+      return;
+    }
+
+    await musicBoxAudio.resumeIfNeeded();
+    setIsPreviewPlaying(true);
+
+    const song = generatedSong;
+    const activeScale = COMB_SCALES_MAP[song.combScaleId || 'romantic-flat'];
+    const tinesList = activeScale ? activeScale.tines : ROMANTIC_FLAT_22_TINES;
+    const tempo = song.tempoBpm || 88;
+    const stepIntervalMs = 60000 / tempo / 4;
+
+    let curStep = 0;
+    setPreviewStep(0);
+
+    const playStepPins = (step: number) => {
+      const pins = song.pins.filter((p) => p.step === step);
+      pins.forEach((pin) => {
+        if (pin.note) {
+          musicBoxAudio.playNote(pin.note, 1.0);
+        } else {
+          musicBoxAudio.playTine(pin.tineIndex, 1.0, undefined, tinesList);
+        }
+      });
+    };
+
+    playStepPins(0);
+
+    previewTimerRef.current = window.setInterval(() => {
+      curStep = (curStep + 1) % song.totalSteps;
+      setPreviewStep(curStep);
+      playStepPins(curStep);
+    }, stepIntervalMs);
+  };
+
+  // Reset all fields to start a brand new generation with fresh inputs
+  const handleNewComposition = () => {
+    stopAudioPreview();
+    setGeneratedSong(null);
+    setError(null);
+    setPrompt('');
+    setCustomStyleText('');
+    setSelectedStylePreset('nostalgic');
+  };
+
+  // Clear prompt text only
+  const handleClearPrompt = () => {
+    setPrompt('');
+  };
+
+  // Load song into the main music box cylinder
   const handleApplySong = () => {
     if (generatedSong) {
+      stopAudioPreview();
       onLoadSong(generatedSong);
       onClose();
     }
@@ -147,7 +264,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2d2419]/65 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-[#fdfcf9] border-2 border-[#bfa175] p-5 sm:p-7 shadow-[0_20px_50px_rgba(45,36,25,0.35)] text-[#2d2419] overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-[#fdfcf9] border-2 border-[#bfa175] p-5 sm:p-7 shadow-[0_20px_50px_rgba(45,36,25,0.35)] text-[#2d2419] overflow-hidden max-h-[92vh] flex flex-col">
         {/* Ambient background decoration */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-[#bfa175]/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -159,16 +276,17 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
-                Gemini 3.7 Flash Music Box Composer
+                Gemini 3.7 AI Music Box Composer
               </h2>
               <p className="text-xs text-[#75644e] font-serif-sub italic">
-                Compose custom 18-note mechanical cylinder arrangements from any story or mood.
+                Compose custom mechanical cylinder arrangements with custom musical styles or themes.
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[#8a765e] hover:text-[#2d2419] hover:bg-[#f0e6d6] transition"
+            onClick={handleClose}
+            className="p-1.5 rounded-lg text-[#8a765e] hover:text-[#2d2419] hover:bg-[#f0e6d6] transition cursor-pointer"
+            title="Close composer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -176,21 +294,27 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto py-4 space-y-5 custom-scrollbar pr-1">
-          {/* Inspiration Presets */}
+          {/* Quick Inspiration Themes */}
           <div>
-            <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold mb-2 block">
-              Quick Inspiration Themes
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold block">
+                Quick Inspiration Themes
+              </label>
+              <span className="text-[11px] text-[#8a765e] font-serif-sub italic">
+                Click any theme to load & compose instantly
+              </span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {INSPIRATION_PROMPTS.map((item, idx) => (
                 <button
                   key={idx}
                   onClick={() => {
                     setPrompt(item.prompt);
-                    setStyle(item.style);
+                    setSelectedStylePreset(item.style);
+                    setCustomStyleText('');
                     handleGenerate(item.prompt, item.style);
                   }}
-                  className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs"
+                  className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-serif font-bold text-[#433422] group-hover:text-[#8a6b3e]">
@@ -210,9 +334,19 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
           {/* Custom Prompt Input */}
           <div>
-            <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold mb-2 block">
-              Or Describe Your Own Music Box Melody
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold block">
+                Describe Your Music Box Melody Idea
+              </label>
+              {prompt.trim().length > 0 && (
+                <button
+                  onClick={handleClearPrompt}
+                  className="text-[11px] font-serif text-[#8a765e] hover:text-[#9c3826] underline underline-offset-2 transition cursor-pointer"
+                >
+                  Clear prompt
+                </button>
+              )}
+            </div>
             <textarea
               id="gemini-prompt-input"
               rows={3}
@@ -223,36 +357,83 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             />
           </div>
 
-          {/* Options: Style & Cylinder Steps */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">Musical Style</label>
-              <select
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs"
-              >
-                <option value="nostalgic">Nostalgic (Ghibli / Japanese Folk)</option>
-                <option value="lullaby">Lullaby & Sleep (Gentle, Soft)</option>
-                <option value="waltz">Classic Waltz (3/4 Clockwork Dance)</option>
-                <option value="classical">Classical Chamber (Baroque / Romantic)</option>
-                <option value="celtic">Celtic Fairytale (Enchanted Folk)</option>
-                <option value="relaxing">Tranquil Zen & Rain</option>
-              </select>
+          {/* Options: Style Selection & Custom Style Input */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">
+                  Musical Style & Mood
+                </label>
+                <select
+                  value={selectedStylePreset}
+                  onChange={(e) => setSelectedStylePreset(e.target.value)}
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                >
+                  {STYLE_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label} {preset.id !== 'custom' ? `(${preset.desc})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">
+                  Cylinder Rotation Length
+                </label>
+                <select
+                  value={totalSteps}
+                  onChange={(e) => setTotalSteps(Number(e.target.value))}
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                >
+                  <option value={64}>64 Steps (Standard 4-Measure Loop)</option>
+                  <option value={96}>96 Steps (Extended 6-Measure Loop)</option>
+                  <option value={128}>128 Steps (Full 8-Measure Piece)</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">Cylinder Rotation Length</label>
-              <select
-                value={totalSteps}
-                onChange={(e) => setTotalSteps(Number(e.target.value))}
-                className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs"
-              >
-                <option value={64}>64 Steps (Standard 4-Measure Loop)</option>
-                <option value={96}>96 Steps (Extended 6-Measure Loop)</option>
-                <option value={128}>128 Steps (Full 8-Measure Piece)</option>
-              </select>
+            {/* Quick Style Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] font-serif text-[#8a765e] mr-1">Quick Styles:</span>
+              {STYLE_PRESETS.map((preset) => {
+                const isSelected = selectedStylePreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setSelectedStylePreset(preset.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-serif transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#433422] text-[#fbf8f2] font-semibold shadow-2xs'
+                        : 'bg-[#f4eee4] hover:bg-[#ede3d3] text-[#6f5e49] border border-[#ded3be]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Custom Style Freeform Input Field (Shown when 'custom' is selected) */}
+            {selectedStylePreset === 'custom' && (
+              <div className="p-3 rounded-xl bg-[#f5ede0] border border-[#d8caa8] space-y-1.5 animate-in fade-in shadow-2xs">
+                <label className="text-xs font-serif font-bold text-[#5c462b] flex items-center gap-1.5">
+                  <Pencil className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Custom Musical Style / Subgenre / Atmosphere</span>
+                </label>
+                <input
+                  type="text"
+                  value={customStyleText}
+                  onChange={(e) => setCustomStyleText(e.target.value)}
+                  placeholder="e.g. Baroque Minuet, Chopin Nocturne, Cyberpunk, French Café Chanson, Video Game RPG..."
+                  className="w-full rounded-lg bg-[#fdfcf9] border border-[#cfbe9e] focus:border-[#bfa175] focus:ring-1 focus:ring-[#bfa175] px-3 py-2 text-xs text-[#2d2419] placeholder-[#9f8f7c] outline-none shadow-2xs"
+                />
+                <p className="text-[11px] text-[#75644e] font-serif-sub italic">
+                  Gemini will arrange the melody incorporating harmonics, cadences, and moods specific to your custom style.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Error Banner */}
@@ -262,54 +443,147 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             </div>
           )}
 
-          {/* Generated Result Card */}
+          {/* Generated Result Card with In-Modal Audio Preview */}
           {generatedSong && (
-            <div className="p-4 rounded-xl bg-[#f4eee4] border border-[#d8caa8] space-y-2 animate-in fade-in shadow-xs">
-              <div className="flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-[#f4eee4] border-2 border-[#d8caa8] space-y-3 animate-in fade-in shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-serif font-bold text-[#433422] flex items-center gap-1.5">
                   <Music className="w-4 h-4 text-[#8a6b3e]" />
                   {generatedSong.title}
                 </span>
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-semibold">
-                  {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))} Measures)
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-semibold">
+                    {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))}m)
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-[#5e4c36] font-serif-sub italic">
+
+              <p className="text-xs text-[#5e4c36] font-serif-sub italic bg-[#fbf9f4] p-2.5 rounded-lg border border-[#e5dcce]">
                 "{generatedSong.description}"
               </p>
+
+              {/* Audio Preview Controls inside result card */}
+              <div className="flex items-center justify-between pt-1 border-t border-[#e2d5be]">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleTogglePreview}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-serif font-bold flex items-center space-x-1.5 transition cursor-pointer shadow-2xs ${
+                      isPreviewPlaying
+                        ? 'bg-[#9c3826] hover:bg-[#852f20] text-white'
+                        : 'bg-[#5c462b] hover:bg-[#433422] text-[#fbf8f2]'
+                    }`}
+                  >
+                    {isPreviewPlaying ? (
+                      <>
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>Stop Preview</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Audition / Preview Melody</span>
+                      </>
+                    )}
+                  </button>
+
+                  {isPreviewPlaying && (
+                    <span className="text-[11px] font-mono text-[#8a6b3e] flex items-center gap-1 animate-pulse">
+                      <Volume2 className="w-3.5 h-3.5" />
+                      Step {previewStep + 1}/{generatedSong.totalSteps}
+                    </span>
+                  )}
+                </div>
+
+                <span className="text-[11px] text-[#8a765e] font-serif-sub italic hidden sm:inline">
+                  Listen before loading into cylinder
+                </span>
+              </div>
             </div>
           )}
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="pt-4 border-t border-[#e5dcce] flex items-center justify-between gap-3">
-          <button
-            onClick={() => handleGenerate()}
-            disabled={isLoading || !prompt.trim()}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 shadow-xs border border-[#ae8b54]/40 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            {isLoading ? (
+        <div className="pt-4 border-t border-[#e5dcce] flex flex-wrap items-center justify-between gap-2.5">
+          {/* Left Actions: Fresh Start or Clear */}
+          <div>
+            {generatedSong ? (
+              <button
+                type="button"
+                onClick={handleNewComposition}
+                className="px-3.5 py-2 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] hover:text-[#2d2419] font-serif font-semibold text-xs flex items-center space-x-1.5 border border-[#ded3be] transition cursor-pointer shadow-2xs"
+                title="Clear current composition and start fresh with new prompt"
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                <span>New Composition (Fresh Start)</span>
+              </button>
+            ) : prompt.trim().length > 0 ? (
+              <button
+                type="button"
+                onClick={handleClearPrompt}
+                className="px-3 py-1.5 rounded-lg text-[#8a765e] hover:text-[#433422] hover:bg-[#f0e6d6] font-serif text-xs transition cursor-pointer"
+              >
+                Reset inputs
+              </button>
+            ) : null}
+          </div>
+
+          {/* Right Actions: Compose / Regenerate / Load */}
+          <div className="flex items-center gap-2">
+            {generatedSong ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Composing with Gemini 3.7...</span>
+                {/* Re-generate Variation Button */}
+                <button
+                  type="button"
+                  onClick={() => handleGenerate()}
+                  disabled={isLoading || !prompt.trim()}
+                  className="px-3.5 py-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#433422] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 border border-[#ded3be] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
+                  title="Generate another variation with the same prompt & style"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Composing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                      <span>Regenerate Variation</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Load Into Cylinder Button */}
+                <button
+                  type="button"
+                  onClick={handleApplySong}
+                  className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Load Into Music Box</span>
+                </button>
               </>
             ) : (
-              <>
-                <Wand2 className="w-4 h-4" />
-                <span>{generatedSong ? 'Re-Compose Melody' : 'Compose with Gemini'}</span>
-              </>
+              /* Initial Compose Button */
+              <button
+                type="button"
+                onClick={() => handleGenerate()}
+                disabled={isLoading || !prompt.trim()}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 shadow-xs border border-[#ae8b54]/40 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Composing with Gemini 3.7...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-4 h-4" />
+                    <span>Compose with Gemini</span>
+                  </>
+                )}
+              </button>
             )}
-          </button>
-
-          {generatedSong && (
-            <button
-              onClick={handleApplySong}
-              className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition"
-            >
-              <Check className="w-4 h-4" />
-              <span>Load Into Music Box</span>
-            </button>
-          )}
+          </div>
         </div>
       </div>
     </div>
