@@ -271,7 +271,7 @@ export function getCombTines(scaleId?: CombScaleId): TineNote[] {
   return ROMANTIC_FLAT_22_TINES;
 }
 
-export type SoundChamberPreset = 'gold-sankyo' | 'wooden-box' | 'crystal-bell' | 'vintage-antique';
+export type SoundChamberPreset = 'gold-sankyo' | 'wooden-box' | 'crystal-bell' | 'vintage-antique' | 'retro-8bit';
 
 export interface SoundChamberInfo {
   id: SoundChamberPreset;
@@ -280,7 +280,7 @@ export interface SoundChamberInfo {
   material: string;
   harmonicProfile: string;
   resonanceDescription: string;
-  waveformType: 'metallic-bell' | 'warm-body' | 'crystal-shimmer' | 'vintage-warble';
+  waveformType: 'metallic-bell' | 'warm-body' | 'crystal-shimmer' | 'vintage-warble' | 'retro-square';
   color: string;
   accentColor: string;
   badgeBg: string;
@@ -346,6 +346,21 @@ export const SOUND_CHAMBER_PRESETS: Record<SoundChamberPreset, SoundChamberInfo>
     badgeBg: 'rgba(160, 120, 64, 0.15)',
     samplePoints: [
       0, 0.78, -0.52, 0.64, -0.42, 0.58, -0.35, 0.48, -0.30, 0.38, -0.25, 0.32, -0.20, 0.26, -0.16, 0.20, -0.12, 0.15, -0.09, 0.10, -0.06, 0.06, -0.03, 0
+    ],
+  },
+  'retro-8bit': {
+    id: 'retro-8bit',
+    name: '8-Bit Retro Arcade',
+    subtitle: 'NES & Game Boy 8-Bit Chiptune Engine',
+    material: 'Programmable Sound Generator (PSG) & Pulse Wave Synthesizer',
+    harmonicProfile: 'Authentic 50%/25% pulse waves + snappy 8-bit pitch-blip transient',
+    resonanceDescription: 'Crisp nostalgic 8-bit arcade synthesizer with authentic square-wave harmonics, snappy micro-envelope decay, and retro gaming warmth.',
+    waveformType: 'retro-square',
+    color: '#10b981',
+    accentColor: '#34d399',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    samplePoints: [
+      0, 1, 1, 1, 1, -1, -1, -1, -1, 0.8, 0.8, 0.8, -0.8, -0.8, -0.8, 0.5, 0.5, -0.5, -0.5, 0.2, 0.2, -0.2, 0
     ],
   },
 };

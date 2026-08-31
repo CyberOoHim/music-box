@@ -97,7 +97,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
     compareTimeoutsRef.current.push(t);
   };
 
-  // Compare all 4 chambers sequentially with 2.2s delay between each
+  // Compare all 5 chambers sequentially with 2.2s delay between each
   const handleCompareAll = () => {
     if (isComparingAll) return;
     clearAllCompareTimeouts();
@@ -109,6 +109,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
       'wooden-box',
       'crystal-bell',
       'vintage-antique',
+      'retro-8bit',
     ];
 
     presets.forEach((presetKey, idx) => {
@@ -319,8 +320,10 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
               idleMod = Math.sin(t) * 0.22 + Math.sin(t * 2) * 0.1;
             } else if (soundPreset === 'crystal-bell') {
               idleMod = Math.sin(t * 4) * Math.sin(t * 0.5) * 0.2;
-            } else {
+            } else if (soundPreset === 'vintage-antique') {
               idleMod = (Math.sin(t * 2.2) + Math.sin(t * 4.8) * 0.3) * 0.18;
+            } else if (soundPreset === 'retro-8bit') {
+              idleMod = (Math.sin(t * 3) >= 0 ? 0.22 : -0.22) + (Math.sin(t * 6) >= 0 ? 0.08 : -0.08);
             }
             v = 1.0 + idleMod * 0.4;
           }
@@ -439,7 +442,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
             }`}
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{isComparingAll ? 'Auditioning 4 Chambers...' : 'Compare All 4 Chambers'}</span>
+            <span>{isComparingAll ? 'Auditioning 5 Chambers...' : 'Compare All 5 Chambers'}</span>
           </button>
         </div>
       </div>
@@ -629,7 +632,9 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
                             ? 'M0,15 C20,0 40,30 60,15 C80,3 100,27 120,15 C140,8 150,20 160,15'
                             : presetKey === 'crystal-bell'
                             ? 'M0,15 Q8,0 16,15 T32,15 T48,15 T64,15 T80,15 T96,15 T112,15 T128,15 T144,15 T160,15'
-                            : 'M0,15 Q15,4 30,15 T60,16 T90,14 T120,16 T150,15 T160,15'
+                            : presetKey === 'vintage-antique'
+                            ? 'M0,15 Q15,4 30,15 T60,16 T90,14 T120,16 T150,15 T160,15'
+                            : 'M0,15 L10,15 L10,6 L25,6 L25,24 L40,24 L40,6 L55,6 L55,24 L70,24 L70,6 L85,6 L85,24 L100,24 L100,6 L115,6 L115,24 L130,24 L130,6 L145,6 L145,24 L160,24'
                         }
                         fill="none"
                         stroke={preset.color}
