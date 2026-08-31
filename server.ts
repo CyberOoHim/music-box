@@ -141,38 +141,66 @@ app.post('/api/gemini/compose', async (req, res) => {
 
   const ai = getGeminiClient();
 
-  const isRomanticFlat = combScaleId === 'romantic-flat';
-  const tineMax = isRomanticFlat ? 21 : 17;
-
-  const tuningDescription = isRomanticFlat
-    ? `The 22 steel tines are tuned to the Romantic Flat Repertoire Scale (including all flat accidentals Eb, Bb, Ab, Db, Gb) from lowest (tine 0) to highest (tine 21):
-Tine 0: C4 (261.6 Hz) - Deep bass root
-Tine 1: Eb4 / D#4 (311.1 Hz) - Flat minor root
-Tine 2: F4 (349.2 Hz)
-Tine 3: G4 (392.0 Hz) - Sub-bass fifth
-Tine 4: Ab4 (415.3 Hz) - Flat pastoral
-Tine 5: Bb4 (466.2 Hz) - Flat harmonic
-Tine 6: C5 (523.3 Hz) - Mid root
-Tine 7: Db5 (554.4 Hz) - Flat gentle chime
-Tine 8: D5 (587.3 Hz)
-Tine 9: Eb5 / D#5 (622.3 Hz) - Flat romantic
-Tine 10: E5 (659.3 Hz)
-Tine 11: F5 (698.5 Hz)
-Tine 12: F#5 / Gb5 (739.9 Hz)
-Tine 13: G5 (784.0 Hz)
-Tine 14: Ab5 (830.6 Hz) - Flat tender chime
-Tine 15: A5 (880.0 Hz)
-Tine 16: Bb5 (932.3 Hz) - Flat nocturne
-Tine 17: B5 (987.8 Hz)
-Tine 18: C6 (1046.5 Hz) - High melody root
-Tine 19: Db6 (1108.7 Hz) - Flat crystalline
-Tine 20: D6 (1174.7 Hz)
-Tine 21: Eb6 / D#6 (1244.5 Hz) - Sparkling high flat bell (signature for Für Elise, Chopin Nocturnes)`
-    : `The 18 steel tines are tuned to the standard Sankyo diatonic pitch scale from lowest (tine 0) to highest (tine 17):
-Tine 0: C5 (523 Hz) - Bass root, Tine 1: D5 (587 Hz), Tine 2: E5 (659 Hz), Tine 3: F5 (698 Hz), Tine 4: F#5 (740 Hz),
+  const COMB_TUNINGS: Record<string, { name: string; tinesCount: number; tuningText: string }> = {
+    'romantic-flat': {
+      name: 'Romantic Flat Repertoire Scale (22 tines)',
+      tinesCount: 22,
+      tuningText: `The 22 steel tines are tuned to the Romantic Flat Repertoire Scale from lowest (tine 0) to highest (tine 21):
+Tine 0: C5 (523.3 Hz) - Bass root
+Tine 1: D5 (587.3 Hz)
+Tine 2: Eb5 / D#5 (622.3 Hz) - Flat romantic
+Tine 3: E5 (659.3 Hz)
+Tine 4: F5 (698.5 Hz)
+Tine 5: Gb5 / F#5 (740.0 Hz) - Flat harmonic
+Tine 6: G5 (784.0 Hz) - Central fifth
+Tine 7: Ab5 / G#5 (830.6 Hz) - Tender flat chime
+Tine 8: A5 (880.0 Hz)
+Tine 9: Bb5 / A#5 (932.3 Hz) - Flat nocturne
+Tine 10: B5 (987.8 Hz)
+Tine 11: C6 (1046.5 Hz) - High melody root
+Tine 12: Db6 / C#6 (1108.7 Hz) - Crystalline flat
+Tine 13: D6 (1174.7 Hz)
+Tine 14: Eb6 / D#6 (1244.5 Hz) - High flat bell (Für Elise signature accidental!)
+Tine 15: E6 (1318.5 Hz)
+Tine 16: F6 (1396.9 Hz)
+Tine 17: Gb6 / F#6 (1480.0 Hz)
+Tine 18: G6 (1568.0 Hz)
+Tine 19: Ab6 / G#6 (1661.2 Hz)
+Tine 20: A6 (1760.0 Hz)
+Tine 21: Bb6 / A#6 (1864.7 Hz) - High treble flat chime`,
+    },
+    'chromatic-30': {
+      name: 'Deluxe Chromatic Comb (30 tines)',
+      tinesCount: 30,
+      tuningText: `The 30 steel tines cover the full 12-tone chromatic semitone spectrum from C5 (tine 0) to F7 (tine 29):
+Tine 0: C5 (523.3 Hz), Tine 1: Db5/C#5 (554.4 Hz), Tine 2: D5 (587.3 Hz), Tine 3: Eb5/D#5 (622.3 Hz), Tine 4: E5 (659.3 Hz), Tine 5: F5 (698.5 Hz),
+Tine 6: Gb5/F#5 (740.0 Hz), Tine 7: G5 (784.0 Hz), Tine 8: Ab5/G#5 (830.6 Hz), Tine 9: A5 (880.0 Hz), Tine 10: Bb5/A#5 (932.3 Hz), Tine 11: B5 (987.8 Hz),
+Tine 12: C6 (1046.5 Hz), Tine 13: Db6/C#6 (1108.7 Hz), Tine 14: D6 (1174.7 Hz), Tine 15: Eb6/D#6 (1244.5 Hz), Tine 16: E6 (1318.5 Hz), Tine 17: F6 (1396.9 Hz),
+Tine 18: Gb6/F#6 (1480.0 Hz), Tine 19: G6 (1568.0 Hz), Tine 20: Ab6/G#6 (1661.2 Hz), Tine 21: A6 (1760.0 Hz), Tine 22: Bb6/A#6 (1864.7 Hz), Tine 23: B6 (1975.5 Hz),
+Tine 24: C7 (2093.0 Hz), Tine 25: Db7/C#7 (2217.5 Hz), Tine 26: D7 (2349.3 Hz), Tine 27: Eb7/D#7 (2489.0 Hz), Tine 28: E7 (2637.0 Hz), Tine 29: F7 (2793.8 Hz)`,
+    },
+    'sankyo-18': {
+      name: 'Vintage Sankyo 18N Comb (18 tines)',
+      tinesCount: 18,
+      tuningText: `The 18 steel tines are tuned to the standard Sankyo diatonic pitch scale from lowest (tine 0) to highest (tine 17):
+Tine 0: C5 (523 Hz), Tine 1: D5 (587 Hz), Tine 2: E5 (659 Hz), Tine 3: F5 (698 Hz), Tine 4: F#5/Gb5 (740 Hz),
 Tine 5: G5 (784 Hz), Tine 6: A5 (880 Hz), Tine 7: B5 (988 Hz), Tine 8: C6 (1046 Hz), Tine 9: D6 (1175 Hz),
-Tine 10: E6 (1318 Hz), Tine 11: F6 (1397 Hz), Tine 12: F#6 (1480 Hz), Tine 13: G6 (1568 Hz), Tine 14: A6 (1760 Hz),
-Tine 15: B6 (1976 Hz), Tine 16: C7 (2093 Hz), Tine 17: D7 (2349 Hz)`;
+Tine 10: E6 (1318 Hz), Tine 11: F6 (1397 Hz), Tine 12: F#6/Gb6 (1480 Hz), Tine 13: G6 (1568 Hz), Tine 14: A6 (1760 Hz),
+Tine 15: B6 (1976 Hz), Tine 16: C7 (2093 Hz), Tine 17: D7 (2349 Hz)`,
+    },
+    'flat-major-18': {
+      name: 'Flat Major & Lullaby Comb (18 tines)',
+      tinesCount: 18,
+      tuningText: `The 18 steel tines are tuned to Eb / Bb / Ab Flat Major tuning from lowest (tine 0) to highest (tine 17):
+Tine 0: Bb4 (466 Hz), Tine 1: C5 (523 Hz), Tine 2: Db5 (554 Hz), Tine 3: Eb5 (622 Hz), Tine 4: F5 (698 Hz), Tine 5: G5 (784 Hz),
+Tine 6: Ab5 (831 Hz), Tine 7: Bb5 (932 Hz), Tine 8: C6 (1046 Hz), Tine 9: Db6 (1109 Hz), Tine 10: Eb6 (1245 Hz), Tine 11: F6 (1397 Hz),
+Tine 12: G6 (1568 Hz), Tine 13: Ab6 (1661 Hz), Tine 14: Bb6 (1865 Hz), Tine 15: C7 (2093 Hz), Tine 16: Db7 (2217 Hz), Tine 17: Eb7 (2489 Hz)`,
+    },
+  };
+
+  const selectedComb = COMB_TUNINGS[combScaleId] || COMB_TUNINGS['romantic-flat'];
+  const tineMax = selectedComb.tinesCount - 1;
+  const tuningDescription = selectedComb.tuningText;
 
   const systemInstruction = `You are a master horologist and mechanical music box composer who specializes in arranging exquisite, authentic melodies for traditional mechanical music boxes with steel comb tines and a rotating brass pin cylinder drum.
 
@@ -190,7 +218,7 @@ PHYSICS & HARMONY RULES OF THE MECHANICAL MUSIC BOX:
 
 Musical style: ${style}
 Total steps for cylinder rotation: ${totalSteps}
-Comb scale: ${isRomanticFlat ? 'Romantic Flat Repertoire (22 tines)' : 'Standard Sankyo 18-tines'}
+Comb scale: ${selectedComb.name}
 ${tempoPreference ? `Preferred tempo: ~${tempoPreference} BPM` : ''}
 
 Generate a creative title, a short lyrical/poetic note about the tune, a suitable BPM tempo (between 68 and 130), the mood, and the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to ${tineMax}) }. Provide between 24 and 56 pins for a rich, sparkling melody.`;
@@ -290,6 +318,7 @@ Generate a creative title, a short lyrical/poetic note about the tune, a suitabl
             mood: parsedData.mood || 'Serene',
             tempoBpm: validTempo,
             totalSteps: totalSteps,
+            combScaleId: combScaleId || 'romantic-flat',
             pins: sanitizedPins,
             modelUsed: model,
           });
@@ -303,7 +332,7 @@ Generate a creative title, a short lyrical/poetic note about the tune, a suitabl
   // Graceful procedural fallback if API surges occur
   console.log('[AI Composer] Using acoustic procedural music generator fallback.');
   const fallbackSong = generateProceduralMusic(prompt, style, totalSteps);
-  return res.json(fallbackSong);
+  return res.json({ ...fallbackSong, combScaleId: 'sankyo-18' });
 });
 
 async function startServer() {
