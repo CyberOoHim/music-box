@@ -1079,11 +1079,32 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
     window.addEventListener('resize', handleResize);
 
-    // Animation Loop
+    // Animation Loop with Idle Sleep & Visibility Handling
     let localGovernorAngle = 0;
     let localCylinderAngle = (currentStepRef.current / totalStepsRef.current) * Math.PI * 2;
+    let isTabVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+      if (isTabVisible) {
+        needsRenderRef.current = true;
+        lastRenderTimestampRef.current = performance.now();
+        if (!reqIdRef.current) {
+          reqIdRef.current = requestAnimationFrame(animate);
+        }
+      } else if (reqIdRef.current) {
+        cancelAnimationFrame(reqIdRef.current);
+        reqIdRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const animate = (timestamp: number) => {
+      if (!isTabVisible) {
+        reqIdRef.current = null;
+        return;
+      }
+
       reqIdRef.current = requestAnimationFrame(animate);
 
       const fps = 24;
@@ -1214,7 +1235,33 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
     return () => {
       if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('resize', handleResize);
+
+      // Deep WebGL Resource Cleanup to prevent VRAM memory leaks on mobile / iPad
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          if (object.geometry) {
+            object.geometry.dispose();
+          }
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach((m) => m.dispose());
+            } else {
+              object.material.dispose();
+            }
+          }
+        }
+      });
+
+      envTexture.dispose();
+      envMap.dispose();
+      bedplateTex.dispose();
+      bedplateBumpTex.dispose();
+      sankyoCapTex.dispose();
+      cylTex.dispose();
+      combTex.dispose();
+
       renderer.dispose();
       pmremGenerator.dispose();
     };

@@ -151,8 +151,30 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     const freqData = new Uint8Array(256);
     let lastRenderTime = performance.now();
     const frameInterval = 1000 / 24; // 24 FPS cap for mobile & iPad thermal efficiency
+    let silentFrameCount = 0;
+    let isTabVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+      if (isTabVisible) {
+        silentFrameCount = 0;
+        lastRenderTime = performance.now();
+        if (!animationFrameRef.current) {
+          animationFrameRef.current = requestAnimationFrame(render);
+        }
+      } else if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const render = (timestamp: number) => {
+      if (!isTabVisible) {
+        animationFrameRef.current = null;
+        return;
+      }
+
       // For static impulse response mode, draw once and don't loop
       if (visualizerMode === 'impulse') {
         const width = canvas.width;
@@ -204,6 +226,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
         ctx.lineTo(0, height / 2);
         ctx.fillStyle = activePresetInfo.badgeBg || 'rgba(166, 134, 86, 0.08)';
         ctx.fill();
+        animationFrameRef.current = null;
         return; // Single render for static curve
       }
 
@@ -249,17 +272,23 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
         // Check if there is active audio signal
         let isSilent = true;
         for (let i = 0; i < timeData.length; i++) {
-          if (Math.abs(timeData[i] - 128) > 3) {
+          if (Math.abs(timeData[i] - 128) > 2) {
             isSilent = false;
             break;
           }
+        }
+
+        if (isSilent) {
+          silentFrameCount++;
+        } else {
+          silentFrameCount = 0;
         }
 
         // Waveform Path
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = themeColor;
         ctx.shadowColor = accentColor;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = isSilent ? 0 : 8;
         ctx.beginPath();
 
         const sliceWidth = width / timeData.length;
@@ -303,8 +332,25 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
         ctx.lineTo(0, height);
         ctx.fillStyle = activePresetInfo.badgeBg || 'rgba(166, 134, 86, 0.08)';
         ctx.fill();
+
+        // If audio has been silent for > 6 frames (approx 250ms), sleep the canvas loop to save power!
+        if (silentFrameCount > 6) {
+          animationFrameRef.current = null;
+          return;
+        }
       } else if (visualizerMode === 'spectrum') {
         musicBoxAudio.getFrequencyData(freqData);
+
+        let maxVal = 0;
+        for (let i = 0; i < freqData.length; i++) {
+          if (freqData[i] > maxVal) maxVal = freqData[i];
+        }
+
+        if (maxVal < 3) {
+          silentFrameCount++;
+        } else {
+          silentFrameCount = 0;
+        }
 
         const barWidth = (width / freqData.length) * 2.2;
         let barX = 0;
@@ -321,6 +367,11 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
 
           barX += barWidth;
         }
+
+        if (silentFrameCount > 6) {
+          animationFrameRef.current = null;
+          return;
+        }
       }
 
       animationFrameRef.current = requestAnimationFrame(render);
@@ -329,8 +380,10 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     animationFrameRef.current = requestAnimationFrame(render);
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
   }, [soundPreset, visualizerMode, activePresetInfo]);

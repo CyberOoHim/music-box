@@ -90,7 +90,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     const frameInterval = 1000 / 24; // 24 FPS cap for maximum battery and thermal efficiency
 
     const physicsLoop = (timestamp: number) => {
-      if (playMode !== 'crank') {
+      if (playMode !== 'crank' || document.hidden) {
         isLoopRunningRef.current = false;
         return;
       }
@@ -141,6 +141,19 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     reverseRatchetAccumRef.current = 0;
     springRatchetAccumRef.current = 0;
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (reqAnimIdRef.current) {
+          cancelAnimationFrame(reqAnimIdRef.current);
+          reqAnimIdRef.current = null;
+        }
+        isLoopRunningRef.current = false;
+      } else if (playMode === 'crank' && angularVelocityRef.current > 0.04) {
+        startPhysicsLoopIfNeeded();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     if (playMode === 'crank') {
       startPhysicsLoopIfNeeded();
     } else {
@@ -152,6 +165,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     }
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (reqAnimIdRef.current) {
         cancelAnimationFrame(reqAnimIdRef.current);
         reqAnimIdRef.current = null;

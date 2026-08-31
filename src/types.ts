@@ -15,6 +15,7 @@ export interface MusicBoxSong {
   tempoBpm: number;
   totalSteps: number; // usually 64, 96, or 128 steps per rotation
   combScaleId?: CombScaleId;
+  customTines?: TineNote[];
   pins: MusicBoxPin[];
   createdAt?: number;
   isAiGenerated?: boolean;
