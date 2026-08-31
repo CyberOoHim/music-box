@@ -279,7 +279,8 @@ export type SoundChamberPreset =
   | 'retro-8bit'
   | 'kalimba-mbira'
   | 'cathedral-bell'
-  | 'fm-digital';
+  | 'fm-digital'
+  | 'rosewood-xylophone';
 
 export interface SoundChamberInfo {
   id: SoundChamberPreset;
@@ -296,7 +297,8 @@ export interface SoundChamberInfo {
     | 'retro-square'
     | 'kalimba-thud'
     | 'cathedral-chime'
-    | 'fm-digital';
+    | 'fm-digital'
+    | 'rosewood-marimba';
   color: string;
   accentColor: string;
   badgeBg: string;
@@ -422,6 +424,21 @@ export const SOUND_CHAMBER_PRESETS: Record<SoundChamberPreset, SoundChamberInfo>
     badgeBg: 'rgba(236, 72, 153, 0.15)',
     samplePoints: [
       0, 0.92, -0.42, 0.78, -0.85, 0.35, -0.15, 0.65, -0.75, 0.52, -0.32, 0.45, -0.58, 0.38, -0.22, 0.28, -0.35, 0.22, -0.15, 0.18, -0.22, 0.12, -0.08, 0.08, 0
+    ],
+  },
+  'rosewood-xylophone': {
+    id: 'rosewood-xylophone',
+    name: 'Rosewood Xylophone (木琴)',
+    subtitle: 'Concert Marimba & Undercut Rosewood Bars',
+    material: 'Acoustic Honduran Rosewood & Tuned Aluminum Resonators',
+    harmonicProfile: 'Undercut 3.0x wood flexural mode + high 9.2x clack + hollow 480Hz tube swell',
+    resonanceDescription: 'Crisp, punchy, and organic rosewood bar percussion with snappy mallet attack, hollow acoustic tube bloom, and clean rapid decay.',
+    waveformType: 'rosewood-marimba',
+    color: '#b45309',
+    accentColor: '#f59e0b',
+    badgeBg: 'rgba(180, 83, 9, 0.15)',
+    samplePoints: [
+      0, 0.95, -0.62, 0.45, -0.28, 0.18, -0.10, 0.05, -0.02, 0.01, 0
     ],
   },
 };

@@ -113,6 +113,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
       'kalimba-mbira',
       'cathedral-bell',
       'fm-digital',
+      'rosewood-xylophone',
     ];
 
     presets.forEach((presetKey, idx) => {
@@ -333,6 +334,8 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
               idleMod = Math.sin(t * 0.75) * 0.28 + Math.sin(t * 2.25) * 0.14 + Math.sin(t * 4.5) * 0.08;
             } else if (soundPreset === 'fm-digital') {
               idleMod = Math.sin(t * 2.0 + Math.sin(t * 7.0) * 1.5) * 0.22;
+            } else if (soundPreset === 'rosewood-xylophone') {
+              idleMod = Math.sin(t * 2.5) * 0.26 + Math.sin(t * 7.5) * 0.08;
             }
             v = 1.0 + idleMod * 0.4;
           }

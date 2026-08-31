@@ -159,6 +159,7 @@ class MusicBoxAudioEngine {
           'kalimba-mbira',
           'cathedral-bell',
           'fm-digital',
+          'rosewood-xylophone',
         ];
         for (const preset of presets) {
           const impulseBuf = this.getOrCreateImpulseResponse(preset);
@@ -309,6 +310,9 @@ class MusicBoxAudioEngine {
     } else if (preset === 'fm-digital') {
       duration = 0.55;
       decayRate = 3.4;
+    } else if (preset === 'rosewood-xylophone') {
+      duration = 0.30;
+      decayRate = 6.5;
     }
 
     const length = Math.max(512, Math.floor(sampleRate * duration));
@@ -376,6 +380,12 @@ class MusicBoxAudioEngine {
         const plateR = (Math.random() * 2 - 1) * 0.4 - Math.sin(2 * Math.PI * 2200 * t) * 0.15;
         left[i] = plateL * env * 0.65;
         right[i] = plateR * env * 0.65;
+      } else if (preset === 'rosewood-xylophone') {
+        const barWood = Math.sin(2 * Math.PI * 480 * t) * 0.45 * Math.exp(-t * 14.0);
+        const tubeCavity = Math.sin(2 * Math.PI * 960 * t) * 0.25 * Math.exp(-t * 18.0);
+        const clickAir = (Math.random() * 2 - 1) * 0.25 * Math.exp(-t * 22.0);
+        left[i] = (barWood + tubeCavity + clickAir) * env * 0.70;
+        right[i] = (barWood * 0.95 + tubeCavity * 0.85 - clickAir * 0.7) * env * 0.70;
       }
     }
 
@@ -569,6 +579,26 @@ class MusicBoxAudioEngine {
         this.dryGain.gain.setTargetAtTime(0.75, now, 0.03);
         this.wetGain.gain.setTargetAtTime(0.38 * this.chamberReverbAmount, now, 0.03);
         break;
+
+      case 'rosewood-xylophone':
+        // Option 9: Concert Rosewood Xylophone & Undercut Marimba Bars (木琴)
+        this.chamberFilter.type = 'peaking';
+        this.chamberFilter.frequency.setTargetAtTime(480, now, 0.03); // Resonator tube body swell
+        this.chamberFilter.gain.setTargetAtTime(6.5 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.8, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1250, now, 0.03); // Rosewood bar wood strike presence
+        this.chamberResonanceBoost.gain.setTargetAtTime(3.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.4, now, 0.03);
+
+        this.chamberToneFilter.type = 'lowpass';
+        this.chamberToneFilter.frequency.setTargetAtTime(3800, now, 0.03); // Organic high-frequency wood damping
+        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.03);
+
+        this.dryGain.gain.setTargetAtTime(0.85, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.24 * this.chamberReverbAmount, now, 0.03);
+        break;
     }
   }
 
@@ -602,6 +632,9 @@ class MusicBoxAudioEngine {
     } else if (this.currentPreset === 'fm-digital') {
       this.chamberFilter.gain.setTargetAtTime(3.5 * currentDepth, now, 0.04);
       this.chamberResonanceBoost.gain.setTargetAtTime(2.5 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'rosewood-xylophone') {
+      this.chamberFilter.gain.setTargetAtTime(6.5 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(3.5 * currentDepth, now, 0.04);
     }
   }
 
@@ -625,6 +658,8 @@ class MusicBoxAudioEngine {
         ? 0.68
         : this.currentPreset === 'fm-digital'
         ? 0.38
+        : this.currentPreset === 'rosewood-xylophone'
+        ? 0.24
         : 0.42;
 
     this.wetGain.gain.setTargetAtTime(baseWet * this.chamberReverbAmount, now, 0.04);
@@ -666,6 +701,14 @@ class MusicBoxAudioEngine {
       this.playTine(12, 0.85, now + 0.18);
       this.playTine(16, 0.90, now + 0.27);
       this.playTine(19, 0.95, now + 0.36);
+    } else if (this.currentPreset === 'rosewood-xylophone') {
+      // Playful, rhythmic concert xylophone/marimba bar run (C5, E5, G5, A5, C6, E6)
+      this.playTine(0, 0.90, now);
+      this.playTine(4, 0.85, now + 0.08);
+      this.playTine(7, 0.85, now + 0.16);
+      this.playTine(9, 0.90, now + 0.24);
+      this.playTine(12, 0.95, now + 0.32);
+      this.playTine(16, 0.95, now + 0.40);
     } else {
       // Distinct audition arpeggio pattern (C5, G5, C6, E6, G6)
       this.playTine(0, 0.85, now);
@@ -1583,6 +1626,115 @@ class MusicBoxAudioEngine {
 
         // Snappy digital FM pluck click
         this.playPluckClick(now, baseFreq, velocity, 'fm');
+      } else if (preset === 'rosewood-xylophone') {
+        // 9. ROSEWOOD XYLOPHONE / MARIMBA (木琴): Undercut 3.0x wood flexural mode, micro-pitch transient & hollow tube resonance
+        const f1 = baseFreq;
+        const fUndercut = baseFreq * 3.0; // Undercut xylophone 2nd flexural mode
+        const fClack = Math.min(baseFreq * 9.2, 17000); // High wood mallet contact clink
+
+        // Natural wood bar decay: crisp, snappy and highly power-efficient (0.35s - 1.15s)
+        const xyloDecay = Math.max(0.35, Math.min(1.15, decayFactor * 0.45));
+
+        // Fundamental bar resonance (sine with 6ms micro-pitch mallet drop)
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sine';
+
+        // Mallet impact micro-pitch transient (+3.5% settling in 6ms)
+        osc1.frequency.setValueAtTime(f1 * 1.035, now);
+        osc1.frequency.exponentialRampToValueAtTime(f1, now + 0.006);
+
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.68 * velocity, now + 0.003);
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + xyloDecay);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+
+        // Undercut 3.0x mode overtone (decays in ~80ms)
+        let oscUndercut: OscillatorNode | null = null;
+        let gainUndercut: GainNode | null = null;
+        if (fUndercut < 16000) {
+          oscUndercut = this.ctx.createOscillator();
+          gainUndercut = this.ctx.createGain();
+          oscUndercut.type = 'triangle';
+          oscUndercut.frequency.setValueAtTime(fUndercut, now);
+
+          const undercutDecay = Math.min(0.09, xyloDecay * 0.25);
+          gainUndercut.gain.setValueAtTime(0.0001, now);
+          gainUndercut.gain.linearRampToValueAtTime(0.24 * velocity, now + 0.001);
+          gainUndercut.gain.exponentialRampToValueAtTime(0.00001, now + undercutDecay);
+
+          oscUndercut.connect(gainUndercut);
+          gainUndercut.connect(this.musicGain);
+          oscUndercut.onended = () => {
+            try {
+              oscUndercut?.disconnect();
+              gainUndercut?.disconnect();
+            } catch {}
+          };
+          oscUndercut.start(now);
+          oscUndercut.stop(now + undercutDecay + 0.02);
+        }
+
+        // High wood clack transient (decays in ~35ms)
+        let oscClack: OscillatorNode | null = null;
+        let gainClack: GainNode | null = null;
+        if (fClack < 18000 && relativeIndex < totalTines * 0.75) {
+          oscClack = this.ctx.createOscillator();
+          gainClack = this.ctx.createGain();
+          oscClack.type = 'sine';
+          oscClack.frequency.setValueAtTime(fClack, now);
+
+          const clackDecay = 0.035;
+          gainClack.gain.setValueAtTime(0.0001, now);
+          gainClack.gain.linearRampToValueAtTime(0.15 * velocity, now + 0.001);
+          gainClack.gain.exponentialRampToValueAtTime(0.00001, now + clackDecay);
+
+          oscClack.connect(gainClack);
+          gainClack.connect(this.musicGain);
+          oscClack.onended = () => {
+            try {
+              oscClack?.disconnect();
+              gainClack?.disconnect();
+            } catch {}
+          };
+          oscClack.start(now);
+          oscClack.stop(now + clackDecay + 0.02);
+        }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.006);
+            osc1.stop(stopTime + 0.01);
+            if (oscUndercut && gainUndercut) {
+              gainUndercut.gain.cancelScheduledValues(stopTime);
+              gainUndercut.gain.linearRampToValueAtTime(0.0001, stopTime + 0.006);
+              oscUndercut.stop(stopTime + 0.01);
+            }
+            if (oscClack && gainClack) {
+              gainClack.gain.cancelScheduledValues(stopTime);
+              gainClack.gain.linearRampToValueAtTime(0.0001, stopTime + 0.006);
+              oscClack.stop(stopTime + 0.01);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+          } catch {}
+        };
+
+        osc1.start(now);
+        osc1.stop(now + xyloDecay + 0.04);
+
+        // Dry rosewood mallet strike tap
+        this.playPluckClick(now, baseFreq, velocity, 'xylophone');
       }
     } catch (e) {
       console.warn('playFrequency error:', e);
@@ -1602,7 +1754,8 @@ class MusicBoxAudioEngine {
       | 'chiptune'
       | 'kalimba'
       | 'cathedral'
-      | 'fm' = 'metallic'
+      | 'fm'
+      | 'xylophone' = 'metallic'
   ): void {
     if (!this.ctx || !this.musicGain) return;
 
@@ -1647,6 +1800,11 @@ class MusicBoxAudioEngine {
         filterFreq = Math.min(baseFreq * 4.0, 8000); // Snappy digital crystal transient
         filterQ = 4.5;
         clickVol = 0.10 * velocity;
+      } else if (material === 'xylophone') {
+        clickDuration = 0.012;
+        filterFreq = Math.min(baseFreq * 2.4, 2200); // Crisp dry rosewood mallet knock
+        filterQ = 2.8;
+        clickVol = 0.22 * velocity;
       }
 
       const t = Math.max(time, this.ctx.currentTime);
