@@ -105,7 +105,7 @@ function generateProceduralMusic(prompt: string, style: string, totalSteps: numb
 
 // Gemini AI Music Box Composer Endpoint
 app.post('/api/gemini/compose', async (req, res) => {
-  const { prompt, style = 'melodic', totalSteps = 64, tempoPreference } = req.body;
+  const { prompt, style = 'melodic', totalSteps = 64, tempoPreference, combScaleId = 'romantic-flat' } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt is required' });
@@ -113,43 +113,59 @@ app.post('/api/gemini/compose', async (req, res) => {
 
   const ai = getGeminiClient();
 
-  const systemInstruction = `You are a master horologist and mechanical music box composer who specializes in arranging exquisite, authentic melodies for traditional 18-note mechanical music boxes (like the vintage gold Sankyo movement).
+  const isRomanticFlat = combScaleId === 'romantic-flat';
+  const tineMax = isRomanticFlat ? 21 : 17;
 
-The 18 steel tines are tuned to the following diatonic pitch scale from lowest (tine 0) to highest (tine 17):
-Tine 0: C5 (523 Hz) - Bass root
-Tine 1: D5 (587 Hz)
-Tine 2: E5 (659 Hz)
-Tine 3: F5 (698 Hz)
-Tine 4: F#5 (740 Hz)
-Tine 5: G5 (784 Hz)
-Tine 6: A5 (880 Hz)
-Tine 7: B5 (988 Hz)
-Tine 8: C6 (1046 Hz) - Mid melody root
-Tine 9: D6 (1175 Hz)
-Tine 10: E6 (1318 Hz)
-Tine 11: F6 (1397 Hz)
-Tine 12: F#6 (1480 Hz)
-Tine 13: G6 (1568 Hz)
-Tine 14: A6 (1760 Hz)
-Tine 15: B6 (1976 Hz)
-Tine 16: C7 (2093 Hz) - High crystal chime
-Tine 17: D7 (2349 Hz) - High bell top
+  const tuningDescription = isRomanticFlat
+    ? `The 22 steel tines are tuned to the Romantic Flat Repertoire Scale (including all flat accidentals Eb, Bb, Ab, Db, Gb) from lowest (tine 0) to highest (tine 21):
+Tine 0: C4 (261.6 Hz) - Deep bass root
+Tine 1: Eb4 / D#4 (311.1 Hz) - Flat minor root
+Tine 2: F4 (349.2 Hz)
+Tine 3: G4 (392.0 Hz) - Sub-bass fifth
+Tine 4: Ab4 (415.3 Hz) - Flat pastoral
+Tine 5: Bb4 (466.2 Hz) - Flat harmonic
+Tine 6: C5 (523.3 Hz) - Mid root
+Tine 7: Db5 (554.4 Hz) - Flat gentle chime
+Tine 8: D5 (587.3 Hz)
+Tine 9: Eb5 / D#5 (622.3 Hz) - Flat romantic
+Tine 10: E5 (659.3 Hz)
+Tine 11: F5 (698.5 Hz)
+Tine 12: F#5 / Gb5 (739.9 Hz)
+Tine 13: G5 (784.0 Hz)
+Tine 14: Ab5 (830.6 Hz) - Flat tender chime
+Tine 15: A5 (880.0 Hz)
+Tine 16: Bb5 (932.3 Hz) - Flat nocturne
+Tine 17: B5 (987.8 Hz)
+Tine 18: C6 (1046.5 Hz) - High melody root
+Tine 19: Db6 (1108.7 Hz) - Flat crystalline
+Tine 20: D6 (1174.7 Hz)
+Tine 21: Eb6 / D#6 (1244.5 Hz) - Sparkling high flat bell (signature for Für Elise, Chopin Nocturnes)`
+    : `The 18 steel tines are tuned to the standard Sankyo diatonic pitch scale from lowest (tine 0) to highest (tine 17):
+Tine 0: C5 (523 Hz) - Bass root, Tine 1: D5 (587 Hz), Tine 2: E5 (659 Hz), Tine 3: F5 (698 Hz), Tine 4: F#5 (740 Hz),
+Tine 5: G5 (784 Hz), Tine 6: A5 (880 Hz), Tine 7: B5 (988 Hz), Tine 8: C6 (1046 Hz), Tine 9: D6 (1175 Hz),
+Tine 10: E6 (1318 Hz), Tine 11: F6 (1397 Hz), Tine 12: F#6 (1480 Hz), Tine 13: G6 (1568 Hz), Tine 14: A6 (1760 Hz),
+Tine 15: B6 (1976 Hz), Tine 16: C7 (2093 Hz), Tine 17: D7 (2349 Hz)`;
 
-PHYSICS & HARMONY RULES OF AN 18-NOTE MECHANICAL MUSIC BOX:
+  const systemInstruction = `You are a master horologist and mechanical music box composer who specializes in arranging exquisite, authentic melodies for traditional mechanical music boxes with steel comb tines and a rotating brass pin cylinder drum.
+
+${tuningDescription}
+
+PHYSICS & HARMONY RULES OF THE MECHANICAL MUSIC BOX:
 1. Steps range from 0 to ${totalSteps - 1} (one complete rotation of the cylinder drum).
-2. Polyphony: A music box can strike 1 to 3 tines simultaneously at a given step (e.g. bass root on tine 0 or 5 together with a melody note on tine 8-14), but never more than 3 at the exact same step.
+2. Polyphony: A music box can strike 1 to 3 tines simultaneously at a given step (e.g. bass root on lower tines together with a melody note on upper tines), but never more than 3 at the exact same step.
 3. Rapid repetition limit: Plucking the same tine twice in a row requires at least 2 steps delay.
-4. Melody & Bass layering: Create an enchanting, relaxing music box texture. Place gentle bass roots on strong downbeats and a flowing, sparkling treble melody.
+4. Melody & Bass layering: Create an enchanting, relaxing music box texture. Place gentle bass roots on strong downbeats and a flowing, sparkling melody taking advantage of flat accidentals where appropriate.
 5. Ensure the piece loops smoothly when the cylinder repeats from step ${totalSteps - 1} back to step 0.`;
 
-  const userMessage = `Compose an original 18-note mechanical music box arrangement for the cylinder based on this idea:
+  const userMessage = `Compose an original mechanical music box arrangement for the cylinder based on this idea:
 "${prompt}"
 
 Musical style: ${style}
 Total steps for cylinder rotation: ${totalSteps}
+Comb scale: ${isRomanticFlat ? 'Romantic Flat Repertoire (22 tines)' : 'Standard Sankyo 18-tines'}
 ${tempoPreference ? `Preferred tempo: ~${tempoPreference} BPM` : ''}
 
-Generate a creative title, a short lyrical/poetic note about the tune, a suitable BPM tempo (between 68 and 130), the mood, and the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to 17) }. Provide between 24 and 56 pins for a rich, sparkling melody.`;
+Generate a creative title, a short lyrical/poetic note about the tune, a suitable BPM tempo (between 68 and 130), the mood, and the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to ${tineMax}) }. Provide between 24 and 56 pins for a rich, sparkling melody.`;
 
   const responseSchema = {
     type: Type.OBJECT,

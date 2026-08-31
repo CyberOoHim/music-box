@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 import { MusicBoxSong } from '../types';
-import { Music, Sparkles, Download, Upload, Trash2, Search, Play, Check } from 'lucide-react';
+import {
+  Music,
+  Sparkles,
+  Download,
+  Upload,
+  Trash2,
+  Search,
+  Check,
+  FolderArchive,
+  RotateCcw,
+} from 'lucide-react';
 
 interface SongLibraryProps {
   songs: MusicBoxSong[];
@@ -9,6 +19,7 @@ interface SongLibraryProps {
   onDeleteCustomSong?: (songId: string) => void;
   onImportSong: (song: MusicBoxSong) => void;
   onOpenGeminiModal: () => void;
+  onOpenImportExportModal?: () => void;
 }
 
 export const SongLibrary: React.FC<SongLibraryProps> = ({
@@ -18,6 +29,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onDeleteCustomSong,
   onImportSong,
   onOpenGeminiModal,
+  onOpenImportExportModal,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -27,7 +39,10 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       s.title.toLowerCase().includes(search.toLowerCase()) ||
       (s.description && s.description.toLowerCase().includes(search.toLowerCase()));
     const matchesCategory =
-      selectedCategory === 'all' || s.category === selectedCategory || (selectedCategory === 'ai' && s.isAiGenerated);
+      selectedCategory === 'all' ||
+      s.category === selectedCategory ||
+      (selectedCategory === 'ai' && (s.isAiGenerated || s.category === 'ai')) ||
+      (selectedCategory === 'custom' && (s.category === 'custom' || s.id.startsWith('custom-') || s.id.startsWith('imported-')));
     return matchesSearch && matchesCategory;
   });
 
@@ -37,40 +52,13 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(song, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `${song.title.replace(/\s+/g, '_')}_musicbox.json`);
+    downloadAnchor.setAttribute('download', `${song.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_musicbox.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
   };
 
-  // Import JSON song file
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.title && Array.isArray(parsed.pins)) {
-          const imported: MusicBoxSong = {
-            id: `imported-${Date.now()}`,
-            title: parsed.title,
-            category: 'custom',
-            description: parsed.description || 'Imported custom music box cylinder',
-            tempoBpm: parsed.tempoBpm || 88,
-            totalSteps: parsed.totalSteps || 64,
-            pins: parsed.pins,
-            createdAt: Date.now(),
-          };
-          onImportSong(imported);
-        }
-      } catch (err) {
-        console.error('Invalid JSON file', err);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
+  const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai').length;
 
   return (
     <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_4px_24px_rgba(67,52,34,0.06)] text-[#2d2419] space-y-4">
@@ -82,13 +70,14 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <span>Music Box Repertoire & Cylinders</span>
           </h3>
           <p className="text-xs text-[#75644e] font-serif-sub italic">
-            Select authentic 18-note arrangements, AI-composed melodies, or load your own custom score.
+            Select authentic 18-note arrangements, AI-composed melodies, or manage your exported/imported score collection.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* AI Compose button */}
           <button
+            id="library-gemini-compose-btn"
             onClick={onOpenGeminiModal}
             className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition"
           >
@@ -96,17 +85,17 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <span>AI Compose</span>
           </button>
 
-          {/* Import JSON Button */}
-          <label className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 cursor-pointer transition shadow-2xs">
-            <Upload className="w-3.5 h-3.5 text-[#8a765e]" />
-            <span>Import</span>
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
+          {/* Repertoire / Export / Import / Restore Modal Trigger */}
+          {onOpenImportExportModal && (
+            <button
+              id="library-manage-data-btn"
+              onClick={onOpenImportExportModal}
+              className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 transition shadow-2xs font-semibold"
+            >
+              <FolderArchive className="w-3.5 h-3.5 text-[#8a765e]" />
+              <span>Backup & Import ({customOrAiCount})</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -133,6 +122,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             { id: 'lullaby', label: 'Lullaby' },
             { id: 'nature', label: 'Relaxing' },
             { id: 'ai', label: 'Gemini AI' },
+            { id: 'custom', label: 'Custom' },
           ].map((cat) => (
             <button
               key={cat.id}
@@ -153,6 +143,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
         {filteredSongs.map((song) => {
           const isSelected = song.id === currentSongId;
+          const isCustom = song.category === 'custom' || song.id.startsWith('custom-') || song.id.startsWith('imported-');
           return (
             <div
               key={song.id}
@@ -173,6 +164,11 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
                       <Sparkles className="w-2.5 h-2.5" />
                       Gemini
+                    </span>
+                  )}
+                  {isCustom && !song.isAiGenerated && (
+                    <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
+                      Custom
                     </span>
                   )}
                 </div>
@@ -198,13 +194,13 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     <Download className="w-3.5 h-3.5" />
                   </button>
 
-                  {song.category === 'custom' && onDeleteCustomSong && (
+                  {(isCustom || song.isAiGenerated) && onDeleteCustomSong && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onDeleteCustomSong(song.id);
                       }}
-                      title="Delete custom score"
+                      title="Delete saved score"
                       className="p-1 rounded hover:bg-[#fce9e6] text-[#8a765e] hover:text-[#9c3826] transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

@@ -1,4 +1,12 @@
-import { SANKYO_18_TINES, SoundChamberPreset, NatureAmbienceSettings } from '../types';
+import {
+  SANKYO_18_TINES,
+  ROMANTIC_FLAT_22_TINES,
+  CHROMATIC_NOTE_FREQUENCIES,
+  TineNote,
+  SoundChamberPreset,
+  NatureAmbienceSettings,
+  SOUND_CHAMBER_PRESETS,
+} from '../types';
 
 class MusicBoxAudioEngine {
   private ctx: AudioContext | null = null;
@@ -8,9 +16,13 @@ class MusicBoxAudioEngine {
   private musicGain: GainNode | null = null;
   private chamberFilter: BiquadFilterNode | null = null;
   private chamberToneFilter: BiquadFilterNode | null = null;
-  private reverbNode: ConvolverNode | null = null;
+  private chamberResonanceBoost: BiquadFilterNode | null = null;
+  private vintageWaveShaper: WaveShaperNode | null = null;
+  private chamberConvolvers: Partial<Record<SoundChamberPreset, ConvolverNode>> = {};
+  private chamberConvolverGains: Partial<Record<SoundChamberPreset, GainNode>> = {};
   private dryGain: GainNode | null = null;
   private wetGain: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
 
   // Mechanical background noise nodes
   private gearGain: GainNode | null = null;
@@ -25,9 +37,15 @@ class MusicBoxAudioEngine {
   private windChimeGain: GainNode | null = null;
   private streamGain: GainNode | null = null;
 
+  // Cached pre-generated acoustic impulse responses
+  private impulseCache: Map<SoundChamberPreset, AudioBuffer> = new Map();
+  private auditionTimeouts: number[] = [];
+
   // State tracking
   private activeNatureIntervals: number[] = [];
   public currentPreset: SoundChamberPreset = 'gold-sankyo';
+  public chamberResonanceDepth = 1.0; // 0 to 1.5
+  public chamberReverbAmount = 1.0; // 0 to 1.5
   public currentNatureSettings: NatureAmbienceSettings = {
     rain: 0,
     fire: 0,
@@ -69,56 +87,111 @@ class MusicBoxAudioEngine {
           }
         }
 
+        // Real-time Waveform / Spectrum Analyser Node
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = 1024;
+        this.analyser.smoothingTimeConstant = 0.75;
+
         // Master output bus
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.setValueAtTime(this.currentMasterVolume, this.ctx.currentTime);
-        this.masterGain.connect(this.ctx.destination);
+        this.masterGain.connect(this.analyser);
+        this.analyser.connect(this.ctx.destination);
 
-        // Music Box bus
+        // Music Box primary bus
         this.musicGain = this.ctx.createGain();
-        this.musicGain.gain.setValueAtTime(0.85, this.ctx.currentTime);
+        this.musicGain.gain.setValueAtTime(0.88, this.ctx.currentTime);
 
-        // Chamber primary peaking filter (wood/metal coloration)
+        // Acoustic chamber primary formant resonance filter
         this.chamberFilter = this.ctx.createBiquadFilter();
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.value = 2200;
+        this.chamberFilter.frequency.value = 2600;
+        this.chamberFilter.gain.value = 6.0;
         this.chamberFilter.Q.value = 1.4;
-        this.chamberFilter.gain.value = 4;
 
-        // Chamber secondary tone shaping filter (warmth/air)
+        // Secondary body resonance filter
+        this.chamberResonanceBoost = this.ctx.createBiquadFilter();
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.value = 920;
+        this.chamberResonanceBoost.gain.value = 2.0;
+        this.chamberResonanceBoost.Q.value = 1.8;
+
+        // Chamber tone shaping filter (shelving/lowpass)
         this.chamberToneFilter = this.ctx.createBiquadFilter();
         this.chamberToneFilter.type = 'highshelf';
-        this.chamberToneFilter.frequency.value = 4500;
-        this.chamberToneFilter.gain.value = 1.5;
+        this.chamberToneFilter.frequency.value = 5200;
+        this.chamberToneFilter.gain.value = 3.5;
 
-        // Dry & Wet paths for spatial chamber resonance
+        // Vintage analog soft-saturation waveshaper
+        this.vintageWaveShaper = this.ctx.createWaveShaper();
+        this.vintageWaveShaper.curve = this.createVintageCurve(1.8);
+        this.vintageWaveShaper.oversample = '2x';
+
+        // Acoustic Chamber Impulse Reverbs (Parallel wet/dry network)
         this.dryGain = this.ctx.createGain();
-        this.wetGain = this.ctx.createGain();
-        this.dryGain.gain.value = 0.85;
-        this.wetGain.gain.value = 0.3;
+        this.dryGain.gain.setValueAtTime(0.72, this.ctx.currentTime);
 
+        this.wetGain = this.ctx.createGain();
+        this.wetGain.gain.setValueAtTime(0.38, this.ctx.currentTime);
+
+        // Generate algorithmic impulse responses for each physical chamber
+        const presets: SoundChamberPreset[] = ['gold-sankyo', 'wooden-box', 'crystal-bell', 'vintage-antique'];
+        for (const preset of presets) {
+          const impulseBuf = this.getOrCreateImpulseResponse(preset);
+          if (impulseBuf) {
+            this.impulseCache.set(preset, impulseBuf);
+          }
+
+          const conv = this.ctx.createConvolver();
+          if (impulseBuf) {
+            conv.buffer = impulseBuf;
+          }
+          conv.normalize = true;
+
+          const convGain = this.ctx.createGain();
+          // Initially active only for current preset
+          convGain.gain.setValueAtTime(preset === this.currentPreset ? 1.0 : 0.0, this.ctx.currentTime);
+
+          this.chamberConvolvers[preset] = conv;
+          this.chamberConvolverGains[preset] = convGain;
+        }
+
+        // Routing topology:
+        // musicGain -> chamberFilter -> chamberResonanceBoost -> chamberToneFilter -> vintageWaveShaper
+        // -> dryGain -> masterGain
+        // -> Convolver -> convGain -> wetGain -> masterGain
         this.musicGain.connect(this.chamberFilter);
-        this.chamberFilter.connect(this.chamberToneFilter);
-        this.chamberToneFilter.connect(this.dryGain);
+        this.chamberFilter.connect(this.chamberResonanceBoost);
+        this.chamberResonanceBoost.connect(this.chamberToneFilter);
+        this.chamberToneFilter.connect(this.vintageWaveShaper);
+
+        // Split to dry & wet paths
+        this.vintageWaveShaper.connect(this.dryGain);
         this.dryGain.connect(this.masterGain);
 
-        // Build convolver with acoustic impulse response
-        this.rebuildChamberConvolver(1.5, 0.45, 'gold');
+        for (const preset of presets) {
+          const conv = this.chamberConvolvers[preset];
+          const convGain = this.chamberConvolverGains[preset];
+          if (conv && convGain) {
+            this.vintageWaveShaper.connect(conv);
+            conv.connect(convGain);
+            convGain.connect(this.wetGain);
+          }
+        }
         this.wetGain.connect(this.masterGain);
 
-        // Setup mechanical gear hum
+        // Mechanical gear hum & governor click generator
         this.setupGearHum();
 
-        // Setup nature ambiance sub-system
+        // 5-layer Nature Ambience engine
         this.setupNatureAmbiance();
 
-        // Apply any queued preset & nature settings
+        // Apply initial preset parameters
         this.applyChamberPreset(this.currentPreset);
-        this.updateNatureVolumes(this.currentNatureSettings);
 
         this.isInitialized = true;
-      } finally {
-        this.initPromise = null;
+      } catch (err) {
+        console.error('Failed to initialize Web Audio Engine:', err);
       }
     })();
 
@@ -138,298 +211,690 @@ class MusicBoxAudioEngine {
     }
   }
 
-  // Create an acoustic impulse response modeled after metallic & wooden resonant music box chambers
-  private createMusicBoxImpulseResponse(
-    ctx: AudioContext,
-    duration: number,
-    decay: number,
-    coloration: 'gold' | 'wood' | 'crystal' | 'vintage' = 'gold'
-  ): AudioBuffer {
-    const sampleRate = ctx.sampleRate;
-    const length = Math.max(1024, Math.floor(sampleRate * duration));
-    const impulse = ctx.createBuffer(2, length, sampleRate);
+  // Create subtle analog saturation curve for vintage warmth
+  private createVintageCurve(amount = 2.0): Float32Array {
+    const k = amount;
+    const nSamples = 44100;
+    const curve = new Float32Array(nSamples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < nSamples; ++i) {
+      const x = (i * 2) / nSamples - 1;
+      curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
+  // Real-time live audio waveform extraction for visualizers
+  public getWaveformData(dataArray: Uint8Array): void {
+    if (this.analyser) {
+      this.analyser.getByteTimeDomainData(dataArray);
+    } else {
+      dataArray.fill(128);
+    }
+  }
+
+  // Real-time live frequency spectrum data
+  public getFrequencyData(dataArray: Uint8Array): void {
+    if (this.analyser) {
+      this.analyser.getByteFrequencyData(dataArray);
+    } else {
+      dataArray.fill(0);
+    }
+  }
+
+  // Get or lazily pre-generate physically differentiated acoustic impulse response for each chamber
+  private getOrCreateImpulseResponse(preset: SoundChamberPreset): AudioBuffer | null {
+    if (!this.ctx) return null;
+
+    if (this.impulseCache.has(preset)) {
+      return this.impulseCache.get(preset)!;
+    }
+
+    const sampleRate = this.ctx.sampleRate;
+    let duration = 0.45;
+    let decayRate = 4.0;
+
+    if (preset === 'gold-sankyo') {
+      duration = 0.38;
+      decayRate = 4.8;
+    } else if (preset === 'wooden-box') {
+      duration = 0.55;
+      decayRate = 3.2;
+    } else if (preset === 'crystal-bell') {
+      duration = 0.70;
+      decayRate = 2.4;
+    } else if (preset === 'vintage-antique') {
+      duration = 0.48;
+      decayRate = 3.6;
+    }
+
+    const length = Math.max(512, Math.floor(sampleRate * duration));
+    const impulse = this.ctx.createBuffer(2, length, sampleRate);
     const left = impulse.getChannelData(0);
     const right = impulse.getChannelData(1);
 
-    // Resonant modes based on chamber body material
-    let r1 = 480, r2 = 1250, r3 = 2400, r4 = 4200;
-    if (coloration === 'wood') {
-      r1 = 320; r2 = 640; r3 = 1100; r4 = 1900;
-    } else if (coloration === 'crystal') {
-      r1 = 1200; r2 = 2400; r3 = 4800; r4 = 7200;
-    } else if (coloration === 'vintage') {
-      r1 = 400; r2 = 820; r3 = 1600; r4 = 2800;
-    }
-
     for (let i = 0; i < length; i++) {
       const t = i / sampleRate;
-      const env = Math.exp(-t * (decay * 3.6));
+      const env = Math.exp(-t * decayRate);
 
-      const ring1 = Math.sin(2 * Math.PI * r1 * t) * 0.18;
-      const ring2 = Math.sin(2 * Math.PI * r2 * t) * 0.12;
-      const ring3 = Math.sin(2 * Math.PI * r3 * t) * 0.08;
-      const ring4 = Math.sin(2 * Math.PI * r4 * t) * 0.04;
-
-      const noiseL = (Math.random() * 2 - 1) * 0.6 + ring1 + ring2 + ring3 + ring4;
-      const noiseR = (Math.random() * 2 - 1) * 0.6 + ring1 * 0.85 - ring2 + ring3 * 0.9 - ring4 * 0.7;
-
-      left[i] = noiseL * env;
-      right[i] = noiseR * env;
+      if (preset === 'gold-sankyo') {
+        const ring1 = Math.sin(2 * Math.PI * 1850 * t) * 0.25;
+        const ring2 = Math.sin(2 * Math.PI * 3400 * t) * 0.18;
+        const noiseL = (Math.random() * 2 - 1) * 0.4 + ring1 + ring2;
+        const noiseR = (Math.random() * 2 - 1) * 0.4 + ring1 * 0.8 - ring2;
+        left[i] = noiseL * env * 0.65;
+        right[i] = noiseR * env * 0.65;
+      } else if (preset === 'wooden-box') {
+        const woodDamp = Math.exp(-t * 9.0);
+        const ringWood1 = Math.sin(2 * Math.PI * 380 * t) * 0.40;
+        const ringWood2 = Math.sin(2 * Math.PI * 720 * t) * 0.25;
+        const bodyNoiseL = (Math.random() * 2 - 1) * 0.3 * woodDamp + ringWood1 + ringWood2;
+        const bodyNoiseR = (Math.random() * 2 - 1) * 0.3 * woodDamp + ringWood1 * 0.9 - ringWood2 * 0.8;
+        left[i] = bodyNoiseL * env * 0.85;
+        right[i] = bodyNoiseR * env * 0.85;
+      } else if (preset === 'crystal-bell') {
+        const glass1 = Math.sin(2 * Math.PI * 1568 * t) * 0.32;
+        const glass2 = Math.sin(2 * Math.PI * 3136 * t) * 0.24;
+        const shimmerBeat = 0.5 + 0.5 * Math.sin(2 * Math.PI * 4.0 * t);
+        const glassNoiseL = (Math.random() * 2 - 1) * 0.2 + (glass1 + glass2) * shimmerBeat;
+        const glassNoiseR = (Math.random() * 2 - 1) * 0.2 + (glass1 * 0.85 - glass2) * shimmerBeat;
+        left[i] = glassNoiseL * env * 0.8;
+        right[i] = glassNoiseR * env * 0.8;
+      } else if (preset === 'vintage-antique') {
+        const flutter = 1.0 + 0.015 * Math.sin(2 * Math.PI * 4.5 * t);
+        const antique1 = Math.sin(2 * Math.PI * 440 * flutter * t) * 0.32;
+        const antique2 = Math.sin(2 * Math.PI * 880 * flutter * t) * 0.20;
+        const antNoiseL = (Math.random() * 2 - 1) * 0.4 + antique1 + antique2;
+        const antNoiseR = (Math.random() * 2 - 1) * 0.4 + antique1 * 0.9 - antique2 * 0.85;
+        left[i] = antNoiseL * env * 0.7;
+        right[i] = antNoiseR * env * 0.7;
+      }
     }
+
+    this.impulseCache.set(preset, impulse);
     return impulse;
   }
 
-  private rebuildChamberConvolver(duration: number, decay: number, coloration: 'gold' | 'wood' | 'crystal' | 'vintage') {
-    if (!this.ctx || !this.chamberToneFilter || !this.wetGain) return;
+  // Apply highly differentiated acoustic chamber EQ, filters, and spatial balance
+  public applyChamberPreset(preset: SoundChamberPreset): void {
+    this.currentPreset = preset;
+    if (
+      !this.ctx ||
+      !this.dryGain ||
+      !this.wetGain ||
+      !this.chamberFilter ||
+      !this.chamberToneFilter ||
+      !this.chamberResonanceBoost
+    )
+      return;
 
-    try {
-      if (this.reverbNode) {
+    const now = this.ctx.currentTime;
+    const depth = this.chamberResonanceDepth;
+
+    // Crossfade the 4 dedicated convolver gains smoothly (never mutate Convolver buffers!)
+    const allPresets: SoundChamberPreset[] = [
+      'gold-sankyo',
+      'wooden-box',
+      'crystal-bell',
+      'vintage-antique',
+    ];
+    for (const p of allPresets) {
+      const gNode = this.chamberConvolverGains[p];
+      if (gNode) {
         try {
-          this.reverbNode.disconnect();
+          gNode.gain.cancelScheduledValues(now);
+          gNode.gain.setTargetAtTime(p === preset ? 1.0 : 0.0, now, 0.02);
         } catch {
           // ignore
         }
       }
-
-      this.reverbNode = this.ctx.createConvolver();
-      this.reverbNode.buffer = this.createMusicBoxImpulseResponse(this.ctx, duration, decay, coloration);
-      this.chamberToneFilter.connect(this.reverbNode);
-      this.reverbNode.connect(this.wetGain);
-    } catch (e) {
-      console.warn('Convolver rebuild error:', e);
     }
-  }
 
-  public applyChamberPreset(preset: SoundChamberPreset): void {
-    this.currentPreset = preset;
-    if (!this.ctx || !this.dryGain || !this.wetGain || !this.chamberFilter || !this.chamberToneFilter) return;
-
-    const now = this.ctx.currentTime;
     switch (preset) {
       case 'gold-sankyo':
-        // Crisp, sparkling gold movement chime with clear highs and bell chime resonance
+        // Option 1: Pure, bright, crystalline-metallic chime with high bell clarity
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.setTargetAtTime(2200, now, 0.05);
-        this.chamberFilter.gain.setTargetAtTime(4.5, now, 0.05);
-        this.chamberFilter.Q.setTargetAtTime(1.4, now, 0.05);
+        this.chamberFilter.frequency.setTargetAtTime(2800, now, 0.03);
+        this.chamberFilter.gain.setTargetAtTime(6.0 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.6, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1400, now, 0.03);
+        this.chamberResonanceBoost.gain.setTargetAtTime(2.0 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.2, now, 0.03);
 
         this.chamberToneFilter.type = 'highshelf';
-        this.chamberToneFilter.frequency.setTargetAtTime(4800, now, 0.05);
-        this.chamberToneFilter.gain.setTargetAtTime(2.0, now, 0.05);
+        this.chamberToneFilter.frequency.setTargetAtTime(5200, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(3.5, now, 0.03);
 
-        this.dryGain.gain.setTargetAtTime(0.85, now, 0.05);
-        this.wetGain.gain.setTargetAtTime(0.32, now, 0.05);
-        this.rebuildChamberConvolver(1.4, 0.5, 'gold');
+        this.dryGain.gain.setTargetAtTime(0.88, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.35 * this.chamberReverbAmount, now, 0.03);
         break;
 
       case 'wooden-box':
-        // Deep, rich resonant mahogany box body with warm woody resonance
+        // Option 2: Deep, warm, hollow acoustic mahogany soundboard resonance
+        // Strong low-mid body boost at 380Hz and steep high-frequency damping
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.setTargetAtTime(450, now, 0.05);
-        this.chamberFilter.gain.setTargetAtTime(6.5, now, 0.05);
-        this.chamberFilter.Q.setTargetAtTime(1.1, now, 0.05);
+        this.chamberFilter.frequency.setTargetAtTime(380, now, 0.03);
+        this.chamberFilter.gain.setTargetAtTime(9.0 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.2, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(720, now, 0.03);
+        this.chamberResonanceBoost.gain.setTargetAtTime(5.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.0, now, 0.03);
 
         this.chamberToneFilter.type = 'lowpass';
-        this.chamberToneFilter.frequency.setTargetAtTime(4200, now, 0.05);
-        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.05);
+        this.chamberToneFilter.frequency.setTargetAtTime(3200, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.03);
 
-        this.dryGain.gain.setTargetAtTime(0.72, now, 0.05);
-        this.wetGain.gain.setTargetAtTime(0.48, now, 0.05);
-        this.rebuildChamberConvolver(2.3, 0.32, 'wood');
+        this.dryGain.gain.setTargetAtTime(0.65, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.58 * this.chamberReverbAmount, now, 0.03);
         break;
 
       case 'crystal-bell':
-        // Ethereal crystal bell shimmer with long celestial ring & sparkling sheen
+        // Option 3: Sparkling celestial glass bell chime with ethereal ring & shimmer
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.setTargetAtTime(3600, now, 0.05);
-        this.chamberFilter.gain.setTargetAtTime(5.5, now, 0.05);
-        this.chamberFilter.Q.setTargetAtTime(2.2, now, 0.05);
+        this.chamberFilter.frequency.setTargetAtTime(4200, now, 0.03);
+        this.chamberFilter.gain.setTargetAtTime(7.5 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(2.4, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(7800, now, 0.03);
+        this.chamberResonanceBoost.gain.setTargetAtTime(6.0 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.8, now, 0.03);
 
         this.chamberToneFilter.type = 'highshelf';
-        this.chamberToneFilter.frequency.setTargetAtTime(5500, now, 0.05);
-        this.chamberToneFilter.gain.setTargetAtTime(5.0, now, 0.05);
+        this.chamberToneFilter.frequency.setTargetAtTime(6000, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(6.5, now, 0.03);
 
-        this.dryGain.gain.setTargetAtTime(0.68, now, 0.05);
-        this.wetGain.gain.setTargetAtTime(0.60, now, 0.05);
-        this.rebuildChamberConvolver(2.8, 0.22, 'crystal');
+        this.dryGain.gain.setTargetAtTime(0.60, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.70 * this.chamberReverbAmount, now, 0.03);
         break;
 
       case 'vintage-antique':
-        // Warm nostalgic antique chime with subtle 19th-century patina
+        // Option 4: 1880s Victorian antique chime with mellow patina, mid warmth & analog flutter
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.setTargetAtTime(950, now, 0.05);
-        this.chamberFilter.gain.setTargetAtTime(3.5, now, 0.05);
-        this.chamberFilter.Q.setTargetAtTime(1.0, now, 0.05);
+        this.chamberFilter.frequency.setTargetAtTime(820, now, 0.03);
+        this.chamberFilter.gain.setTargetAtTime(5.5 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.1, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1650, now, 0.03);
+        this.chamberResonanceBoost.gain.setTargetAtTime(3.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.5, now, 0.03);
 
         this.chamberToneFilter.type = 'lowpass';
-        this.chamberToneFilter.frequency.setTargetAtTime(3200, now, 0.05);
-        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.05);
+        this.chamberToneFilter.frequency.setTargetAtTime(2600, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.03);
 
-        this.dryGain.gain.setTargetAtTime(0.80, now, 0.05);
-        this.wetGain.gain.setTargetAtTime(0.38, now, 0.05);
-        this.rebuildChamberConvolver(1.7, 0.42, 'vintage');
+        this.dryGain.gain.setTargetAtTime(0.78, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.42 * this.chamberReverbAmount, now, 0.03);
         break;
     }
   }
 
-  // Play a brief harmonic preview chord/arpeggio to audition chamber timbre
-  public playAuditionChime(): void {
-    if (!this.ctx) return;
+  public setChamberResonance(depth: number): void {
+    this.chamberResonanceDepth = Math.max(0.1, Math.min(1.8, depth));
+    if (!this.ctx || !this.chamberFilter || !this.chamberResonanceBoost) return;
     const now = this.ctx.currentTime;
-    // Play tines 6 (C6), 10 (E6), 13 (G6) in quick arpeggio
-    this.playTine(6, 0.75);
-    setTimeout(() => this.playTine(10, 0.7), 110);
-    setTimeout(() => this.playTine(13, 0.8), 220);
+    const currentDepth = this.chamberResonanceDepth;
+
+    if (this.currentPreset === 'gold-sankyo') {
+      this.chamberFilter.gain.setTargetAtTime(6.0 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(2.0 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'wooden-box') {
+      this.chamberFilter.gain.setTargetAtTime(9.0 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(5.5 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'crystal-bell') {
+      this.chamberFilter.gain.setTargetAtTime(7.5 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(6.0 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'vintage-antique') {
+      this.chamberFilter.gain.setTargetAtTime(5.5 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(3.5 * currentDepth, now, 0.04);
+    }
   }
 
-  // Play an authentic steel tine sound when struck by a cylinder pin
-  public playTine(tineIndex: number, velocity = 1.0): void {
+  public setChamberReverb(amount: number): void {
+    this.chamberReverbAmount = Math.max(0.1, Math.min(1.8, amount));
+    if (!this.ctx || !this.wetGain) return;
+    const now = this.ctx.currentTime;
+
+    const baseWet =
+      this.currentPreset === 'gold-sankyo'
+        ? 0.35
+        : this.currentPreset === 'wooden-box'
+        ? 0.58
+        : this.currentPreset === 'crystal-bell'
+        ? 0.70
+        : 0.42;
+
+    this.wetGain.gain.setTargetAtTime(baseWet * this.chamberReverbAmount, now, 0.04);
+  }
+
+  // Play a rich harmonic chord/arpeggio to audition the distinct sound wave of each chamber
+  public playAuditionChime(targetPreset?: SoundChamberPreset): void {
+    if (targetPreset && targetPreset !== this.currentPreset) {
+      this.applyChamberPreset(targetPreset);
+    }
+    if (!this.ctx) return;
+
+    // Clear any previous running audition notes to prevent note stacking
+    this.auditionTimeouts.forEach((id) => clearTimeout(id));
+    this.auditionTimeouts = [];
+
+    // Distinct audition arpeggio pattern (C5, G5, C6, E6, G6)
+    this.playTine(0, 0.85); // C5
+    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(5, 0.80), 120));
+    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(8, 0.85), 240));
+    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(10, 0.90), 360));
+    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(13, 0.95), 480));
+  }
+
+  // Current AudioContext timestamp
+  public getAudioTime(): number {
+    return this.ctx ? this.ctx.currentTime : performance.now() / 1000;
+  }
+
+  // Play an authentic steel tine sound with physics tailored directly to the active acoustic chamber
+  public playTine(tineIndex: number, velocity = 1.0, when?: number, customTines?: TineNote[]): void {
     if (!this.ctx || !this.musicGain) return;
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
 
-    const tine = SANKYO_18_TINES[tineIndex];
+    const tinesList = customTines && customTines.length > 0 ? customTines : ROMANTIC_FLAT_22_TINES;
+    const tine = tinesList[tineIndex] || SANKYO_18_TINES[tineIndex];
     if (!tine) return;
 
-    const now = this.ctx.currentTime;
-    const baseFreq = tine.frequency;
-
-    // Realistic steel cantilever physics:
-    // f1 = fundamental
-    // f2 ≈ 6.27 * f1 (first inharmonic overtone)
-    // f3 ≈ 17.55 * f1 (second inharmonic overtone)
-    const f1 = baseFreq;
-    const f2 = baseFreq * 6.267;
-    const f3 = Math.min(baseFreq * 17.54, 18000);
-
-    // Decay rate scales with pitch (lower notes ring ~3.0s, higher notes ring ~1.4s)
-    const decayFactor = Math.max(1.1, 3.2 - (tineIndex / 18) * 1.6);
-
-    // 1. Fundamental Oscillator (Warm pure tone)
-    const osc1 = this.ctx.createOscillator();
-    const gain1 = this.ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(f1, now);
-
-    // Slight micro-pitch drift on initial pluck
-    osc1.frequency.exponentialRampToValueAtTime(f1 * 0.9992, now + 0.04);
-    osc1.frequency.setValueAtTime(f1, now + 0.07);
-
-    gain1.gain.setValueAtTime(0.0001, now);
-    gain1.gain.linearRampToValueAtTime(0.6 * velocity, now + 0.003); // rapid 3ms attack
-    gain1.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
-
-    osc1.connect(gain1);
-    gain1.connect(this.musicGain);
-
-    osc1.start(now);
-    osc1.stop(now + decayFactor + 0.05);
-
-    // 2. First Inharmonic Metallic Ring (Gives music box its unmistakable bell ping)
-    if (f2 < 18000) {
-      const osc2 = this.ctx.createOscillator();
-      const gain2 = this.ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(f2, now);
-
-      const f2Decay = Math.min(decayFactor * 0.28, 0.5);
-      gain2.gain.setValueAtTime(0.0001, now);
-      gain2.gain.linearRampToValueAtTime(0.22 * velocity, now + 0.002);
-      gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
-
-      osc2.connect(gain2);
-      gain2.connect(this.musicGain);
-
-      osc2.start(now);
-      osc2.stop(now + f2Decay + 0.05);
-    }
-
-    // 3. Second High Inharmonic Shimmer
-    if (f3 < 19000 && tineIndex < 12) {
-      const osc3 = this.ctx.createOscillator();
-      const gain3 = this.ctx.createGain();
-      osc3.type = 'triangle';
-      osc3.frequency.setValueAtTime(f3, now);
-
-      const f3Decay = 0.09;
-      gain3.gain.setValueAtTime(0.0001, now);
-      gain3.gain.linearRampToValueAtTime(0.09 * velocity, now + 0.001);
-      gain3.gain.exponentialRampToValueAtTime(0.00001, now + f3Decay);
-
-      osc3.connect(gain3);
-      gain3.connect(this.musicGain);
-
-      osc3.start(now);
-      osc3.stop(now + f3Decay + 0.02);
-    }
-
-    // 4. Mechanical Pluck Transient (The physical contact click of brass pin lifting steel tine)
-    this.playPluckClick(now, baseFreq, velocity);
+    this.playFrequency(tine.frequency, velocity, when, tineIndex, tinesList.length);
   }
 
-  // Plectrum pluck noise transient
-  private playPluckClick(time: number, baseFreq: number, velocity: number): void {
+  // Play a note by standard scientific pitch notation (e.g. 'Eb6', 'D#6', 'Ab5', 'Db6', 'Bb5', 'C5')
+  public playNote(noteName: string, velocity = 1.0, when?: number): void {
+    const freq = CHROMATIC_NOTE_FREQUENCIES[noteName];
+    if (freq) {
+      this.playFrequency(freq, velocity, when, 12, 24);
+    }
+  }
+
+  // Core physical acoustic engine synthesizing steel tine vibration into resonant chamber
+  public playFrequency(
+    baseFreq: number,
+    velocity = 1.0,
+    when?: number,
+    relativeIndex = 10,
+    totalTines = 22
+  ): void {
     if (!this.ctx || !this.musicGain) return;
-
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.018);
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.2));
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
     }
 
-    const noiseSource = this.ctx.createBufferSource();
-    noiseSource.buffer = buffer;
+    try {
+      const now = typeof when === 'number' && when >= this.ctx.currentTime ? when : Math.max(0, this.ctx.currentTime);
+      const preset = this.currentPreset;
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(Math.min(baseFreq * 3.2, 7500), time);
-    filter.Q.setValueAtTime(3.5, time);
+      // Base decay scales with pitch (lower notes ring longer, higher notes ring shorter)
+      const normalizedRatio = Math.max(0, Math.min(1, relativeIndex / Math.max(1, totalTines)));
+      let decayFactor = Math.max(1.1, 3.4 - normalizedRatio * 1.7);
 
-    const clickGain = this.ctx.createGain();
-    clickGain.gain.setValueAtTime(0.14 * velocity, time);
-    clickGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.015);
+      // Differentiated sound generation based on acoustic chamber model:
+      if (preset === 'gold-sankyo') {
+        // 1. GOLD SANKYO: Pure sine + sharp 6.27x inharmonic bell ping + high shimmer
+        const f1 = baseFreq;
+        const f2 = baseFreq * 6.267;
+        const f3 = Math.min(baseFreq * 17.54, 18000);
 
-    noiseSource.connect(filter);
-    filter.connect(clickGain);
-    clickGain.connect(this.musicGain);
+        // Fundamental oscillator
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(f1, now);
+        osc1.frequency.exponentialRampToValueAtTime(f1 * 0.9992, now + 0.04);
+        osc1.frequency.setValueAtTime(f1, now + 0.07);
 
-    noiseSource.start(time);
-    noiseSource.stop(time + 0.02);
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.65 * velocity, now + 0.002); // 2ms crisp attack
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+        osc1.start(now);
+        osc1.stop(now + decayFactor + 0.05);
+
+        // Inharmonic metallic bell ring (f2)
+        if (f2 < 18000) {
+          const osc2 = this.ctx.createOscillator();
+          const gain2 = this.ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(f2, now);
+
+          const f2Decay = Math.min(decayFactor * 0.32, 0.55);
+          gain2.gain.setValueAtTime(0.0001, now);
+          gain2.gain.linearRampToValueAtTime(0.24 * velocity, now + 0.001);
+          gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
+
+          osc2.connect(gain2);
+          gain2.connect(this.musicGain);
+          osc2.start(now);
+          osc2.stop(now + f2Decay + 0.05);
+        }
+
+        // High shimmer (f3)
+        if (f3 < 19000 && relativeIndex < totalTines * 0.7) {
+          const osc3 = this.ctx.createOscillator();
+          const gain3 = this.ctx.createGain();
+          osc3.type = 'triangle';
+          osc3.frequency.setValueAtTime(f3, now);
+
+          const f3Decay = 0.10;
+          gain3.gain.setValueAtTime(0.0001, now);
+          gain3.gain.linearRampToValueAtTime(0.10 * velocity, now + 0.001);
+          gain3.gain.exponentialRampToValueAtTime(0.00001, now + f3Decay);
+
+          osc3.connect(gain3);
+          gain3.connect(this.musicGain);
+          osc3.start(now);
+          osc3.stop(now + f3Decay + 0.02);
+        }
+
+        // Sharp metallic click
+        this.playPluckClick(now, baseFreq, velocity, 'metallic');
+
+      } else if (preset === 'wooden-box') {
+        // 2. MAHOGANY BOX: Warm fundamental + rich 2nd & 3rd integer harmonics + softened wooden thud
+        decayFactor *= 1.25; // Rich woody body sustain
+        const f1 = baseFreq;
+        const f2 = baseFreq * 2.0; // 2nd harmonic (octave body)
+        const f3 = baseFreq * 3.0; // 3rd harmonic (fifth overtone)
+
+        // Fundamental oscillator
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(f1, now);
+
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.55 * velocity, now + 0.007); // Softer 7ms wood attack
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+        osc1.start(now);
+        osc1.stop(now + decayFactor + 0.05);
+
+        // Warm 2nd harmonic body resonance
+        const osc2 = this.ctx.createOscillator();
+        const gain2 = this.ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(f2, now);
+
+        const f2Decay = decayFactor * 0.65;
+        gain2.gain.setValueAtTime(0.0001, now);
+        gain2.gain.linearRampToValueAtTime(0.28 * velocity, now + 0.006);
+        gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
+
+        osc2.connect(gain2);
+        gain2.connect(this.musicGain);
+        osc2.start(now);
+        osc2.stop(now + f2Decay + 0.05);
+
+        // Subtle 3rd harmonic woody color
+        if (f3 < 12000) {
+          const osc3 = this.ctx.createOscillator();
+          const gain3 = this.ctx.createGain();
+          osc3.type = 'triangle';
+          osc3.frequency.setValueAtTime(f3, now);
+
+          const f3Decay = decayFactor * 0.35;
+          gain3.gain.setValueAtTime(0.0001, now);
+          gain3.gain.linearRampToValueAtTime(0.12 * velocity, now + 0.005);
+          gain3.gain.exponentialRampToValueAtTime(0.00001, now + f3Decay);
+
+          osc3.connect(gain3);
+          gain3.connect(this.musicGain);
+          osc3.start(now);
+          osc3.stop(now + f3Decay + 0.05);
+        }
+
+        // Softened wooden thud click
+        this.playPluckClick(now, baseFreq, velocity, 'wooden');
+
+      } else if (preset === 'crystal-bell') {
+        // 3. CRYSTAL BELL: Dual detuned sine wave chorus shimmer (+/- 3 cents) + celestial high octave chime + 4s ring
+        decayFactor *= 1.45; // Long celestial ring
+        const f1A = baseFreq * 1.0025; // detuned ringer A
+        const f1B = baseFreq * 0.9975; // detuned ringer B
+        const f2 = baseFreq * 2.0; // pure octave chime
+        const f3 = baseFreq * 4.0; // celestial sparkle ping
+
+        // Glass Oscillator A
+        const oscA = this.ctx.createOscillator();
+        const gainA = this.ctx.createGain();
+        oscA.type = 'sine';
+        oscA.frequency.setValueAtTime(f1A, now);
+
+        gainA.gain.setValueAtTime(0.0001, now);
+        gainA.gain.linearRampToValueAtTime(0.38 * velocity, now + 0.002);
+        gainA.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+
+        oscA.connect(gainA);
+        gainA.connect(this.musicGain);
+        oscA.start(now);
+        oscA.stop(now + decayFactor + 0.05);
+
+        // Glass Oscillator B (Creates beating shimmering chorus)
+        const oscB = this.ctx.createOscillator();
+        const gainB = this.ctx.createGain();
+        oscB.type = 'sine';
+        oscB.frequency.setValueAtTime(f1B, now);
+
+        gainB.gain.setValueAtTime(0.0001, now);
+        gainB.gain.linearRampToValueAtTime(0.38 * velocity, now + 0.002);
+        gainB.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+
+        oscB.connect(gainB);
+        gainB.connect(this.musicGain);
+        oscB.start(now);
+        oscB.stop(now + decayFactor + 0.05);
+
+        // Pure Glass Octave Chime (f2)
+        if (f2 < 16000) {
+          const osc2 = this.ctx.createOscillator();
+          const gain2 = this.ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(f2, now);
+
+          const f2Decay = decayFactor * 0.75;
+          gain2.gain.setValueAtTime(0.0001, now);
+          gain2.gain.linearRampToValueAtTime(0.20 * velocity, now + 0.001);
+          gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
+
+          osc2.connect(gain2);
+          gain2.connect(this.musicGain);
+          osc2.start(now);
+          osc2.stop(now + f2Decay + 0.05);
+        }
+
+        // Sparkle Ping (f3)
+        if (f3 < 18000 && relativeIndex < totalTines * 0.6) {
+          const osc3 = this.ctx.createOscillator();
+          const gain3 = this.ctx.createGain();
+          osc3.type = 'sine';
+          osc3.frequency.setValueAtTime(f3, now);
+
+          const f3Decay = 0.35;
+          gain3.gain.setValueAtTime(0.0001, now);
+          gain3.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.001);
+          gain3.gain.exponentialRampToValueAtTime(0.00001, now + f3Decay);
+
+          osc3.connect(gain3);
+          gain3.connect(this.musicGain);
+          osc3.start(now);
+          osc3.stop(now + f3Decay + 0.05);
+        }
+
+        // Pure crystal strike click
+        this.playPluckClick(now, baseFreq, velocity, 'crystal');
+
+      } else if (preset === 'vintage-antique') {
+        // 4. VINTAGE ANTIQUE: Fundamental modulated by subtle 4.6Hz flutter LFO + aged tine harmonics
+        const f1 = baseFreq;
+        const f2 = baseFreq * 2.85; // Antique lead-weighted overtone
+
+        // Vibrato / Flutter LFO (Simulates authentic 1880s spring motor flutter)
+        const lfo = this.ctx.createOscillator();
+        const lfoGain = this.ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(4.6, now); // 4.6 Hz flutter
+        lfoGain.gain.setValueAtTime(f1 * 0.0045, now); // ~0.45% pitch warble
+        lfo.connect(lfoGain);
+
+        // Fundamental oscillator
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(f1, now);
+        lfoGain.connect(osc1.frequency);
+
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.58 * velocity, now + 0.004);
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+
+        lfo.start(now);
+        osc1.start(now);
+        lfo.stop(now + decayFactor + 0.05);
+        osc1.stop(now + decayFactor + 0.05);
+
+        // Mellow vintage overtone (f2)
+        if (f2 < 16000) {
+          const osc2 = this.ctx.createOscillator();
+          const gain2 = this.ctx.createGain();
+          osc2.type = 'triangle';
+          osc2.frequency.setValueAtTime(f2, now);
+          lfoGain.connect(osc2.frequency);
+
+          const f2Decay = Math.min(decayFactor * 0.45, 0.7);
+          gain2.gain.setValueAtTime(0.0001, now);
+          gain2.gain.linearRampToValueAtTime(0.18 * velocity, now + 0.003);
+          gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
+
+          osc2.connect(gain2);
+          gain2.connect(this.musicGain);
+          osc2.start(now);
+          osc2.stop(now + f2Decay + 0.05);
+        }
+
+        // Vintage lead weight click
+        this.playPluckClick(now, baseFreq, velocity, 'vintage');
+      }
+    } catch (e) {
+      console.warn('playFrequency error:', e);
+    }
+  }
+
+  // Plectrum pluck noise transient tailored to chamber material
+  private playPluckClick(
+    time: number,
+    baseFreq: number,
+    velocity: number,
+    material: 'metallic' | 'wooden' | 'crystal' | 'vintage' = 'metallic'
+  ): void {
+    if (!this.ctx || !this.musicGain) return;
+
+    try {
+      let clickDuration = 0.016;
+      let filterFreq = Math.min(baseFreq * 3.2, 7500);
+      let filterQ = 3.5;
+      let clickVol = 0.14 * velocity;
+
+      if (material === 'wooden') {
+        clickDuration = 0.024;
+        filterFreq = Math.min(baseFreq * 1.5, 1200); // Low muffled wood tap
+        filterQ = 1.8;
+        clickVol = 0.18 * velocity;
+      } else if (material === 'crystal') {
+        clickDuration = 0.010;
+        filterFreq = Math.min(baseFreq * 4.5, 9500); // High crisp glass ping
+        filterQ = 5.0;
+        clickVol = 0.12 * velocity;
+      } else if (material === 'vintage') {
+        clickDuration = 0.020;
+        filterFreq = Math.min(baseFreq * 2.2, 2800); // Bandpass antique click
+        filterQ = 2.4;
+        clickVol = 0.16 * velocity;
+      }
+
+      const t = Math.max(time, this.ctx.currentTime);
+      const bufferSize = Math.floor(this.ctx.sampleRate * clickDuration);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+      }
+
+      const noiseSource = this.ctx.createBufferSource();
+      noiseSource.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = material === 'wooden' ? 'lowpass' : 'bandpass';
+      filter.frequency.setValueAtTime(filterFreq, t);
+      filter.Q.setValueAtTime(filterQ, t);
+
+      const clickGain = this.ctx.createGain();
+      clickGain.gain.setValueAtTime(clickVol, t);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, t + clickDuration);
+
+      noiseSource.connect(filter);
+      filter.connect(clickGain);
+      clickGain.connect(this.musicGain);
+
+      noiseSource.start(t);
+      noiseSource.stop(t + clickDuration + 0.01);
+    } catch (e) {
+      console.warn('playPluckClick error:', e);
+    }
   }
 
   // Mechanical winding ratchet click sound
   public playWindingClick(): void {
     if (!this.ctx || !this.masterGain) return;
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
-    const now = this.ctx.currentTime;
+    try {
+      const now = this.ctx.currentTime;
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
 
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(440, now);
-    osc.frequency.exponentialRampToValueAtTime(160, now + 0.025);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(160, now + 0.025);
 
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1850, now);
-    filter.Q.setValueAtTime(4.0, now);
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1850, now);
+      filter.Q.setValueAtTime(4.0, now);
 
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.18, now + 0.002);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterGain);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
 
-    osc.start(now);
-    osc.stop(now + 0.03);
+      osc.start(now);
+      osc.stop(now + 0.03);
+    } catch {
+      // safe fallback if audio node allocation fails
+    }
   }
 
   // Setup gentle mechanical gear / governor whirring hum
@@ -498,7 +963,7 @@ class MusicBoxAudioEngine {
       b6R = whiteR * 0.115926;
     }
 
-    // Crossfade start/end 1500 samples for seamless loop with no click
+    // Crossfade start/end for seamless loop with no click
     const fadeLen = Math.min(2000, Math.floor(bufferSize * 0.05));
     for (let i = 0; i < fadeLen; i++) {
       const alpha = i / fadeLen;
@@ -614,7 +1079,7 @@ class MusicBoxAudioEngine {
     lowpass.connect(this.fireGain);
     source.start();
 
-    // Natural wood ember pops and crackles (driven by currentNatureSettings.fire)
+    // Natural wood ember pops and crackles
     const crackleInterval = window.setInterval(() => {
       if (!this.ctx || !this.fireGain || this.currentNatureSettings.fire <= 0.05) return;
       if (Math.random() < 0.48) {
@@ -758,7 +1223,7 @@ class MusicBoxAudioEngine {
     source.start();
   }
 
-  // Update volume levels of all nature ambiance layers in real time
+  // Update volume levels of all nature ambiance layers in real time with lazy node activation
   public updateNatureVolumes(settings: NatureAmbienceSettings): void {
     this.currentNatureSettings = { ...settings };
     if (!this.ctx) return;
@@ -767,7 +1232,6 @@ class MusicBoxAudioEngine {
     }
     const now = this.ctx.currentTime;
 
-    // Gain multipliers calibrated for lush mixing without clipping
     if (this.rainGain) {
       this.rainGain.gain.setTargetAtTime(settings.rain * 0.65, now, 0.05);
     }
@@ -799,6 +1263,8 @@ class MusicBoxAudioEngine {
   public cleanup(): void {
     this.activeNatureIntervals.forEach((id) => clearInterval(id));
     this.activeNatureIntervals = [];
+    this.auditionTimeouts.forEach((id) => clearTimeout(id));
+    this.auditionTimeouts = [];
   }
 }
 
