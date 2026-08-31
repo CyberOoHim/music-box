@@ -292,8 +292,8 @@ class MusicBoxAudioEngine {
       duration = 0.55;
       decayRate = 3.2;
     } else if (preset === 'crystal-bell') {
-      duration = 0.70;
-      decayRate = 2.4;
+      duration = 0.55;
+      decayRate = 3.0;
     } else if (preset === 'vintage-antique') {
       duration = 0.48;
       decayRate = 3.6;
@@ -304,8 +304,8 @@ class MusicBoxAudioEngine {
       duration = 0.38;
       decayRate = 5.2;
     } else if (preset === 'cathedral-bell') {
-      duration = 1.35;
-      decayRate = 1.6;
+      duration = 0.88;
+      decayRate = 2.2;
     } else if (preset === 'fm-digital') {
       duration = 0.55;
       decayRate = 3.4;
@@ -933,35 +933,38 @@ class MusicBoxAudioEngine {
         this.playPluckClick(now, baseFreq, velocity, 'wooden');
 
       } else if (preset === 'crystal-bell') {
-        // 3. CRYSTAL BELL: Dual detuned sine wave chorus shimmer (+/- 3 cents) + celestial high octave chime + 4s ring
-        decayFactor *= 1.45; // Long celestial ring
-        const f1A = baseFreq * 1.0025; // detuned ringer A
-        const f1B = baseFreq * 0.9975; // detuned ringer B
-        const f2 = baseFreq * 2.0; // pure octave chime
-        const f3 = baseFreq * 4.0; // celestial sparkle ping
+        // 3. CRYSTAL BELL: Shimmering glass chorus transient settling into pure celestial crystal tone
+        const crystalDecay = Math.max(1.2, Math.min(3.8, decayFactor * 1.3));
+        // Pitch-adaptive detune depth (narrower on treble to prevent harsh high-frequency phase beating)
+        const detuneRatio = Math.max(0.0009, 0.0024 - normalizedRatio * 0.0012);
+        const f1A = baseFreq * (1.0 + detuneRatio);
+        const f1B = baseFreq * (1.0 - detuneRatio);
+        const f2 = baseFreq * 2.0; // Pure octave glass chime
+        const f3 = baseFreq * 4.0; // Celestial sparkle ping
 
-        // Glass Oscillator A
+        // Primary Glass Oscillator (Sustains long celestial ring)
         const oscA = this.ctx.createOscillator();
         const gainA = this.ctx.createGain();
         oscA.type = 'sine';
         oscA.frequency.setValueAtTime(f1A, now);
 
         gainA.gain.setValueAtTime(0.0001, now);
-        gainA.gain.linearRampToValueAtTime(0.38 * velocity, now + 0.002);
-        gainA.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+        gainA.gain.linearRampToValueAtTime(0.42 * velocity, now + 0.002);
+        gainA.gain.exponentialRampToValueAtTime(0.00001, now + crystalDecay);
 
         oscA.connect(gainA);
         gainA.connect(this.musicGain);
 
-        // Glass Oscillator B (Creates beating shimmering chorus)
+        // Secondary Chorus Oscillator (Provides rich shimmering beat on attack, then decays early for CPU & purity)
         const oscB = this.ctx.createOscillator();
         const gainB = this.ctx.createGain();
         oscB.type = 'sine';
         oscB.frequency.setValueAtTime(f1B, now);
 
+        const chorusDecay = Math.min(1.4, crystalDecay * 0.45);
         gainB.gain.setValueAtTime(0.0001, now);
-        gainB.gain.linearRampToValueAtTime(0.38 * velocity, now + 0.002);
-        gainB.gain.exponentialRampToValueAtTime(0.00001, now + decayFactor);
+        gainB.gain.linearRampToValueAtTime(0.32 * velocity, now + 0.002);
+        gainB.gain.exponentialRampToValueAtTime(0.00001, now + chorusDecay);
 
         oscB.connect(gainB);
         gainB.connect(this.musicGain);
@@ -972,23 +975,23 @@ class MusicBoxAudioEngine {
           } catch {}
         };
         oscB.start(now);
-        oscB.stop(now + decayFactor + 0.05);
+        oscB.stop(now + chorusDecay + 0.04);
 
         let osc2: OscillatorNode | null = null;
         let gain2: GainNode | null = null;
         let osc3: OscillatorNode | null = null;
         let gain3: GainNode | null = null;
 
-        // Pure Glass Octave Chime (f2)
+        // Pure Glass Octave Chime (f2) — natural rapid glass damping
         if (f2 < 16000) {
           osc2 = this.ctx.createOscillator();
           gain2 = this.ctx.createGain();
           osc2.type = 'sine';
           osc2.frequency.setValueAtTime(f2, now);
 
-          const f2Decay = decayFactor * 0.75;
+          const f2Decay = Math.min(1.1, crystalDecay * 0.38);
           gain2.gain.setValueAtTime(0.0001, now);
-          gain2.gain.linearRampToValueAtTime(0.20 * velocity, now + 0.001);
+          gain2.gain.linearRampToValueAtTime(0.18 * velocity, now + 0.001);
           gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
 
           osc2.connect(gain2);
@@ -1000,19 +1003,19 @@ class MusicBoxAudioEngine {
             } catch {}
           };
           osc2.start(now);
-          osc2.stop(now + f2Decay + 0.05);
+          osc2.stop(now + f2Decay + 0.04);
         }
 
-        // Sparkle Ping (f3)
+        // High Sparkle Ping (f3)
         if (f3 < 18000 && relativeIndex < totalTines * 0.6) {
           osc3 = this.ctx.createOscillator();
           gain3 = this.ctx.createGain();
           osc3.type = 'sine';
           osc3.frequency.setValueAtTime(f3, now);
 
-          const f3Decay = 0.35;
+          const f3Decay = 0.28;
           gain3.gain.setValueAtTime(0.0001, now);
-          gain3.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.001);
+          gain3.gain.linearRampToValueAtTime(0.12 * velocity, now + 0.001);
           gain3.gain.exponentialRampToValueAtTime(0.00001, now + f3Decay);
 
           osc3.connect(gain3);
@@ -1024,7 +1027,7 @@ class MusicBoxAudioEngine {
             } catch {}
           };
           osc3.start(now);
-          osc3.stop(now + f3Decay + 0.05);
+          osc3.stop(now + f3Decay + 0.04);
         }
 
         const stopper = (stopTime: number) => {
@@ -1058,7 +1061,7 @@ class MusicBoxAudioEngine {
         };
 
         oscA.start(now);
-        oscA.stop(now + decayFactor + 0.05);
+        oscA.stop(now + crystalDecay + 0.05);
 
         // Pure crystal strike click
         this.playPluckClick(now, baseFreq, velocity, 'crystal');
@@ -1323,14 +1326,14 @@ class MusicBoxAudioEngine {
         // Warm thumb pad and wood knock click
         this.playPluckClick(now, baseFreq, velocity, 'kalimba');
       } else if (preset === 'cathedral-bell') {
-        // 7. GRAND CATHEDRAL BELL: Bronze bell carillon with sub-octave hum tone, tierce, and quint
+        // 7. GRAND CATHEDRAL BELL: Authentic bronze carillon with physical register-aware partials & stone decay
         const f1 = baseFreq;
         const fHum = baseFreq * 0.5; // Sub-octave hum tone
         const fTierce = baseFreq * 1.1892; // Minor third (tierce)
         const fQuint = baseFreq * 1.4983; // Perfect fifth (quint)
         const fSuper = baseFreq * 2.756; // Super-octave shimmer
 
-        const bellDecay = Math.max(1.5, decayFactor * 1.35);
+        const bellDecay = Math.max(1.3, Math.min(3.6, decayFactor * 1.2));
 
         // Strike note (Nominal / fundamental)
         const osc1 = this.ctx.createOscillator();
@@ -1345,46 +1348,75 @@ class MusicBoxAudioEngine {
         osc1.connect(gain1);
         gain1.connect(this.musicGain);
 
-        // Deep hum tone (blooms slightly after strike and sustains long)
-        const oscHum = this.ctx.createOscillator();
-        const gainHum = this.ctx.createGain();
-        oscHum.type = 'sine';
-        oscHum.frequency.setValueAtTime(fHum, now);
+        // Deep Hum Tone: In real bell acoustics, sub-octave hum is prominent only on bass/tenor bells (< 1100 Hz)
+        let oscHum: OscillatorNode | null = null;
+        let gainHum: GainNode | null = null;
+        let humDecay = 0;
+        if (baseFreq < 1100 && fHum >= 50) {
+          oscHum = this.ctx.createOscillator();
+          gainHum = this.ctx.createGain();
+          oscHum.type = 'sine';
+          oscHum.frequency.setValueAtTime(fHum, now);
 
-        const humDecay = bellDecay * 1.4;
-        gainHum.gain.setValueAtTime(0.0001, now);
-        gainHum.gain.linearRampToValueAtTime(0.28 * velocity, now + 0.015);
-        gainHum.gain.exponentialRampToValueAtTime(0.00001, now + humDecay);
+          humDecay = Math.min(2.8, bellDecay * 1.15);
+          gainHum.gain.setValueAtTime(0.0001, now);
+          gainHum.gain.linearRampToValueAtTime(0.26 * velocity, now + 0.015);
+          gainHum.gain.exponentialRampToValueAtTime(0.00001, now + humDecay);
 
-        oscHum.connect(gainHum);
-        gainHum.connect(this.musicGain);
+          oscHum.connect(gainHum);
+          gainHum.connect(this.musicGain);
+          oscHum.onended = () => {
+            try {
+              oscHum?.disconnect();
+              gainHum?.disconnect();
+            } catch {}
+          };
+          oscHum.start(now);
+          oscHum.stop(now + humDecay + 0.04);
+        }
 
-        // Tierce & Quint partials
+        // Tierce & Quint partials — damped naturally with register to reduce polyphonic clutter
+        const tierceDecay = Math.max(0.35, Math.min(1.4, bellDecay * (0.55 - normalizedRatio * 0.2)));
         const oscTierce = this.ctx.createOscillator();
         const gainTierce = this.ctx.createGain();
         oscTierce.type = 'sine';
         oscTierce.frequency.setValueAtTime(fTierce, now);
 
-        const tierceDecay = bellDecay * 0.65;
         gainTierce.gain.setValueAtTime(0.0001, now);
         gainTierce.gain.linearRampToValueAtTime(0.18 * velocity, now + 0.002);
         gainTierce.gain.exponentialRampToValueAtTime(0.00001, now + tierceDecay);
 
         oscTierce.connect(gainTierce);
         gainTierce.connect(this.musicGain);
+        oscTierce.onended = () => {
+          try {
+            oscTierce.disconnect();
+            gainTierce.disconnect();
+          } catch {}
+        };
+        oscTierce.start(now);
+        oscTierce.stop(now + tierceDecay + 0.04);
 
+        const quintDecay = Math.max(0.30, Math.min(1.1, bellDecay * (0.45 - normalizedRatio * 0.2)));
         const oscQuint = this.ctx.createOscillator();
         const gainQuint = this.ctx.createGain();
         oscQuint.type = 'sine';
         oscQuint.frequency.setValueAtTime(fQuint, now);
 
-        const quintDecay = bellDecay * 0.55;
         gainQuint.gain.setValueAtTime(0.0001, now);
         gainQuint.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.002);
         gainQuint.gain.exponentialRampToValueAtTime(0.00001, now + quintDecay);
 
         oscQuint.connect(gainQuint);
         gainQuint.connect(this.musicGain);
+        oscQuint.onended = () => {
+          try {
+            oscQuint.disconnect();
+            gainQuint.disconnect();
+          } catch {}
+        };
+        oscQuint.start(now);
+        oscQuint.stop(now + quintDecay + 0.04);
 
         // High shimmer
         let oscSuper: OscillatorNode | null = null;
@@ -1395,7 +1427,7 @@ class MusicBoxAudioEngine {
           oscSuper.type = 'sine';
           oscSuper.frequency.setValueAtTime(fSuper, now);
 
-          const superDecay = 0.40;
+          const superDecay = 0.35;
           gainSuper.gain.setValueAtTime(0.0001, now);
           gainSuper.gain.linearRampToValueAtTime(0.08 * velocity, now + 0.001);
           gainSuper.gain.exponentialRampToValueAtTime(0.00001, now + superDecay);
@@ -1418,9 +1450,11 @@ class MusicBoxAudioEngine {
             gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
             osc1.stop(stopTime + 0.015);
 
-            gainHum.gain.cancelScheduledValues(stopTime);
-            gainHum.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
-            oscHum.stop(stopTime + 0.015);
+            if (oscHum && gainHum) {
+              gainHum.gain.cancelScheduledValues(stopTime);
+              gainHum.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+              oscHum.stop(stopTime + 0.015);
+            }
 
             gainTierce.gain.cancelScheduledValues(stopTime);
             gainTierce.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
@@ -1444,24 +1478,11 @@ class MusicBoxAudioEngine {
           try {
             osc1.disconnect();
             gain1.disconnect();
-            oscHum.disconnect();
-            gainHum.disconnect();
-            oscTierce.disconnect();
-            gainTierce.disconnect();
-            oscQuint.disconnect();
-            gainQuint.disconnect();
           } catch {}
         };
 
         osc1.start(now);
-        oscHum.start(now);
-        oscTierce.start(now);
-        oscQuint.start(now);
-
         osc1.stop(now + bellDecay + 0.05);
-        oscHum.stop(now + humDecay + 0.05);
-        oscTierce.stop(now + tierceDecay + 0.05);
-        oscQuint.stop(now + quintDecay + 0.05);
 
         // Heavy bronze clapper impact click
         this.playPluckClick(now, baseFreq, velocity, 'cathedral');
