@@ -340,11 +340,11 @@ class MusicBoxAudioEngine {
         left[i] = antNoiseL * env * 0.7;
         right[i] = antNoiseR * env * 0.7;
       } else if (preset === 'retro-8bit') {
-        const blip = (Math.random() > 0.5 ? 1 : -1) * 0.25;
-        const cabL = (Math.random() * 2 - 1) * 0.35 + blip;
-        const cabR = (Math.random() * 2 - 1) * 0.35 - blip;
-        left[i] = cabL * env * 0.5;
-        right[i] = cabR * env * 0.5;
+        const blip = (Math.random() > 0.5 ? 1 : -1) * 0.15;
+        const cabL = (Math.random() * 2 - 1) * 0.25 + blip;
+        const cabR = (Math.random() * 2 - 1) * 0.25 - blip;
+        left[i] = cabL * env * 0.35;
+        right[i] = cabR * env * 0.35;
       }
     }
 
@@ -460,22 +460,23 @@ class MusicBoxAudioEngine {
 
       case 'retro-8bit':
         // Option 5: 8-Bit Retro Arcade / Chiptune NES & Game Boy PSG Sound Engine
+        // Warm, mellow retro gaming tones with softened square wave edges and gentle cabinet resonance
         this.chamberFilter.type = 'peaking';
-        this.chamberFilter.frequency.setTargetAtTime(1200, now, 0.03);
-        this.chamberFilter.gain.setTargetAtTime(4.5 * depth, now, 0.03);
-        this.chamberFilter.Q.setTargetAtTime(1.4, now, 0.03);
+        this.chamberFilter.frequency.setTargetAtTime(800, now, 0.03);
+        this.chamberFilter.gain.setTargetAtTime(2.0 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.0, now, 0.03);
 
         this.chamberResonanceBoost.type = 'peaking';
-        this.chamberResonanceBoost.frequency.setTargetAtTime(2800, now, 0.03);
-        this.chamberResonanceBoost.gain.setTargetAtTime(3.0 * depth, now, 0.03);
-        this.chamberResonanceBoost.Q.setTargetAtTime(1.2, now, 0.03);
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1800, now, 0.03);
+        this.chamberResonanceBoost.gain.setTargetAtTime(1.2 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(0.9, now, 0.03);
 
         this.chamberToneFilter.type = 'lowpass';
-        this.chamberToneFilter.frequency.setTargetAtTime(4600, now, 0.03);
+        this.chamberToneFilter.frequency.setTargetAtTime(3200, now, 0.03);
         this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.03);
 
-        this.dryGain.gain.setTargetAtTime(0.92, now, 0.03);
-        this.wetGain.gain.setTargetAtTime(0.18 * this.chamberReverbAmount, now, 0.03);
+        this.dryGain.gain.setTargetAtTime(0.72, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.26 * this.chamberReverbAmount, now, 0.03);
         break;
     }
   }
@@ -499,8 +500,8 @@ class MusicBoxAudioEngine {
       this.chamberFilter.gain.setTargetAtTime(5.5 * currentDepth, now, 0.04);
       this.chamberResonanceBoost.gain.setTargetAtTime(3.5 * currentDepth, now, 0.04);
     } else if (this.currentPreset === 'retro-8bit') {
-      this.chamberFilter.gain.setTargetAtTime(4.5 * currentDepth, now, 0.04);
-      this.chamberResonanceBoost.gain.setTargetAtTime(3.0 * currentDepth, now, 0.04);
+      this.chamberFilter.gain.setTargetAtTime(2.0 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(1.2 * currentDepth, now, 0.04);
     }
   }
 
@@ -517,7 +518,7 @@ class MusicBoxAudioEngine {
         : this.currentPreset === 'crystal-bell'
         ? 0.70
         : this.currentPreset === 'retro-8bit'
-        ? 0.18
+        ? 0.26
         : 0.42;
 
     this.wetGain.gain.setTargetAtTime(baseWet * this.chamberReverbAmount, now, 0.04);
@@ -532,12 +533,12 @@ class MusicBoxAudioEngine {
 
     const now = this.getAudioTime();
     if (this.currentPreset === 'retro-8bit') {
-      // Classic 8-bit game victory / coin fanfare arpeggio
-      this.playTine(0, 0.85, now);
-      this.playTine(4, 0.85, now + 0.08);
-      this.playTine(7, 0.90, now + 0.16);
-      this.playTine(12, 0.95, now + 0.24);
-      this.playTine(16, 1.0, now + 0.32);
+      // Classic 8-bit game victory / coin fanfare arpeggio (gentle velocity)
+      this.playTine(0, 0.70, now);
+      this.playTine(4, 0.70, now + 0.08);
+      this.playTine(7, 0.75, now + 0.16);
+      this.playTine(12, 0.80, now + 0.24);
+      this.playTine(16, 0.85, now + 0.32);
     } else {
       // Distinct audition arpeggio pattern (C5, G5, C6, E6, G6)
       this.playTine(0, 0.85, now);
@@ -1024,7 +1025,7 @@ class MusicBoxAudioEngine {
         this.playPluckClick(now, baseFreq, velocity, 'vintage');
       } else if (preset === 'retro-8bit') {
         // 5. 8-BIT RETRO ARCADE: Programmable Sound Generator (PSG) square / pulse wave synthesis
-        // Authentic NES/Game Boy pure square wave notes with instant, clean pitch and zero chirp
+        // Mellow, nostalgic chiptune synthesis with de-clicked envelope, gentle overtone balance, and warm retro tone
         const f1 = baseFreq;
         const f2 = baseFreq * 2.0; // Octave harmonic pulse
 
@@ -1035,10 +1036,10 @@ class MusicBoxAudioEngine {
         // Pure, stable pitch from note onset — no pitch chirp or frequency ramp
         osc1.frequency.setValueAtTime(f1, now);
 
-        // Snappy, clean 8-bit chiptune envelope with smooth 3ms de-clicked attack
-        const retroDecay = Math.max(0.28, Math.min(1.2, decayFactor * 0.55));
+        // Softer, de-clicked 8-bit chiptune envelope with 7ms smooth attack
+        const retroDecay = Math.max(0.32, Math.min(1.4, decayFactor * 0.65));
         gain1.gain.setValueAtTime(0.0001, now);
-        gain1.gain.linearRampToValueAtTime(0.48 * velocity, now + 0.003);
+        gain1.gain.linearRampToValueAtTime(0.28 * velocity, now + 0.007);
         gain1.gain.exponentialRampToValueAtTime(0.00001, now + retroDecay);
 
         osc1.connect(gain1);
@@ -1047,16 +1048,16 @@ class MusicBoxAudioEngine {
         let osc2: OscillatorNode | null = null;
         let gain2: GainNode | null = null;
 
-        // Subtle secondary pulse harmonic for rich chiptune warmth
-        if (f2 < 12000) {
+        // Subtle secondary pulse harmonic for rich, gentle chiptune warmth
+        if (f2 < 10000) {
           osc2 = this.ctx.createOscillator();
           gain2 = this.ctx.createGain();
           osc2.type = 'square';
           osc2.frequency.setValueAtTime(f2, now);
 
-          const f2Decay = retroDecay * 0.40;
+          const f2Decay = retroDecay * 0.35;
           gain2.gain.setValueAtTime(0.0001, now);
-          gain2.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.003);
+          gain2.gain.linearRampToValueAtTime(0.045 * velocity, now + 0.007);
           gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
 
           osc2.connect(gain2);
@@ -1074,12 +1075,12 @@ class MusicBoxAudioEngine {
         const stopper = (stopTime: number) => {
           try {
             gain1.gain.cancelScheduledValues(stopTime);
-            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.006);
-            osc1.stop(stopTime + 0.01);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc1.stop(stopTime + 0.012);
             if (osc2 && gain2) {
               gain2.gain.cancelScheduledValues(stopTime);
-              gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.006);
-              osc2.stop(stopTime + 0.01);
+              gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc2.stop(stopTime + 0.012);
             }
           } catch {}
         };
@@ -1094,7 +1095,7 @@ class MusicBoxAudioEngine {
         };
 
         osc1.start(now);
-        osc1.stop(now + retroDecay + 0.03);
+        osc1.stop(now + retroDecay + 0.04);
       }
     } catch (e) {
       console.warn('playFrequency error:', e);
@@ -1133,9 +1134,9 @@ class MusicBoxAudioEngine {
         clickVol = 0.16 * velocity;
       } else if (material === 'chiptune') {
         clickDuration = 0.008;
-        filterFreq = Math.min(baseFreq * 3.5, 6000); // Snappy 8-bit blip noise
-        filterQ = 4.0;
-        clickVol = 0.15 * velocity;
+        filterFreq = Math.min(baseFreq * 2.5, 4500); // Gentle 8-bit blip noise
+        filterQ = 3.0;
+        clickVol = 0.08 * velocity;
       }
 
       const t = Math.max(time, this.ctx.currentTime);

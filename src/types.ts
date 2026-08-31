@@ -354,7 +354,7 @@ export const SOUND_CHAMBER_PRESETS: Record<SoundChamberPreset, SoundChamberInfo>
     subtitle: 'NES & Game Boy 8-Bit Chiptune Engine',
     material: 'Programmable Sound Generator (PSG) & Pulse Wave Synthesizer',
     harmonicProfile: 'Pure 50%/25% pulse waves with clean square-wave harmonics',
-    resonanceDescription: 'Crisp nostalgic 8-bit arcade synthesizer with authentic square-wave harmonics, snappy micro-envelope decay, and retro gaming warmth.',
+    resonanceDescription: 'Soft, mellow nostalgic 8-bit arcade synthesizer with warm square-wave harmonics, de-clicked gentle envelope, and vintage gaming resonance.',
     waveformType: 'retro-square',
     color: '#10b981',
     accentColor: '#34d399',
