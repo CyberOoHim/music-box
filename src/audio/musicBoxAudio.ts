@@ -18,8 +18,7 @@ class MusicBoxAudioEngine {
   private chamberToneFilter: BiquadFilterNode | null = null;
   private chamberResonanceBoost: BiquadFilterNode | null = null;
   private vintageWaveShaper: WaveShaperNode | null = null;
-  private chamberConvolvers: Partial<Record<SoundChamberPreset, ConvolverNode>> = {};
-  private chamberConvolverGains: Partial<Record<SoundChamberPreset, GainNode>> = {};
+  private chamberConvolver: ConvolverNode | null = null;
   private dryGain: GainNode | null = null;
   private wetGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
@@ -56,9 +55,9 @@ class MusicBoxAudioEngine {
   private impulseCache: Map<SoundChamberPreset, AudioBuffer> = new Map();
   private auditionTimeouts: number[] = [];
   private idleSleepTimer: number | null = null;
+  private activeVoiceStoppers: Set<(time: number) => void> = new Set();
 
   // State tracking
-  private activeNatureIntervals: number[] = [];
   public currentPreset: SoundChamberPreset = 'gold-sankyo';
   public chamberResonanceDepth = 1.0; // 0 to 1.5
   public chamberReverbAmount = 1.0; // 0 to 1.5
@@ -157,20 +156,15 @@ class MusicBoxAudioEngine {
           if (impulseBuf) {
             this.impulseCache.set(preset, impulseBuf);
           }
-
-          const conv = this.ctx.createConvolver();
-          if (impulseBuf) {
-            conv.buffer = impulseBuf;
-          }
-          conv.normalize = true;
-
-          const convGain = this.ctx.createGain();
-          // Initially active only for current preset
-          convGain.gain.setValueAtTime(preset === this.currentPreset ? 1.0 : 0.0, this.ctx.currentTime);
-
-          this.chamberConvolvers[preset] = conv;
-          this.chamberConvolverGains[preset] = convGain;
         }
+
+        // Single ConvolverNode — buffer is swapped when preset changes
+        this.chamberConvolver = this.ctx.createConvolver();
+        const currentImpulse = this.impulseCache.get(this.currentPreset);
+        if (currentImpulse) {
+          this.chamberConvolver.buffer = currentImpulse;
+        }
+        this.chamberConvolver.normalize = true;
 
         // Routing topology:
         // musicGain -> chamberFilter -> chamberResonanceBoost -> chamberToneFilter -> vintageWaveShaper
@@ -185,15 +179,9 @@ class MusicBoxAudioEngine {
         this.vintageWaveShaper.connect(this.dryGain);
         this.dryGain.connect(this.masterGain);
 
-        for (const preset of presets) {
-          const conv = this.chamberConvolvers[preset];
-          const convGain = this.chamberConvolverGains[preset];
-          if (conv && convGain) {
-            this.vintageWaveShaper.connect(conv);
-            conv.connect(convGain);
-            convGain.connect(this.wetGain);
-          }
-        }
+        // Single convolver wet path
+        this.vintageWaveShaper.connect(this.chamberConvolver);
+        this.chamberConvolver.connect(this.wetGain);
         this.wetGain.connect(this.masterGain);
 
         // Mechanical gear hum & governor click generator
@@ -242,7 +230,7 @@ class MusicBoxAudioEngine {
       if (!isNaturePlaying && !this.isMechanicalHumActive && this.ctx && this.ctx.state === 'running') {
         this.ctx.suspend().catch(() => {});
       }
-    }, 3800);
+    }, 8500);
   }
 
   // Create subtle analog saturation curve for vintage warmth
@@ -365,22 +353,11 @@ class MusicBoxAudioEngine {
     const now = this.ctx.currentTime;
     const depth = this.chamberResonanceDepth;
 
-    // Crossfade the 4 dedicated convolver gains smoothly (never mutate Convolver buffers!)
-    const allPresets: SoundChamberPreset[] = [
-      'gold-sankyo',
-      'wooden-box',
-      'crystal-bell',
-      'vintage-antique',
-    ];
-    for (const p of allPresets) {
-      const gNode = this.chamberConvolverGains[p];
-      if (gNode) {
-        try {
-          gNode.gain.cancelScheduledValues(now);
-          gNode.gain.setTargetAtTime(p === preset ? 1.0 : 0.0, now, 0.02);
-        } catch {
-          // ignore
-        }
+    // Swap the single convolver's impulse response buffer
+    if (this.chamberConvolver) {
+      const newImpulse = this.impulseCache.get(preset);
+      if (newImpulse) {
+        this.chamberConvolver.buffer = newImpulse;
       }
     }
 
@@ -513,16 +490,13 @@ class MusicBoxAudioEngine {
     }
     if (!this.ctx) return;
 
-    // Clear any previous running audition notes to prevent note stacking
-    this.auditionTimeouts.forEach((id) => clearTimeout(id));
-    this.auditionTimeouts = [];
-
     // Distinct audition arpeggio pattern (C5, G5, C6, E6, G6)
-    this.playTine(0, 0.85); // C5
-    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(5, 0.80), 120));
-    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(8, 0.85), 240));
-    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(10, 0.90), 360));
-    this.auditionTimeouts.push(window.setTimeout(() => this.playTine(13, 0.95), 480));
+    const now = this.getAudioTime();
+    this.playTine(0, 0.85, now);
+    this.playTine(5, 0.80, now + 0.12);
+    this.playTine(8, 0.85, now + 0.24);
+    this.playTine(10, 0.90, now + 0.36);
+    this.playTine(13, 0.95, now + 0.48);
   }
 
   // Current AudioContext timestamp
@@ -594,13 +568,16 @@ class MusicBoxAudioEngine {
 
         osc1.connect(gain1);
         gain1.connect(this.musicGain);
-        osc1.start(now);
-        osc1.stop(now + decayFactor + 0.05);
+
+        let osc2: OscillatorNode | null = null;
+        let gain2: GainNode | null = null;
+        let osc3: OscillatorNode | null = null;
+        let gain3: GainNode | null = null;
 
         // Inharmonic metallic bell ring (f2)
         if (f2 < 18000) {
-          const osc2 = this.ctx.createOscillator();
-          const gain2 = this.ctx.createGain();
+          osc2 = this.ctx.createOscillator();
+          gain2 = this.ctx.createGain();
           osc2.type = 'sine';
           osc2.frequency.setValueAtTime(f2, now);
 
@@ -611,14 +588,20 @@ class MusicBoxAudioEngine {
 
           osc2.connect(gain2);
           gain2.connect(this.musicGain);
+          osc2.onended = () => {
+            try {
+              osc2?.disconnect();
+              gain2?.disconnect();
+            } catch {}
+          };
           osc2.start(now);
           osc2.stop(now + f2Decay + 0.05);
         }
 
         // High shimmer (f3)
         if (f3 < 19000 && relativeIndex < totalTines * 0.7) {
-          const osc3 = this.ctx.createOscillator();
-          const gain3 = this.ctx.createGain();
+          osc3 = this.ctx.createOscillator();
+          gain3 = this.ctx.createGain();
           osc3.type = 'triangle';
           osc3.frequency.setValueAtTime(f3, now);
 
@@ -629,9 +612,45 @@ class MusicBoxAudioEngine {
 
           osc3.connect(gain3);
           gain3.connect(this.musicGain);
+          osc3.onended = () => {
+            try {
+              osc3?.disconnect();
+              gain3?.disconnect();
+            } catch {}
+          };
           osc3.start(now);
           osc3.stop(now + f3Decay + 0.02);
         }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc1.stop(stopTime + 0.01);
+            if (osc2 && gain2) {
+              gain2.gain.cancelScheduledValues(stopTime);
+              gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc2.stop(stopTime + 0.01);
+            }
+            if (osc3 && gain3) {
+              gain3.gain.cancelScheduledValues(stopTime);
+              gain3.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc3.stop(stopTime + 0.01);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+          } catch {}
+        };
+
+        osc1.start(now);
+        osc1.stop(now + decayFactor + 0.05);
 
         // Sharp metallic click
         this.playPluckClick(now, baseFreq, velocity, 'metallic');
@@ -655,8 +674,6 @@ class MusicBoxAudioEngine {
 
         osc1.connect(gain1);
         gain1.connect(this.musicGain);
-        osc1.start(now);
-        osc1.stop(now + decayFactor + 0.05);
 
         // Warm 2nd harmonic body resonance
         const osc2 = this.ctx.createOscillator();
@@ -671,13 +688,22 @@ class MusicBoxAudioEngine {
 
         osc2.connect(gain2);
         gain2.connect(this.musicGain);
+        osc2.onended = () => {
+          try {
+            osc2.disconnect();
+            gain2.disconnect();
+          } catch {}
+        };
         osc2.start(now);
         osc2.stop(now + f2Decay + 0.05);
 
+        let osc3: OscillatorNode | null = null;
+        let gain3: GainNode | null = null;
+
         // Subtle 3rd harmonic woody color
         if (f3 < 12000) {
-          const osc3 = this.ctx.createOscillator();
-          const gain3 = this.ctx.createGain();
+          osc3 = this.ctx.createOscillator();
+          gain3 = this.ctx.createGain();
           osc3.type = 'triangle';
           osc3.frequency.setValueAtTime(f3, now);
 
@@ -688,9 +714,43 @@ class MusicBoxAudioEngine {
 
           osc3.connect(gain3);
           gain3.connect(this.musicGain);
+          osc3.onended = () => {
+            try {
+              osc3?.disconnect();
+              gain3?.disconnect();
+            } catch {}
+          };
           osc3.start(now);
           osc3.stop(now + f3Decay + 0.05);
         }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc1.stop(stopTime + 0.01);
+            gain2.gain.cancelScheduledValues(stopTime);
+            gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc2.stop(stopTime + 0.01);
+            if (osc3 && gain3) {
+              gain3.gain.cancelScheduledValues(stopTime);
+              gain3.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc3.stop(stopTime + 0.01);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+          } catch {}
+        };
+
+        osc1.start(now);
+        osc1.stop(now + decayFactor + 0.05);
 
         // Softened wooden thud click
         this.playPluckClick(now, baseFreq, velocity, 'wooden');
@@ -715,8 +775,6 @@ class MusicBoxAudioEngine {
 
         oscA.connect(gainA);
         gainA.connect(this.musicGain);
-        oscA.start(now);
-        oscA.stop(now + decayFactor + 0.05);
 
         // Glass Oscillator B (Creates beating shimmering chorus)
         const oscB = this.ctx.createOscillator();
@@ -730,13 +788,24 @@ class MusicBoxAudioEngine {
 
         oscB.connect(gainB);
         gainB.connect(this.musicGain);
+        oscB.onended = () => {
+          try {
+            oscB.disconnect();
+            gainB.disconnect();
+          } catch {}
+        };
         oscB.start(now);
         oscB.stop(now + decayFactor + 0.05);
 
+        let osc2: OscillatorNode | null = null;
+        let gain2: GainNode | null = null;
+        let osc3: OscillatorNode | null = null;
+        let gain3: GainNode | null = null;
+
         // Pure Glass Octave Chime (f2)
         if (f2 < 16000) {
-          const osc2 = this.ctx.createOscillator();
-          const gain2 = this.ctx.createGain();
+          osc2 = this.ctx.createOscillator();
+          gain2 = this.ctx.createGain();
           osc2.type = 'sine';
           osc2.frequency.setValueAtTime(f2, now);
 
@@ -747,14 +816,20 @@ class MusicBoxAudioEngine {
 
           osc2.connect(gain2);
           gain2.connect(this.musicGain);
+          osc2.onended = () => {
+            try {
+              osc2?.disconnect();
+              gain2?.disconnect();
+            } catch {}
+          };
           osc2.start(now);
           osc2.stop(now + f2Decay + 0.05);
         }
 
         // Sparkle Ping (f3)
         if (f3 < 18000 && relativeIndex < totalTines * 0.6) {
-          const osc3 = this.ctx.createOscillator();
-          const gain3 = this.ctx.createGain();
+          osc3 = this.ctx.createOscillator();
+          gain3 = this.ctx.createGain();
           osc3.type = 'sine';
           osc3.frequency.setValueAtTime(f3, now);
 
@@ -765,9 +840,48 @@ class MusicBoxAudioEngine {
 
           osc3.connect(gain3);
           gain3.connect(this.musicGain);
+          osc3.onended = () => {
+            try {
+              osc3?.disconnect();
+              gain3?.disconnect();
+            } catch {}
+          };
           osc3.start(now);
           osc3.stop(now + f3Decay + 0.05);
         }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gainA.gain.cancelScheduledValues(stopTime);
+            gainA.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            oscA.stop(stopTime + 0.01);
+            gainB.gain.cancelScheduledValues(stopTime);
+            gainB.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            oscB.stop(stopTime + 0.01);
+            if (osc2 && gain2) {
+              gain2.gain.cancelScheduledValues(stopTime);
+              gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc2.stop(stopTime + 0.01);
+            }
+            if (osc3 && gain3) {
+              gain3.gain.cancelScheduledValues(stopTime);
+              gain3.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc3.stop(stopTime + 0.01);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        oscA.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            oscA.disconnect();
+            gainA.disconnect();
+          } catch {}
+        };
+
+        oscA.start(now);
+        oscA.stop(now + decayFactor + 0.05);
 
         // Pure crystal strike click
         this.playPluckClick(now, baseFreq, velocity, 'crystal');
@@ -799,15 +913,13 @@ class MusicBoxAudioEngine {
         osc1.connect(gain1);
         gain1.connect(this.musicGain);
 
-        lfo.start(now);
-        osc1.start(now);
-        lfo.stop(now + decayFactor + 0.05);
-        osc1.stop(now + decayFactor + 0.05);
+        let osc2: OscillatorNode | null = null;
+        let gain2: GainNode | null = null;
 
         // Mellow vintage overtone (f2)
         if (f2 < 16000) {
-          const osc2 = this.ctx.createOscillator();
-          const gain2 = this.ctx.createGain();
+          osc2 = this.ctx.createOscillator();
+          gain2 = this.ctx.createGain();
           osc2.type = 'triangle';
           osc2.frequency.setValueAtTime(f2, now);
           lfoGain.connect(osc2.frequency);
@@ -819,9 +931,45 @@ class MusicBoxAudioEngine {
 
           osc2.connect(gain2);
           gain2.connect(this.musicGain);
+          osc2.onended = () => {
+            try {
+              osc2?.disconnect();
+              gain2?.disconnect();
+            } catch {}
+          };
           osc2.start(now);
           osc2.stop(now + f2Decay + 0.05);
         }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc1.stop(stopTime + 0.01);
+            lfo.stop(stopTime + 0.01);
+            if (osc2 && gain2) {
+              gain2.gain.cancelScheduledValues(stopTime);
+              gain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              osc2.stop(stopTime + 0.01);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+            lfo.disconnect();
+            lfoGain.disconnect();
+          } catch {}
+        };
+
+        lfo.start(now);
+        osc1.start(now);
+        lfo.stop(now + decayFactor + 0.05);
+        osc1.stop(now + decayFactor + 0.05);
 
         // Vintage lead weight click
         this.playPluckClick(now, baseFreq, velocity, 'vintage');
@@ -1517,6 +1665,17 @@ class MusicBoxAudioEngine {
 
     if (!this.ctx || !this.musicGain) return;
     const now = this.ctx.currentTime;
+
+    // Explicitly stop all actively ringing voice oscillators
+    for (const stopper of this.activeVoiceStoppers) {
+      try {
+        stopper(now);
+      } catch {
+        // ignore
+      }
+    }
+    this.activeVoiceStoppers.clear();
+
     try {
       this.musicGain.gain.cancelScheduledValues(now);
       // Fast 8ms fade down to zero to avoid popping, then restore to ready gain (0.88)
@@ -1536,10 +1695,9 @@ class MusicBoxAudioEngine {
     this.stopWindChimeGenerator();
     this.stopStreamGenerator();
 
-    this.activeNatureIntervals.forEach((id) => clearInterval(id));
-    this.activeNatureIntervals = [];
     this.auditionTimeouts.forEach((id) => clearTimeout(id));
     this.auditionTimeouts = [];
+    this.activeVoiceStoppers.clear();
 
     if (this.idleSleepTimer) {
       clearTimeout(this.idleSleepTimer);

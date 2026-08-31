@@ -26,15 +26,17 @@ interface NatureAmbianceMixerProps {
   onChangeSoundPreset: (preset: SoundChamberPreset) => void;
   masterVolume: number;
   onChangeMasterVolume: (vol: number) => void;
+  isPlaying?: boolean;
 }
 
-export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
+export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.memo(({
   settings,
   onChangeSettings,
   soundPreset,
   onChangeSoundPreset,
   masterVolume,
   onChangeMasterVolume,
+  isPlaying = false,
 }) => {
   const [resonanceDepth, setResonanceDepth] = useState(1.0);
   const [reverbAmount, setReverbAmount] = useState(1.0);
@@ -45,6 +47,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const compareTimeoutsRef = useRef<number[]>([]);
+  const renderTriggerRef = useRef<(() => void) | null>(null);
 
   const activePresetInfo = SOUND_CHAMBER_PRESETS[soundPreset];
 
@@ -59,16 +62,24 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     };
   }, []);
 
+  const wakeVisualizer = () => {
+    if (renderTriggerRef.current) {
+      renderTriggerRef.current();
+    }
+  };
+
   // Handle Chamber Resonance Depth adjustment
   const handleResonanceChange = (val: number) => {
     setResonanceDepth(val);
     musicBoxAudio.setChamberResonance(val);
+    wakeVisualizer();
   };
 
   // Handle Chamber Reverb Amount adjustment
   const handleReverbChange = (val: number) => {
     setReverbAmount(val);
     musicBoxAudio.setChamberReverb(val);
+    wakeVisualizer();
   };
 
   // Handle single preset audition
@@ -78,6 +89,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     setAuditioningPreset(presetKey);
     onChangeSoundPreset(presetKey);
     musicBoxAudio.playAuditionChime(presetKey);
+    wakeVisualizer();
 
     const t = window.setTimeout(() => {
       setAuditioningPreset(null);
@@ -90,6 +102,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     if (isComparingAll) return;
     clearAllCompareTimeouts();
     setIsComparingAll(true);
+    wakeVisualizer();
 
     const presets: SoundChamberPreset[] = [
       'gold-sankyo',
@@ -98,26 +111,23 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
       'vintage-antique',
     ];
 
-    presets.forEach((preset, index) => {
-      const stepTimer = window.setTimeout(() => {
-        onChangeSoundPreset(preset);
-        musicBoxAudio.playAuditionChime(preset);
-        setAuditioningPreset(preset);
+    presets.forEach((presetKey, idx) => {
+      const t = window.setTimeout(() => {
+        setAuditioningPreset(presetKey);
+        onChangeSoundPreset(presetKey);
+        musicBoxAudio.playAuditionChime(presetKey);
+        wakeVisualizer();
 
-        const resetAudition = window.setTimeout(() => {
+        const subT = window.setTimeout(() => {
           setAuditioningPreset(null);
-        }, 1800);
-        compareTimeoutsRef.current.push(resetAudition);
-
-        if (index === presets.length - 1) {
-          const finishTimer = window.setTimeout(() => {
+          if (idx === presets.length - 1) {
             setIsComparingAll(false);
-          }, 2200);
-          compareTimeoutsRef.current.push(finishTimer);
-        }
-      }, index * 2200);
+          }
+        }, 2000);
+        compareTimeoutsRef.current.push(subT);
+      }, idx * 2200);
 
-      compareTimeoutsRef.current.push(stepTimer);
+      compareTimeoutsRef.current.push(t);
     });
   };
 
@@ -127,6 +137,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
       ...settings,
       [key]: val,
     });
+    wakeVisualizer();
   };
 
   // Apply quick atmosphere preset
@@ -138,6 +149,7 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
     stream: number;
   }) => {
     onChangeSettings(preset);
+    wakeVisualizer();
   };
 
   // Real-time Canvas Waveform / Frequency Spectrum Visualizer
@@ -377,16 +389,25 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
       animationFrameRef.current = requestAnimationFrame(render);
     };
 
+    renderTriggerRef.current = () => {
+      silentFrameCount = 0;
+      lastRenderTime = performance.now();
+      if (!animationFrameRef.current) {
+        animationFrameRef.current = requestAnimationFrame(render);
+      }
+    };
+
     animationFrameRef.current = requestAnimationFrame(render);
 
     return () => {
+      renderTriggerRef.current = null;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
     };
-  }, [soundPreset, visualizerMode, activePresetInfo]);
+  }, [soundPreset, visualizerMode, activePresetInfo, isPlaying]);
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 text-[#2d2419]">
@@ -873,4 +894,4 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = ({
       </div>
     </div>
   );
-};
+});

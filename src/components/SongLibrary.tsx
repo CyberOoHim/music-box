@@ -51,13 +51,15 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   // Export current active song or any song to JSON file
   const handleExport = (song: MusicBoxSong, e: React.MouseEvent) => {
     e.stopPropagation();
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(song, null, 2));
+    const blob = new Blob([JSON.stringify(song, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('href', url);
     downloadAnchor.setAttribute('download', `${song.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_musicbox.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai').length;

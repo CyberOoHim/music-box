@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MusicBoxSong } from '../types';
 import { Sparkles, X, Wand2, Music, Loader2, Play, Check, RefreshCw } from 'lucide-react';
 import { generateProceduralMusic } from '../utils/proceduralComposer';
@@ -55,6 +55,15 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   if (!isOpen || !hasAiComposer) return null;
 
@@ -67,6 +76,12 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoading(true);
     setError(null);
     setGeneratedSong(null);
@@ -75,6 +90,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       const response = await fetch('/api/gemini/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           prompt: textToUse,
           style: styleToUse,
@@ -99,7 +115,10 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         return;
       }
       throw new Error('API unavailable, falling back to algorithmic composer');
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       // Graceful algorithmic fallback (e.g., when hosted statically on GitHub Pages)
       const data = generateProceduralMusic(textToUse, styleToUse, totalSteps);
       const newSong: MusicBoxSong = {

@@ -9,7 +9,7 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100kb' }));
 
 // Lazy getter for GoogleGenAI
 let aiClient: GoogleGenAI | null = null;
@@ -119,7 +119,9 @@ app.post('/api/gemini/compose', async (req, res) => {
     });
   }
 
-  const { prompt, style = 'melodic', totalSteps = 64, tempoPreference, combScaleId = 'romantic-flat' } = req.body;
+  const rawSteps = Number(req.body.totalSteps);
+  const totalSteps = Number.isFinite(rawSteps) ? Math.min(Math.max(rawSteps, 16), 256) : 64;
+  const { prompt, style = 'melodic', tempoPreference, combScaleId = 'romantic-flat' } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt is required' });
@@ -216,7 +218,7 @@ Generate a creative title, a short lyrical/poetic note about the tune, a suitabl
             },
             tineIndex: {
               type: Type.INTEGER,
-              description: 'Tine index (0 to 17)',
+              description: `Tine index (0 to ${tineMax})`,
             },
           },
           required: ['step', 'tineIndex'],
@@ -259,7 +261,7 @@ Generate a creative title, a short lyrical/poetic note about the tune, a suitabl
               p.step >= 0 &&
               p.step < totalSteps &&
               p.tineIndex >= 0 &&
-              p.tineIndex <= 17
+              p.tineIndex <= tineMax
             ))
             .map((p: { step: number; tineIndex: number }, idx: number) => ({
               id: `ai-pin-${idx}-${p.step}-${p.tineIndex}`,
@@ -267,11 +269,14 @@ Generate a creative title, a short lyrical/poetic note about the tune, a suitabl
               tineIndex: Math.floor(p.tineIndex),
             }));
 
+          const parsedTempo = Number(parsedData.tempoBpm);
+          const validTempo = Number.isFinite(parsedTempo) ? Math.max(60, Math.min(140, parsedTempo)) : 86;
+
           return res.json({
             title: parsedData.title || 'Whispering Music Box',
             composerNote: parsedData.composerNote || 'A custom melody composed for your mechanical music box.',
             mood: parsedData.mood || 'Serene',
-            tempoBpm: Math.max(60, Math.min(140, parsedData.tempoBpm || 86)),
+            tempoBpm: validTempo,
             totalSteps: totalSteps,
             pins: sanitizedPins,
             modelUsed: model,

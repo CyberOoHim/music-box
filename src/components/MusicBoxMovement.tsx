@@ -39,6 +39,7 @@ interface MusicBoxMovementProps {
   customTines?: TineNote[];
   onPluckTine: (tineIndex: number) => void;
   onTogglePin?: (step: number, tineIndex: number) => void;
+  onSubscribeStep?: (cb: (step: number) => void) => () => void;
 }
 
 type CameraPreset = 'default' | 'top' | 'comb' | 'cylinder' | 'governor' | 'side';
@@ -56,8 +57,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   combScaleId = 'sankyo-18',
   customTines,
   onPluckTine,
+  onSubscribeStep,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const tineTimeoutsRef = useRef<number[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hoveredTine, setHoveredTine] = useState<number | null>(null);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
@@ -83,7 +86,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const pinMeshesGroupRef = useRef<THREE.Group | null>(null);
   const tinesMeshesRef = useRef<THREE.Mesh[]>([]);
   const tineOriginalPosRef = useRef<{ x: number; y: number; z: number }[]>([]);
-  const tineDeflectionRef = useRef<number[]>(new Array(18).fill(0));
+  const tineDeflectionRef = useRef<number[]>(new Array(tinesList.length).fill(0));
   const particleGroupRef = useRef<THREE.Group | null>(null);
 
   const isPlayingRef = useRef(isPlaying);
@@ -95,6 +98,19 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const totalStepsRef = useRef(totalSteps);
   const pinsRef = useRef(pins);
   const crankRpmRef = useRef(crankRpm);
+
+  useEffect(() => {
+    tineDeflectionRef.current = new Array(tinesList.length).fill(0);
+  }, [tinesList.length]);
+
+  useEffect(() => {
+    if (!onSubscribeStep) return;
+    const unsubscribe = onSubscribeStep((step) => {
+      currentStepRef.current = step;
+      needsRenderRef.current = true;
+    });
+    return unsubscribe;
+  }, [onSubscribeStep]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -194,12 +210,18 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     if (!pinGroup) return;
 
     while (pinGroup.children.length > 0) {
-      const child = pinGroup.children[0];
+      const child = pinGroup.children[0] as THREE.Mesh;
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+        else child.material.dispose();
+      }
       pinGroup.remove(child);
     }
 
     const combWidth = 3.35;
-    const tineSpacing = combWidth / 18;
+    const tinesCount = Math.max(1, tinesList.length);
+    const tineSpacing = combWidth / tinesCount;
     const startX = -combWidth / 2 + tineSpacing / 2;
     const cylRadius = 0.96;
 
@@ -229,7 +251,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
       pinGroup.add(dotMesh);
     });
-  }, []);
+  }, [tinesList]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1017,20 +1039,21 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     combGroup.add(createLargeSlottedScrew(-0.95, 2.85));
     combGroup.add(createLargeSlottedScrew(0.85, 2.65));
 
-    // 18 High-Carbon Tuned Spring Steel Tines (Extra long from front clamp z = 2.65 to drum z = -0.44)
+    // High-Carbon Tuned Spring Steel Tines (Extra long from front clamp z = 2.65 to drum z = -0.44)
     const tinesMeshes: THREE.Mesh[] = [];
     const originalPos: { x: number; y: number; z: number }[] = [];
     const combWidth = 3.35;
-    const tineSpacing = combWidth / 18;
+    const tinesCount = Math.max(1, tinesList.length);
+    const tineSpacing = combWidth / tinesCount;
     const startX = -combWidth / 2 + tineSpacing / 2;
 
     // Contact point at drum underside/front: z = -0.44
     // Front clamp root: z = 2.65
     // Total tine length ~ 3.82 to 4.26
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < tinesCount; i++) {
       const tx = startX + i * tineSpacing;
       // In the reference photo, bass tines have a slightly longer free span than treble tines
-      const tineLen = 3.82 + (17 - i) * 0.026;
+      const tineLen = 3.82 + ((tinesCount - 1) - i) * 0.026;
       const tineWidth = tineSpacing * 0.84;
       const tineThick = 0.075;
 
@@ -1126,10 +1149,17 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         dLookAt > 0.005;
 
       if (isCameraInterpolating) {
-        currentCameraAngleRef.current.theta += dTheta * 0.22;
-        currentCameraAngleRef.current.phi += dPhi * 0.22;
-        currentCameraAngleRef.current.distance += dDist * 0.22;
-        currentLookAtRef.current.lerp(targetLookAtRef.current, 0.22);
+        if (Math.abs(dTheta) < 0.0005) currentCameraAngleRef.current.theta = targetCameraAngleRef.current.theta;
+        else currentCameraAngleRef.current.theta += dTheta * 0.22;
+
+        if (Math.abs(dPhi) < 0.0005) currentCameraAngleRef.current.phi = targetCameraAngleRef.current.phi;
+        else currentCameraAngleRef.current.phi += dPhi * 0.22;
+
+        if (Math.abs(dDist) < 0.008) currentCameraAngleRef.current.distance = targetCameraAngleRef.current.distance;
+        else currentCameraAngleRef.current.distance += dDist * 0.22;
+
+        if (dLookAt < 0.008) currentLookAtRef.current.copy(targetLookAtRef.current);
+        else currentLookAtRef.current.lerp(targetLookAtRef.current, 0.22);
       }
 
       if (isAutoRotatingRef.current) {
@@ -1224,6 +1254,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
           mat.opacity *= 0.90;
           if (mat.opacity < 0.04 || p.scale.x < 0.04) {
             particleGroupRef.current.remove(p);
+            if (p.geometry) p.geometry.dispose();
+            if (p.material) mat.dispose();
           }
         }
       }
@@ -1237,6 +1269,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('resize', handleResize);
+      tineTimeoutsRef.current.forEach((t) => clearTimeout(t));
+      tineTimeoutsRef.current = [];
 
       // Deep WebGL Resource Cleanup to prevent VRAM memory leaks on mobile / iPad
       scene.traverse((object) => {
@@ -1280,10 +1314,11 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         const mat = mesh.material as THREE.MeshStandardMaterial;
         mat.color.setHex(0xfce28a);
         mat.emissive.setHex(0x916812);
-        setTimeout(() => {
+        const tId = window.setTimeout(() => {
           mat.color.setHex(0xd8dde2);
           mat.emissive.setHex(0x000000);
         }, 150);
+        tineTimeoutsRef.current.push(tId);
 
         if (particleGroupRef.current) {
           const sparkGeo = new THREE.SphereGeometry(0.08, 8, 8);
@@ -1307,7 +1342,11 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     isDraggingRef.current = true;
     dragDistanceRef.current = 0;
     previousMousePosRef.current = { x: e.clientX, y: e.clientY };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
     needsRenderRef.current = true;
   };
 
@@ -1338,7 +1377,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
     targetCameraAngleRef.current.distance = Math.max(
       5.0,
       Math.min(22.0, targetCameraAngleRef.current.distance + e.deltaY * 0.012)
@@ -1361,9 +1399,12 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
-    const intersects = raycaster.intersectObjects(tinesMeshesRef.current);
+    const intersects = raycaster.intersectObjects(tinesMeshesRef.current, true);
     if (intersects.length > 0) {
-      const hitTine = intersects[0].object.userData.tineIndex;
+      let hitTine = intersects[0].object.userData.tineIndex;
+      if (typeof hitTine !== 'number' && intersects[0].object.parent) {
+        hitTine = intersects[0].object.parent.userData.tineIndex;
+      }
       if (typeof hitTine === 'number') {
         onPluckTine(hitTine);
       }

@@ -70,13 +70,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
   // 1. Export Handlers
   const handleExportSingleSong = (song: MusicBoxSong) => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(song, null, 2));
+    const blob = new Blob([JSON.stringify(song, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('href', url);
     downloadAnchor.setAttribute('download', `${song.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_musicbox.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     showToast(`Exported "${song.title}" as JSON file`, 'success');
   };
 
@@ -89,13 +91,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       songs: songsToExport,
       settings: userSettings,
     };
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(bundle, null, 2));
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('href', url);
     downloadAnchor.setAttribute('download', `musicbox_library_backup_${new Date().toISOString().slice(0, 10)}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     showToast(`Exported ${songsToExport.length} music box songs`, 'success');
   };
 
@@ -118,6 +122,9 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
     try {
       const parsed = JSON.parse(rawText);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Parsed data is not a valid JSON object.');
+      }
       const extractedSongs: MusicBoxSong[] = [];
       let extractedSettings: Partial<UserSettings> | undefined;
 

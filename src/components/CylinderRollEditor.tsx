@@ -20,9 +20,10 @@ interface CylinderRollEditorProps {
   onClearAll: () => void;
   onShiftPins: (deltaSteps: number) => void;
   onPluckTine: (tineIndex: number) => void;
+  onSubscribeStep?: (cb: (step: number) => void) => () => void;
 }
 
-export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
+export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(({
   pins,
   totalSteps,
   currentStep,
@@ -34,8 +35,11 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
   onClearAll,
   onShiftPins,
   onPluckTine,
+  onSubscribeStep,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const cursorRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledStepRef = useRef<number>(-1);
 
   // Active tines list
   const activeTines: TineNote[] = React.useMemo(() => {
@@ -51,16 +55,54 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
     return map;
   }, [pins]);
 
-  // Auto-scroll roll to keep active playback cursor in view if playing
+  // Update cursor position and perform smooth auto-scroll when step changes
+  const updateCursorAndScroll = React.useCallback((step: number) => {
+    if (cursorRef.current) {
+      cursorRef.current.style.transform = `translateX(${step * 24}px)`;
+    }
+
+    if (containerRef.current) {
+      const container = containerRef.current;
+      const stepLeft = step * 24;
+      const scrollLeft = container.scrollLeft;
+      const clientWidth = container.clientWidth;
+
+      // Only scroll if cursor is near or outside visible boundaries
+      if (stepLeft < scrollLeft || stepLeft > scrollLeft + clientWidth - 72) {
+        if (Math.abs(step - lastScrolledStepRef.current) > 2) {
+          lastScrolledStepRef.current = step;
+          container.scrollTo({
+            left: Math.max(0, stepLeft - clientWidth / 3),
+            behavior: 'auto',
+          });
+        }
+      }
+    }
+  }, []);
+
+  // Listen to subscribed step updates if provided
   useEffect(() => {
-    if (!isPlaying || !containerRef.current) return;
-    const stepWidth = 24; // width per step in px
-    const targetScroll = currentStep * stepWidth - containerRef.current.clientWidth / 2;
-    containerRef.current.scrollTo({
-      left: Math.max(0, targetScroll),
-      behavior: 'smooth',
+    if (!onSubscribeStep) return;
+    const unsubscribe = onSubscribeStep((step) => {
+      updateCursorAndScroll(step);
     });
-  }, [currentStep, isPlaying]);
+    return unsubscribe;
+  }, [onSubscribeStep, updateCursorAndScroll]);
+
+  // Sync cursor on direct prop updates
+  useEffect(() => {
+    updateCursorAndScroll(currentStep);
+  }, [currentStep, updateCursorAndScroll]);
+
+  const handleGridClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = (e.target as HTMLElement).closest('[data-step]') as HTMLElement | null;
+    if (!target) return;
+    const step = Number(target.dataset.step);
+    const tine = Number(target.dataset.tine);
+    if (Number.isFinite(step) && Number.isFinite(tine)) {
+      onTogglePin(step, tine);
+    }
+  };
 
   return (
     <div className="w-full max-w-5xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_4px_24px_rgba(67,52,34,0.06)] text-[#2d2419]">
@@ -176,18 +218,18 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
           <div
             className="relative"
             style={{ width: `${totalSteps * 24}px` }}
+            onClick={handleGridClick}
           >
             {/* Step Numbers Header */}
             <div className="h-7 border-b border-[#ded3be] flex bg-[#eae2d3] select-none sticky top-0 z-20">
               {Array.from({ length: totalSteps }).map((_, step) => {
                 const isMeasure = step % 8 === 0;
-                const isCurrent = step === currentStep;
                 return (
                   <div
                     key={step}
                     className={`w-6 shrink-0 flex items-center justify-center text-[9px] font-mono border-r ${
                       isMeasure ? 'border-[#c8bba6] text-[#8a6b3e] font-bold bg-[#e0d6c3]' : 'border-[#ded3be]/60 text-[#8a765e]'
-                    } ${isCurrent ? 'bg-[#433422] text-[#fbf8f2] font-bold' : ''}`}
+                    }`}
                   >
                     {step + 1}
                   </div>
@@ -197,8 +239,9 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
 
             {/* Active Step Cursor Vertical Line */}
             <div
-              className="absolute top-7 bottom-0 w-6 bg-[#bfa175]/25 border-x border-[#bfa175]/80 pointer-events-none z-10 transition-all duration-75"
-              style={{ left: `${currentStep * 24}px` }}
+              ref={cursorRef}
+              className="absolute top-0 bottom-0 left-0 w-6 bg-[#bfa175]/25 border-x border-[#bfa175]/80 pointer-events-none z-10 will-change-transform"
+              style={{ transform: `translateX(${currentStep * 24}px)` }}
             />
 
             {/* Tine Rows */}
@@ -214,13 +257,13 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
                   {Array.from({ length: totalSteps }).map((_, step) => {
                     const hasPin = pinMap.has(`${step}-${tine.index}`);
                     const isMeasure = step % 8 === 0;
-                    const isCurrent = step === currentStep;
 
                     return (
                       <div
                         key={step}
                         id={`pin-cell-${step}-${tine.index}`}
-                        onClick={() => onTogglePin(step, tine.index)}
+                        data-step={step}
+                        data-tine={tine.index}
                         className={`w-6 shrink-0 h-full border-r cursor-pointer flex items-center justify-center transition-colors group relative ${
                           isMeasure ? 'border-[#c8bba6]/70 bg-[#ede5d5]/40' : 'border-[#ded3be]/40 bg-transparent'
                         } hover:bg-[#e8decb]/80`}
@@ -228,10 +271,8 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
                         {/* Pin Circle */}
                         {hasPin && (
                           <div
-                            className={`w-3.5 h-3.5 rounded-full transition-transform ${
-                              isCurrent
-                                ? 'bg-[#eed882] ring-2 ring-[#a68656] shadow-md shadow-[#8a6b3e]/40 scale-125'
-                                : isFlatAccidental
+                            className={`w-3.5 h-3.5 rounded-full ${
+                              isFlatAccidental
                                 ? 'bg-gradient-to-tr from-[#9e5f12] via-[#f2ab35] to-[#ffe082] shadow-sm shadow-[#433422]/30 border border-[#fff2b2]'
                                 : 'bg-gradient-to-tr from-[#946614] via-[#eed882] to-[#946614] shadow-sm shadow-[#433422]/20 border border-[#ffe787]/50'
                             }`}
@@ -272,5 +313,5 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
       </div>
     </div>
   );
-};
+});
 

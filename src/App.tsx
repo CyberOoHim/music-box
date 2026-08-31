@@ -59,7 +59,10 @@ export default function App() {
     try {
       const stored = localStorage.getItem('musicbox_user_settings');
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
       }
     } catch (e) {
       console.warn('Could not read musicbox_user_settings', e);
@@ -72,11 +75,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem('musicbox_saved_songs') || localStorage.getItem('musicbox_custom_songs');
       if (saved) {
-        const parsed: MusicBoxSong[] = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Merge unique by ID
           const defaultIds = new Set(DEFAULT_SONGS.map((s) => s.id));
-          const customOrAi = parsed.filter((s) => !defaultIds.has(s.id));
+          const customOrAi = parsed.filter((s) => s && s.id && !defaultIds.has(s.id));
           return [...DEFAULT_SONGS, ...customOrAi];
         }
       }
@@ -212,6 +215,17 @@ export default function App() {
   const lastStepTimeRef = useRef<number>(0);
   const subStepRef = useRef<number>(0);
 
+  const stepSubscribersRef = useRef<Set<(step: number) => void>>(new Set());
+  const notifyStepSubscribers = useCallback((step: number) => {
+    stepSubscribersRef.current.forEach(cb => cb(step));
+  }, []);
+  const handleSubscribeStep = useCallback((cb: (step: number) => void) => {
+    stepSubscribersRef.current.add(cb);
+    return () => { stepSubscribersRef.current.delete(cb); };
+  }, []);
+
+  const lastTensionSyncRef = useRef(0);
+
   // Synchronize refs
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -236,6 +250,42 @@ export default function App() {
     musicBoxAudio.setMasterVolume(isMuted ? 0 : masterVolume);
   }, [isMuted, masterVolume]);
 
+  const tineTimeoutMapRef = useRef<Map<number, number>>(new Map());
+
+  // Cleanup tine timeouts on unmount
+  useEffect(() => {
+    return () => {
+      tineTimeoutMapRef.current.forEach((tId) => clearTimeout(tId));
+      tineTimeoutMapRef.current.clear();
+    };
+  }, []);
+
+  const triggerTinesVibration = useCallback((tines: number[]) => {
+    tines.forEach((tineIndex) => {
+      const existing = tineTimeoutMapRef.current.get(tineIndex);
+      if (existing) clearTimeout(existing);
+    });
+
+    setActiveTines((prev) => {
+      const next = new Set(prev);
+      tines.forEach((idx) => next.add(idx));
+      return next;
+    });
+
+    tines.forEach((tineIndex) => {
+      const tId = window.setTimeout(() => {
+        tineTimeoutMapRef.current.delete(tineIndex);
+        setActiveTines((prev) => {
+          if (!prev.has(tineIndex)) return prev;
+          const next = new Set(prev);
+          next.delete(tineIndex);
+          return next;
+        });
+      }, 120);
+      tineTimeoutMapRef.current.set(tineIndex, tId);
+    });
+  }, []);
+
   // Handle single tine pluck (visual click, keyboard, or step trigger)
   const handlePluckTine = useCallback(
     async (tineIndex: number) => {
@@ -245,23 +295,9 @@ export default function App() {
       const tinesList = activeScale ? activeScale.tines : ROMANTIC_FLAT_22_TINES;
       
       musicBoxAudio.playTine(tineIndex, 1.0, undefined, tinesList);
-
-      setActiveTines((prev) => {
-        const next = new Set(prev);
-        next.add(tineIndex);
-        return next;
-      });
-
-      // Reset tine vibration after 120ms
-      setTimeout(() => {
-        setActiveTines((prev) => {
-          const next = new Set(prev);
-          next.delete(tineIndex);
-          return next;
-        });
-      }, 120);
+      triggerTinesVibration([tineIndex]);
     },
-    [ensureAudioInitialized]
+    [ensureAudioInitialized, triggerTinesVibration]
   );
 
   // Execute a step and play any pins at this step with flat scale support
@@ -272,9 +308,9 @@ export default function App() {
     const pinsAtStep = song.pins.filter((p) => p.step === step);
 
     if (pinsAtStep.length > 0) {
-      const hitTines = new Set<number>();
+      const hitTinesList: number[] = [];
       pinsAtStep.forEach((pin) => {
-        hitTines.add(pin.tineIndex);
+        hitTinesList.push(pin.tineIndex);
         if (pin.note) {
           musicBoxAudio.playNote(pin.note, 1.0);
         } else {
@@ -282,12 +318,9 @@ export default function App() {
         }
       });
 
-      setActiveTines(hitTines);
-      setTimeout(() => {
-        setActiveTines(new Set());
-      }, 120);
+      triggerTinesVibration(hitTinesList);
     }
-  }, []);
+  }, [triggerTinesVibration]);
 
   // Tab visibility handling: pause non-essential audio and loop when tab is backgrounded
   useEffect(() => {
@@ -312,6 +345,8 @@ export default function App() {
         stepTimerRef.current = null;
       }
       musicBoxAudio.setMechanicalHum(false);
+      setCurrentStep(currentStepRef.current);
+      setSpringTension(springTensionRef.current);
       return;
     }
 
@@ -355,20 +390,20 @@ export default function App() {
           if (playModeRef.current === 'spring') {
             const total = currentSongRef.current.totalSteps;
             const tensionPerStep = 1.0 / (3 * total);
-            setSpringTension((prev) => {
-              const next = Math.max(0, prev - tensionPerStep);
-              springTensionRef.current = next;
-              return next;
-            });
+            springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
           }
 
-          setCurrentStep((prevStep) => {
-            const total = currentSongRef.current.totalSteps;
-            const nextStep = (prevStep + 1) % total;
-            currentStepRef.current = nextStep;
-            executeStep(nextStep);
-            return nextStep;
-          });
+          const total = currentSongRef.current.totalSteps;
+          const nextStep = (currentStepRef.current + 1) % total;
+          currentStepRef.current = nextStep;
+          executeStep(nextStep);
+          notifyStepSubscribers(nextStep);
+
+          if (timestamp - lastTensionSyncRef.current > 500) {
+            lastTensionSyncRef.current = timestamp;
+            setSpringTension(springTensionRef.current);
+            setCurrentStep(currentStepRef.current);
+          }
         }
       }
 
@@ -468,6 +503,8 @@ export default function App() {
       musicBoxAudio.stopAllMusicVoices();
       musicBoxAudio.setMechanicalHum(false, 1.0, true);
       setActiveTines(new Set());
+      setCurrentStep(currentStepRef.current);
+      setSpringTension(springTensionRef.current);
     }
   };
 
@@ -512,8 +549,11 @@ export default function App() {
       subStepRef.current = newPos;
 
       const smoothStep = ((newPos % total) + total) % total;
-      setCurrentStep(smoothStep);
       currentStepRef.current = smoothStep;
+      notifyStepSubscribers(smoothStep);
+      if (currentRpm <= 0) {
+        setCurrentStep(smoothStep);
+      }
 
       const startInt = Math.floor(prevPos);
       const endInt = Math.floor(newPos);
@@ -551,53 +591,61 @@ export default function App() {
   );
 
   // Toggle pin in editor & sync with storage
-  const handleTogglePin = (step: number, tineIndex: number) => {
+  const handleTogglePin = useCallback((step: number, tineIndex: number) => {
     ensureAudioInitialized();
     musicBoxAudio.playTine(tineIndex, 0.8);
 
-    const exists = currentSong.pins.some((p) => p.step === step && p.tineIndex === tineIndex);
-    let newPins: MusicBoxPin[];
+    setCurrentSong((prevSong) => {
+      const exists = prevSong.pins.some((p) => p.step === step && p.tineIndex === tineIndex);
+      const newPins = exists
+        ? prevSong.pins.filter((p) => !(p.step === step && p.tineIndex === tineIndex))
+        : [...prevSong.pins, { step, tineIndex }];
 
-    if (exists) {
-      newPins = currentSong.pins.filter((p) => !(p.step === step && p.tineIndex === tineIndex));
-    } else {
-      newPins = [...currentSong.pins, { step, tineIndex }];
-    }
+      const updatedSong = { ...prevSong, pins: newPins };
 
-    const updatedSong = { ...currentSong, pins: newPins };
-    setCurrentSong(updatedSong);
+      setSongs((prevSongs) => {
+        const updatedSongs = prevSongs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
+        persistCustomSongs(updatedSongs);
+        return updatedSongs;
+      });
 
-    // Update in songs array & sync to localStorage
-    const updatedSongs = songs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
-    setSongs(updatedSongs);
-    persistCustomSongs(updatedSongs);
-  };
+      return updatedSong;
+    });
+  }, [ensureAudioInitialized, persistCustomSongs]);
 
   // Clear all pins
-  const handleClearPins = () => {
-    const updated = { ...currentSong, pins: [] };
-    setCurrentSong(updated);
-    const updatedSongs = songs.map((s) => (s.id === updated.id ? updated : s));
-    setSongs(updatedSongs);
-    persistCustomSongs(updatedSongs);
-  };
+  const handleClearPins = useCallback(() => {
+    setCurrentSong((prevSong) => {
+      const updated = { ...prevSong, pins: [] };
+      setSongs((prevSongs) => {
+        const updatedSongs = prevSongs.map((s) => (s.id === updated.id ? updated : s));
+        persistCustomSongs(updatedSongs);
+        return updatedSongs;
+      });
+      return updated;
+    });
+  }, [persistCustomSongs]);
 
   // Shift pins
-  const handleShiftPins = (delta: number) => {
-    const total = currentSong.totalSteps;
-    const shiftedPins = currentSong.pins.map((p) => ({
-      ...p,
-      step: ((p.step + delta) % total + total) % total,
-    }));
-    const updated = { ...currentSong, pins: shiftedPins };
-    setCurrentSong(updated);
-    const updatedSongs = songs.map((s) => (s.id === updated.id ? updated : s));
-    setSongs(updatedSongs);
-    persistCustomSongs(updatedSongs);
-  };
+  const handleShiftPins = useCallback((delta: number) => {
+    setCurrentSong((prevSong) => {
+      const total = prevSong.totalSteps;
+      const shiftedPins = prevSong.pins.map((p) => ({
+        ...p,
+        step: ((p.step + delta) % total + total) % total,
+      }));
+      const updated = { ...prevSong, pins: shiftedPins };
+      setSongs((prevSongs) => {
+        const updatedSongs = prevSongs.map((s) => (s.id === updated.id ? updated : s));
+        persistCustomSongs(updatedSongs);
+        return updatedSongs;
+      });
+      return updated;
+    });
+  }, [persistCustomSongs]);
 
   // Select song from library
-  const handleSelectSong = (song: MusicBoxSong) => {
+  const handleSelectSong = useCallback((song: MusicBoxSong) => {
     setCurrentSong(song);
     if (song.combScaleId) {
       setCombScaleId(song.combScaleId);
@@ -606,65 +654,73 @@ export default function App() {
     setCurrentStep(0);
     currentStepRef.current = 0;
     subStepRef.current = 0;
-  };
+  }, []);
 
   // Save new / AI-generated song
-  const handleLoadNewSong = (song: MusicBoxSong) => {
-    const newSongList = [song, ...songs.filter((s) => s.id !== song.id)];
-    setSongs(newSongList);
+  const handleLoadNewSong = useCallback((song: MusicBoxSong) => {
+    setSongs((prevSongs) => {
+      const newSongList = [song, ...prevSongs.filter((s) => s.id !== song.id)];
+      persistCustomSongs(newSongList);
+      return newSongList;
+    });
     setCurrentSong(song);
     setTempoBpm(song.tempoBpm || 88);
     setCurrentStep(0);
     currentStepRef.current = 0;
     subStepRef.current = 0;
     setActiveTab('movement');
-    persistCustomSongs(newSongList);
     showToast(`Loaded "${song.title}" into cylinder`, 'success');
-  };
+  }, [persistCustomSongs, showToast]);
 
   // Delete custom song
-  const handleDeleteCustomSong = (songId: string) => {
-    const newSongList = songs.filter((s) => s.id !== songId);
-    setSongs(newSongList);
-    persistCustomSongs(newSongList);
+  const handleDeleteCustomSong = useCallback((songId: string) => {
+    setSongs((prevSongs) => {
+      const newSongList = prevSongs.filter((s) => s.id !== songId);
+      persistCustomSongs(newSongList);
 
-    if (currentSong.id === songId) {
-      const fallback = newSongList[0] || DEFAULT_SONGS[0];
-      setCurrentSong(fallback);
-      setTempoBpm(fallback.tempoBpm || 88);
-    }
+      setCurrentSong((prevCurrent) => {
+        if (prevCurrent.id === songId) {
+          const fallback = newSongList[0] || DEFAULT_SONGS[0];
+          setTempoBpm(fallback.tempoBpm || 88);
+          return fallback;
+        }
+        return prevCurrent;
+      });
+
+      return newSongList;
+    });
     showToast('Deleted melody from library', 'info');
-  };
+  }, [persistCustomSongs, showToast]);
 
   // Batch import songs
-  const handleBatchImportSongs = (importedSongs: MusicBoxSong[], overwrite = false) => {
-    let newSongList: MusicBoxSong[];
-
-    if (overwrite) {
-      newSongList = [...DEFAULT_SONGS, ...importedSongs];
-    } else {
-      const existingIds = new Set(songs.map((s) => s.id));
-      const filteredNew = importedSongs.map((s, idx) => {
-        if (existingIds.has(s.id)) {
-          return { ...s, id: `imported-${Date.now()}-${idx}` };
-        }
-        return s;
-      });
-      newSongList = [...filteredNew, ...songs];
-    }
-
-    setSongs(newSongList);
-    persistCustomSongs(newSongList);
+  const handleBatchImportSongs = useCallback((importedSongs: MusicBoxSong[], overwrite = false) => {
+    setSongs((prevSongs) => {
+      let newSongList: MusicBoxSong[];
+      if (overwrite) {
+        newSongList = [...DEFAULT_SONGS, ...importedSongs];
+      } else {
+        const existingIds = new Set(prevSongs.map((s) => s.id));
+        const filteredNew = importedSongs.map((s, idx) => {
+          if (existingIds.has(s.id)) {
+            return { ...s, id: `imported-${Date.now()}-${idx}` };
+          }
+          return s;
+        });
+        newSongList = [...filteredNew, ...prevSongs];
+      }
+      persistCustomSongs(newSongList);
+      return newSongList;
+    });
 
     if (importedSongs.length > 0) {
       setCurrentSong(importedSongs[0]);
       setTempoBpm(importedSongs[0].tempoBpm || 88);
       setCurrentStep(0);
     }
-  };
+  }, [persistCustomSongs]);
 
   // Apply partial settings from imported bundle
-  const handleApplySettings = async (newSettings: Partial<UserSettings>) => {
+  const handleApplySettings = useCallback(async (newSettings: Partial<UserSettings>) => {
     if (newSettings.soundPreset) {
       setSoundPreset(newSettings.soundPreset);
       musicBoxAudio.applyChamberPreset(newSettings.soundPreset);
@@ -683,10 +739,10 @@ export default function App() {
     if (newSettings.playMode) {
       handleSwitchPlayMode(newSettings.playMode);
     }
-  };
+  }, [handleSwitchPlayMode, isMuted]);
 
   // RESTORE DEFAULTS: 1. Full Factory Reset
-  const handleRestoreAllDefaults = () => {
+  const handleRestoreAllDefaults = useCallback(() => {
     localStorage.removeItem('musicbox_saved_songs');
     localStorage.removeItem('musicbox_custom_songs');
     localStorage.removeItem('musicbox_user_settings');
@@ -707,10 +763,10 @@ export default function App() {
     musicBoxAudio.applyChamberPreset('gold-sankyo');
     musicBoxAudio.updateNatureVolumes(DEFAULT_NATURE_SETTINGS);
     musicBoxAudio.setMasterVolume(0.9);
-  };
+  }, []);
 
   // RESTORE DEFAULTS: 2. Songs Only
-  const handleRestoreSongsDefault = () => {
+  const handleRestoreSongsDefault = useCallback(() => {
     localStorage.removeItem('musicbox_saved_songs');
     localStorage.removeItem('musicbox_custom_songs');
 
@@ -718,10 +774,10 @@ export default function App() {
     setCurrentSong(DEFAULT_SONGS[0]);
     setTempoBpm(DEFAULT_SONGS[0].tempoBpm || 88);
     setCurrentStep(0);
-  };
+  }, []);
 
   // RESTORE DEFAULTS: 3. Settings Only
-  const handleRestoreSettingsDefault = () => {
+  const handleRestoreSettingsDefault = useCallback(() => {
     setSoundPreset('gold-sankyo');
     setNatureSettings(DEFAULT_NATURE_SETTINGS);
     setMasterVolume(0.9);
@@ -732,61 +788,59 @@ export default function App() {
     musicBoxAudio.applyChamberPreset('gold-sankyo');
     musicBoxAudio.updateNatureVolumes(DEFAULT_NATURE_SETTINGS);
     musicBoxAudio.setMasterVolume(0.9);
-  };
+  }, []);
 
   // Volume & Sound preset handlers
-  const handleChangeSoundPreset = async (preset: SoundChamberPreset) => {
+  const handleChangeSoundPreset = useCallback(async (preset: SoundChamberPreset) => {
     setSoundPreset(preset);
     await ensureAudioInitialized();
     musicBoxAudio.applyChamberPreset(preset);
-  };
+  }, [ensureAudioInitialized]);
 
-  const handleChangeNature = async (settings: NatureAmbienceSettings) => {
+  const handleChangeNature = useCallback(async (settings: NatureAmbienceSettings) => {
     setNatureSettings(settings);
     await ensureAudioInitialized();
     musicBoxAudio.updateNatureVolumes(settings);
-  };
+  }, [ensureAudioInitialized]);
 
-  const handleChangeMasterVolume = async (vol: number) => {
+  const handleChangeMasterVolume = useCallback(async (vol: number) => {
     setMasterVolume(vol);
     await ensureAudioInitialized();
     if (!isMuted) {
       musicBoxAudio.setMasterVolume(vol);
     }
-  };
+  }, [ensureAudioInitialized, isMuted]);
 
-  const handleToggleMute = async () => {
+  const handleToggleMute = useCallback(async () => {
     await ensureAudioInitialized();
-    if (isMuted) {
-      setIsMuted(false);
-      musicBoxAudio.setMasterVolume(masterVolume);
-    } else {
-      setIsMuted(true);
-      musicBoxAudio.setMasterVolume(0);
-    }
-  };
+    setIsMuted((prevMuted) => {
+      const nextMuted = !prevMuted;
+      musicBoxAudio.setMasterVolume(nextMuted ? 0 : masterVolume);
+      return nextMuted;
+    });
+  }, [ensureAudioInitialized, masterVolume]);
 
   // Font Zoom Handlers (-/+)
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     setFontZoom((prev) => {
       const next = Math.min(150, prev + 10);
       showToast(`Font Zoom: ${next}%`, 'info');
       return next;
     });
-  };
+  }, [showToast]);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setFontZoom((prev) => {
       const next = Math.max(75, prev - 10);
       showToast(`Font Zoom: ${next}%`, 'info');
       return next;
     });
-  };
+  }, [showToast]);
 
-  const handleZoomReset = () => {
+  const handleZoomReset = useCallback(() => {
     setFontZoom(100);
     showToast('Font Zoom reset to 100%', 'info');
-  };
+  }, [showToast]);
 
   // Total custom or AI melodies count
   const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai').length;
@@ -1092,6 +1146,7 @@ export default function App() {
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
               onPluckTine={handlePluckTine}
+              onSubscribeStep={handleSubscribeStep}
             />
 
             {/* Winding Controls Component */}
@@ -1121,6 +1176,7 @@ export default function App() {
               isPlaying={isPlaying}
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
+              onSubscribeStep={handleSubscribeStep}
               onChangeCombScale={(newScaleId) => {
                 setCombScaleId(newScaleId);
                 const updatedSong: MusicBoxSong = {
@@ -1166,6 +1222,7 @@ export default function App() {
               onChangeSoundPreset={handleChangeSoundPreset}
               masterVolume={masterVolume}
               onChangeMasterVolume={handleChangeMasterVolume}
+              isPlaying={isPlaying}
             />
           </div>
         )}

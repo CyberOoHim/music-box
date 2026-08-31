@@ -44,8 +44,13 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
   onChangeTempoBpm,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [crankAngle, setCrankAngle] = useState(0);
-  const [crankRpm, setCrankRpm] = useState(0);
+
+  // Animation Refs
+  const crankRpmDisplayRef = useRef<HTMLSpanElement | null>(null);
+  const crankBpmDisplayRef = useRef<HTMLDivElement | null>(null);
+  const crankSpeedBarRef = useRef<HTMLDivElement | null>(null);
+  const crankRotorRef = useRef<HTMLDivElement | null>(null);
+  const crankRpmValueRef = useRef(0);
 
   // Physics Simulation Refs
   const crankAngleRef = useRef(0);
@@ -67,16 +72,32 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
   const MAX_DELTA_PER_EVENT = 0.22;
   const DAMPING_COEFFICIENT = 0.935;
 
+  const updateCrankVisuals = useCallback((angle: number, rpm: number) => {
+    crankRpmValueRef.current = rpm;
+    // Update rotation transform directly
+    if (crankRotorRef.current) {
+      crankRotorRef.current.style.transform = `rotate(${angle}rad)`;
+    }
+    // Update RPM text display
+    if (crankRpmDisplayRef.current) {
+      crankRpmDisplayRef.current.textContent = `${rpm} RPM`;
+    }
+    // Update BPM estimate
+    if (crankBpmDisplayRef.current) {
+      const bpm = Math.round(rpm * 1.35);
+      crankBpmDisplayRef.current.textContent = rpm > 0 ? `≈ ${bpm} BPM` : 'Resting';
+    }
+    // Update speed bar width
+    if (crankSpeedBarRef.current) {
+      crankSpeedBarRef.current.style.width = `${Math.min(100, (rpm / 85) * 100)}%`;
+    }
+  }, []);
+
   // Keep callback refs updated
   useEffect(() => {
     onManualCrankAdvanceRef.current = onManualCrankAdvance;
     onWindSpringRef.current = onWindSpring;
   }, [onManualCrankAdvance, onWindSpring]);
-
-  // Keep state refs synchronized
-  useEffect(() => {
-    isDraggingRef.current = isDragging;
-  }, [isDragging]);
 
   // Physics Engine Loop for Flywheel Inertia & Coasting (Crank mode)
   const isLoopRunningRef = useRef(false);
@@ -111,14 +132,13 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
             angularVelocityRef.current = currentVel;
             const delta = currentVel * dtSec;
             crankAngleRef.current += delta;
-            setCrankAngle(crankAngleRef.current);
 
             const rpm = Math.round((currentVel * 60) / (2 * Math.PI));
-            setCrankRpm(rpm);
+            updateCrankVisuals(crankAngleRef.current, rpm);
             onManualCrankAdvanceRef.current?.(delta, rpm);
           } else {
             angularVelocityRef.current = 0;
-            setCrankRpm(0);
+            updateCrankVisuals(crankAngleRef.current, 0);
             onManualCrankAdvanceRef.current?.(0, 0);
             isLoopRunningRef.current = false;
             return;
@@ -137,7 +157,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     setIsDragging(false);
     isDraggingRef.current = false;
     angularVelocityRef.current = 0;
-    setCrankRpm(0);
+    updateCrankVisuals(crankAngleRef.current, 0);
     reverseRatchetAccumRef.current = 0;
     springRatchetAccumRef.current = 0;
 
@@ -189,6 +209,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     );
     lastPointerTimeRef.current = performance.now();
     setIsDragging(true);
+    isDraggingRef.current = true;
 
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -220,20 +241,19 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
         // Clockwise forward turning: apply air-governor damping & speed limit
         const governedDelta = Math.min(delta, MAX_DELTA_PER_EVENT);
         crankAngleRef.current += governedDelta;
-        setCrankAngle(crankAngleRef.current);
 
         const instantVel = governedDelta / dtSec;
         const boundedVel = Math.min(MAX_GOVERNED_SPEED, instantVel);
         angularVelocityRef.current = angularVelocityRef.current * 0.55 + boundedVel * 0.45;
 
         const currentRpmValue = Math.round(angularVelocityRef.current * 60 / (2 * Math.PI));
-        setCrankRpm(currentRpmValue);
+        updateCrankVisuals(crankAngleRef.current, currentRpmValue);
 
         onManualCrankAdvanceRef.current?.(governedDelta, currentRpmValue);
       } else if (delta < -0.04) {
         // Counter-clockwise backwards: mechanical ratchet brake resistance
         angularVelocityRef.current = 0;
-        setCrankRpm(0);
+        updateCrankVisuals(crankAngleRef.current, 0);
         reverseRatchetAccumRef.current += Math.abs(delta);
         if (reverseRatchetAccumRef.current > 0.35) {
           musicBoxAudio.playWindingClick();
@@ -246,7 +266,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
       if (delta > 0) {
         // Rotate key visually clockwise with the drag
         crankAngleRef.current += delta;
-        setCrankAngle(crankAngleRef.current);
+        updateCrankVisuals(crankAngleRef.current, crankRpmValueRef.current);
 
         // Calculate added tension: 1 full rotation (2π rad) = 1/3 (0.3333) tension
         // 3 full rotations (6π rad) = 1.0 (100%) tension
@@ -273,6 +293,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
 
   const handlePointerUp = (e: React.PointerEvent) => {
     setIsDragging(false);
+    isDraggingRef.current = false;
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
@@ -304,7 +325,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
   };
 
   // Calculate equivalent BPM for crank feedback
-  const estimatedBpm = Math.round(crankRpm * 1.35);
+  const estimatedBpm = Math.round(crankRpmValueRef.current * 1.35);
 
   // Exact 3-round tension calculation
   const currentRoundsWound = springTension * 3.0;
@@ -454,6 +475,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
               className={`relative w-44 h-44 sm:w-54 sm:h-54 rounded-full bg-gradient-to-tr from-[#2d2114] via-[#433321] to-[#1e160d] border-4 border-[#bfa175] hover:border-[#ffeaa7] shadow-[0_8px_24px_rgba(45,33,20,0.35)] flex items-center justify-center cursor-grab active:cursor-grabbing transition-all select-none touch-none ${
                 isDragging ? 'ring-4 ring-[#d6be8e]/50 scale-[1.02]' : ''
               }`}
@@ -477,8 +499,9 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
               {/* RENDER LARGE HAND CRANK (In Crank mode) */}
               {playMode === 'crank' && (
                 <div
+                  ref={crankRotorRef}
                   className="absolute inset-0 flex items-center justify-center pointer-events-none will-change-transform"
-                  style={{ transform: `rotate(${crankAngle}rad)` }}
+                  style={{ transform: `rotate(${crankAngleRef.current}rad)` }}
                 >
                   {/* Heavy Polished Gold Crank Arm with realistic bevel */}
                   <div className="absolute left-1/2 top-1/2 -translate-y-1/2 w-22 sm:w-26 h-5 rounded-full bg-gradient-to-r from-[#d6be8e] via-[#fff0b3] to-[#a68656] shadow-md border border-[#ffe787]/60 origin-left flex items-center justify-end pr-1">
@@ -500,8 +523,9 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
               {/* RENDER LARGE BUTTERFLY WINDING KEY (In Spring Mode) */}
               {playMode === 'spring' && (
                 <div
+                  ref={crankRotorRef}
                   className="absolute inset-0 flex items-center justify-center pointer-events-none will-change-transform"
-                  style={{ transform: `rotate(${crankAngle}rad)` }}
+                  style={{ transform: `rotate(${crankAngleRef.current}rad)` }}
                 >
                   {/* Outer Glow Halo on Drag */}
                   {isDragging && (
@@ -551,31 +575,28 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
                 <div className="flex items-center space-x-1.5">
                   <Gauge className="w-3.5 h-3.5 text-[#8a6b3e]" />
                   <span className="font-serif">Speed:</span>
-                  <span className="font-mono text-[#8a6b3e] font-bold text-sm">{crankRpm} RPM</span>
+                  <span ref={crankRpmDisplayRef} className="font-mono text-[#8a6b3e] font-bold text-sm">
+                    {crankRpmValueRef.current} RPM
+                  </span>
                 </div>
-                <div className="text-[11px] font-mono text-[#786650]">
-                  {crankRpm > 0 ? `≈ ${estimatedBpm} BPM` : 'Resting'}
+                <div ref={crankBpmDisplayRef} className="text-[11px] font-mono text-[#786650]">
+                  {crankRpmValueRef.current > 0 ? `≈ ${estimatedBpm} BPM` : 'Resting'}
                 </div>
               </div>
 
               {/* Speed Arc / Governor Limit Bar */}
               <div className="relative w-[88%] h-2 rounded-full bg-[#e3d8c4] border border-[#d0c2aa] overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-75 ${
-                    crankRpm > 70
-                      ? 'bg-gradient-to-r from-[#c9954d] via-[#d6a858] to-[#b34030]'
-                      : crankRpm > 30
-                      ? 'bg-gradient-to-r from-[#8a6b3e] to-[#dfb26b]'
-                      : 'bg-[#a68656]'
-                  }`}
-                  style={{ width: `${Math.min(100, (crankRpm / 85) * 100)}%` }}
+                  ref={crankSpeedBarRef}
+                  className="h-full rounded-full transition-all duration-75 bg-[#a68656]"
+                  style={{ width: `${Math.min(100, (crankRpmValueRef.current / 85) * 100)}%` }}
                 />
               </div>
 
               <div className="flex items-center gap-1 text-[11px] text-[#75634d] font-serif-sub italic">
-                {crankRpm === 0 ? (
+                {crankRpmValueRef.current === 0 ? (
                   <span>Drag knob clockwise to play • Speed governed & damped</span>
-                ) : crankRpm > 70 ? (
+                ) : crankRpmValueRef.current > 70 ? (
                   <span className="text-[#96472d] font-semibold flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-[#96472d]" />
                     <span>Air-Brake Governor Active (Speed Restrained)</span>
