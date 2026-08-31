@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MusicBoxSong } from '../types';
 import { Sparkles, X, Wand2, Music, Loader2, Play, Check, RefreshCw } from 'lucide-react';
+import { generateProceduralMusic } from '../utils/proceduralComposer';
 
 interface GeminiComposerModalProps {
   isOpen: boolean;
@@ -79,29 +80,38 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         }),
       });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: 'Failed to compose music' }));
-        throw new Error(errData.error || 'Server error occurred');
+      if (response.ok) {
+        const data = await response.json();
+        const newSong: MusicBoxSong = {
+          id: `gemini-${Date.now()}`,
+          title: data.title || 'Gemini 3.7 Music Box Melody',
+          category: 'ai',
+          description: data.composerNote || `${data.mood} melody composed with Gemini 3.7 Flash.`,
+          tempoBpm: data.tempoBpm || 88,
+          totalSteps: data.totalSteps || totalSteps,
+          pins: data.pins || [],
+          createdAt: Date.now(),
+          isAiGenerated: true,
+        };
+        setGeneratedSong(newSong);
+        return;
       }
-
-      const data = await response.json();
-
+      throw new Error('API unavailable, falling back to algorithmic composer');
+    } catch {
+      // Graceful algorithmic fallback (e.g., when hosted statically on GitHub Pages)
+      const data = generateProceduralMusic(textToUse, styleToUse, totalSteps);
       const newSong: MusicBoxSong = {
-        id: `gemini-${Date.now()}`,
-        title: data.title || 'Gemini 3.7 Music Box Melody',
+        id: `procedural-${Date.now()}`,
+        title: data.title || 'Whispering Music Box',
         category: 'ai',
-        description: data.composerNote || `${data.mood} melody composed with Gemini 3.7 Flash.`,
+        description: data.composerNote || `${data.mood} melody created for your music box.`,
         tempoBpm: data.tempoBpm || 88,
         totalSteps: data.totalSteps || totalSteps,
         pins: data.pins || [],
         createdAt: Date.now(),
         isAiGenerated: true,
       };
-
       setGeneratedSong(newSong);
-    } catch (err: unknown) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Failed to compose music with Gemini 3.7 Flash');
     } finally {
       setIsLoading(false);
     }
