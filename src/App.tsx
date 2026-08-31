@@ -1017,8 +1017,9 @@ export default function App() {
               </div>
               <input
                 type="range"
-                min="60"
-                max="140"
+                min="40"
+                max="160"
+                step="2"
                 value={tempoBpm}
                 onChange={(e) => setTempoBpm(parseInt(e.target.value))}
                 className="w-28 sm:w-32 accent-[#a68656] cursor-pointer h-1.5 bg-[#e8e0d1] rounded-lg appearance-none"

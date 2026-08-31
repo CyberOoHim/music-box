@@ -710,14 +710,14 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
               </div>
             )}
 
-            {/* Continuous Mode: User Speed / Tempo Controls */}
-            {playMode === 'continuous' && (
+            {/* Playback Speed / Tempo Controls (Shared by Wind-Up Spring & Continuous Modes) */}
+            {(playMode === 'spring' || playMode === 'continuous') && (
               <div className="p-4 sm:p-5 rounded-xl bg-[#f8f5ee] border border-[#e5dcce] space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <Sliders className="w-4 h-4 text-[#8a6b3e]" />
                     <span className="font-serif font-bold text-xs text-[#433422]">
-                      Continuous Playback Speed
+                      Playback Speed
                     </span>
                   </div>
                   <span className="font-mono text-xs font-bold text-[#8a6b3e] bg-[#eee4d0] px-2 py-0.5 rounded-md border border-[#d8caa8]">
@@ -731,13 +731,13 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
                     id="tempo-decrease-btn"
                     onClick={() => onChangeTempoBpm?.(Math.max(40, tempoBpm - 5))}
                     title="Slow down"
-                    className="p-2 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition"
+                    className="p-2 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer"
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
 
                   <input
-                    id="continuous-speed-slider"
+                    id="playback-speed-slider"
                     type="range"
                     min="40"
                     max="160"
@@ -751,7 +751,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
                     id="tempo-increase-btn"
                     onClick={() => onChangeTempoBpm?.(Math.min(160, tempoBpm + 5))}
                     title="Speed up"
-                    className="p-2 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition"
+                    className="p-2 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
@@ -769,7 +769,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
                       key={preset.label}
                       id={`tempo-preset-${preset.bpm}`}
                       onClick={() => onChangeTempoBpm?.(preset.bpm)}
-                      className={`flex-1 py-1 px-1.5 text-[11px] font-serif rounded-md border transition-all ${
+                      className={`flex-1 py-1 px-1.5 text-[11px] font-serif rounded-md border transition-all cursor-pointer ${
                         tempoBpm === preset.bpm
                           ? 'bg-[#433422] text-[#fbf8f2] border-[#433422] font-bold shadow-xs'
                           : 'bg-[#eee7da] hover:bg-[#e4dcce] text-[#6f5e49] border-[#ded3be]'
