@@ -132,6 +132,27 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabView>('movement');
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
+  const [hasAiComposer, setHasAiComposer] = useState<boolean>(false);
+
+  // Check if Gemini API key is configured on server/environment
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/gemini/status')
+      .then((res) => (res.ok ? res.json() : { enabled: false }))
+      .then((data) => {
+        if (isMounted) {
+          setHasAiComposer(Boolean(data?.enabled));
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setHasAiComposer(false);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Toast notification state
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -363,18 +384,90 @@ export default function App() {
     };
   }, [isPlaying, executeStep, ensureAudioInitialized, tempoBpm]);
 
+  // Cleanly switch play mode: cleanly stop current mode and restart target mode freshly
+  const handleSwitchPlayMode = useCallback(
+    async (newMode: PlayMode) => {
+      // 1. CLEANLY STOP CURRENT MODE
+      // Stop step sequencer timer animation frame
+      if (stepTimerRef.current) {
+        cancelAnimationFrame(stepTimerRef.current);
+        stepTimerRef.current = null;
+      }
+
+      // Stop previous playback flag
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+
+      // Cleanly silence any active notes & stop mechanical gear hum immediately
+      musicBoxAudio.stopAllMusicVoices();
+      musicBoxAudio.setMechanicalHum(false, 1.0, true);
+
+      // Clear active vibrating tines and reset crank RPM
+      setActiveTines(new Set());
+      setCrankRpm(0);
+
+      // Align sub-step position cleanly to current integer step
+      const currentIntStep = Math.floor(currentStepRef.current);
+      subStepRef.current = currentIntStep;
+      setCurrentStep(currentIntStep);
+
+      // Update mode state and ref
+      setPlayMode(newMode);
+      playModeRef.current = newMode;
+
+      // 2. RESTART TARGET MODE FRESHLY
+      await ensureAudioInitialized();
+
+      if (newMode === 'continuous') {
+        // Continuous mode: Freshly start automated playback
+        lastStepTimeRef.current = performance.now();
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+        musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+        showToast('Switched to Continuous Mode • Automated drive started', 'info');
+      } else if (newMode === 'spring') {
+        // Wind-Up Spring mode: If tension is depleted or low (< 0.15), freshly wind to full 3 rounds (1.0)
+        let tension = springTensionRef.current;
+        if (tension < 0.15) {
+          tension = 1.0;
+          setSpringTension(1.0);
+          springTensionRef.current = 1.0;
+        }
+        lastStepTimeRef.current = performance.now();
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+        musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+        showToast('Switched to Wind-Up Spring • Spring drive started', 'info');
+      } else if (newMode === 'crank') {
+        // Hand Crank mode: Ready for manual tactile cranking
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+        musicBoxAudio.setMechanicalHum(false);
+        showToast('Switched to Hand Crank • Turn knob to play', 'info');
+      }
+    },
+    [ensureAudioInitialized, showToast]
+  );
+
   // Handle Play/Pause
   const handleTogglePlay = async () => {
     await ensureAudioInitialized();
     if (!isPlaying) {
-      if (playMode === 'spring' && springTension <= 0.0001) {
+      if (playMode === 'spring' && springTension <= 0.005) {
         // Automatically wind spring if user presses play at 0%
         setSpringTension(1.0);
         springTensionRef.current = 1.0;
       }
+      lastStepTimeRef.current = performance.now();
+      isPlayingRef.current = true;
       setIsPlaying(true);
+      musicBoxAudio.setMechanicalHum(true, tempoBpm / 90);
     } else {
+      isPlayingRef.current = false;
       setIsPlaying(false);
+      musicBoxAudio.stopAllMusicVoices();
+      musicBoxAudio.setMechanicalHum(false, 1.0, true);
+      setActiveTines(new Set());
     }
   };
 
@@ -588,7 +681,7 @@ export default function App() {
       setFontZoom(Math.max(75, Math.min(150, newSettings.fontZoom)));
     }
     if (newSettings.playMode) {
-      setPlayMode(newSettings.playMode);
+      handleSwitchPlayMode(newSettings.playMode);
     }
   };
 
@@ -778,16 +871,18 @@ export default function App() {
             )}
           </button>
 
-          {/* Gemini AI Compose Action */}
-          <button
-            id="header-gemini-compose-btn"
-            onClick={() => setIsGeminiModalOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40"
-          >
-            <Sparkles className="w-3.5 h-3.5 fill-[#2d2419]" />
-            <span className="hidden sm:inline">AI Compose</span>
-            <span className="sm:hidden">AI</span>
-          </button>
+          {/* Gemini AI Compose Action - only accessible when API key is set in environment */}
+          {hasAiComposer && (
+            <button
+              id="header-gemini-compose-btn"
+              onClick={() => setIsGeminiModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40"
+            >
+              <Sparkles className="w-3.5 h-3.5 fill-[#2d2419]" />
+              <span className="hidden sm:inline">AI Compose</span>
+              <span className="sm:hidden">AI</span>
+            </button>
+          )}
 
           {/* Master Mute Button */}
           <button
@@ -998,7 +1093,7 @@ export default function App() {
             {/* Winding Controls Component */}
             <WindingKey
               playMode={playMode}
-              onChangePlayMode={setPlayMode}
+              onChangePlayMode={handleSwitchPlayMode}
               springTension={springTension}
               onWindSpring={handleWindSpring}
               onSetSpringTension={handleSetSpringTension}
@@ -1043,7 +1138,7 @@ export default function App() {
             {/* Winding & Play controls also accessible under Editor */}
             <WindingKey
               playMode={playMode}
-              onChangePlayMode={setPlayMode}
+              onChangePlayMode={handleSwitchPlayMode}
               springTension={springTension}
               onWindSpring={handleWindSpring}
               onSetSpringTension={handleSetSpringTension}
@@ -1080,8 +1175,9 @@ export default function App() {
               onSelectSong={handleSelectSong}
               onImportSong={handleLoadNewSong}
               onDeleteCustomSong={handleDeleteCustomSong}
-              onOpenGeminiModal={() => setIsGeminiModalOpen(true)}
+              onOpenGeminiModal={() => hasAiComposer && setIsGeminiModalOpen(true)}
               onOpenImportExportModal={() => setIsImportExportModalOpen(true)}
+              hasAiComposer={hasAiComposer}
             />
           </div>
         )}
@@ -1089,7 +1185,10 @@ export default function App() {
 
       {/* Footer with Quick Restore Link */}
       <footer className="w-full border-t border-[#e5dcce] py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#8c7b67] font-serif-sub">
-        <span>Classic 18-Note Mechanical Music Box • Sankyo Acoustic Model • Gemini AI Compositions</span>
+        <span>
+          Classic 18-Note Mechanical Music Box • Sankyo Acoustic Model
+          {hasAiComposer ? ' • Gemini AI Compositions' : ''}
+        </span>
         <button
           onClick={() => setIsImportExportModalOpen(true)}
           className="hover:text-[#433422] underline underline-offset-2 transition"
@@ -1098,12 +1197,15 @@ export default function App() {
         </button>
       </footer>
 
-      {/* Gemini 3.7 AI Composer Modal */}
-      <GeminiComposerModal
-        isOpen={isGeminiModalOpen}
-        onClose={() => setIsGeminiModalOpen(false)}
-        onLoadSong={handleLoadNewSong}
-      />
+      {/* Gemini 3.7 AI Composer Modal - only mounted if API is enabled */}
+      {hasAiComposer && (
+        <GeminiComposerModal
+          isOpen={isGeminiModalOpen}
+          onClose={() => setIsGeminiModalOpen(false)}
+          onLoadSong={handleLoadNewSong}
+          hasAiComposer={hasAiComposer}
+        />
+      )}
 
       {/* Repertoire, Backup, Export, Import & Restore Modal */}
       <ImportExportModal

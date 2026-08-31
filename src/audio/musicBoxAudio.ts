@@ -918,7 +918,7 @@ class MusicBoxAudioEngine {
     this.gearOsc.start();
   }
 
-  public setMechanicalHum(active: boolean, speed = 1.0): void {
+  public setMechanicalHum(active: boolean, speed = 1.0, immediate = false): void {
     if (!this.ctx || !this.gearGain || !this.gearOsc) return;
     const now = this.ctx.currentTime;
 
@@ -926,7 +926,16 @@ class MusicBoxAudioEngine {
       this.gearOsc.frequency.setTargetAtTime(70 * Math.max(0.5, speed), now, 0.1);
       this.gearGain.gain.setTargetAtTime(0.028, now, 0.15);
     } else {
-      this.gearGain.gain.setTargetAtTime(0.00001, now, 0.2);
+      if (immediate) {
+        try {
+          this.gearGain.gain.cancelScheduledValues(now);
+          this.gearGain.gain.setValueAtTime(0.00001, now);
+        } catch {
+          this.gearGain.gain.setTargetAtTime(0.00001, now, 0.05);
+        }
+      } else {
+        this.gearGain.gain.setTargetAtTime(0.00001, now, 0.2);
+      }
     }
   }
 
@@ -1258,6 +1267,24 @@ class MusicBoxAudioEngine {
   public setMusicVolume(vol: number): void {
     if (!this.ctx || !this.musicGain) return;
     this.musicGain.gain.setTargetAtTime(Math.max(0, Math.min(1, vol)), this.ctx.currentTime, 0.04);
+  }
+
+  // Cleanly flush all ringing music box voices and stop mechanical hum
+  public stopAllMusicVoices(): void {
+    this.auditionTimeouts.forEach((id) => clearTimeout(id));
+    this.auditionTimeouts = [];
+
+    if (!this.ctx || !this.musicGain) return;
+    const now = this.ctx.currentTime;
+    try {
+      this.musicGain.gain.cancelScheduledValues(now);
+      // Fast 8ms fade down to zero to avoid popping, then restore to ready gain (0.88)
+      this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, now);
+      this.musicGain.gain.linearRampToValueAtTime(0.0001, now + 0.008);
+      this.musicGain.gain.setValueAtTime(0.88, now + 0.015);
+    } catch {
+      // safe fallback
+    }
   }
 
   public cleanup(): void {

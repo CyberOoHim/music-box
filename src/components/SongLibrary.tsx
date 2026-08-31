@@ -18,8 +18,9 @@ interface SongLibraryProps {
   onSelectSong: (song: MusicBoxSong) => void;
   onDeleteCustomSong?: (songId: string) => void;
   onImportSong: (song: MusicBoxSong) => void;
-  onOpenGeminiModal: () => void;
+  onOpenGeminiModal?: () => void;
   onOpenImportExportModal?: () => void;
+  hasAiComposer?: boolean;
 }
 
 export const SongLibrary: React.FC<SongLibraryProps> = ({
@@ -30,6 +31,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onImportSong,
   onOpenGeminiModal,
   onOpenImportExportModal,
+  hasAiComposer = false,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -70,20 +72,22 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <span>Music Box Repertoire & Cylinders</span>
           </h3>
           <p className="text-xs text-[#75644e] font-serif-sub italic">
-            Select authentic 18-note arrangements, AI-composed melodies, or manage your exported/imported score collection.
+            Select authentic 18-note arrangements, custom melodies, or manage your exported/imported score collection.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* AI Compose button */}
-          <button
-            id="library-gemini-compose-btn"
-            onClick={onOpenGeminiModal}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Compose</span>
-          </button>
+          {/* AI Compose button - Only rendered when AI composer is enabled */}
+          {hasAiComposer && onOpenGeminiModal && (
+            <button
+              id="library-gemini-compose-btn"
+              onClick={onOpenGeminiModal}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI Compose</span>
+            </button>
+          )}
 
           {/* Repertoire / Export / Import / Restore Modal Trigger */}
           {onOpenImportExportModal && (
@@ -121,7 +125,9 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             { id: 'anime', label: 'Anime & Ghibli' },
             { id: 'lullaby', label: 'Lullaby' },
             { id: 'nature', label: 'Relaxing' },
-            { id: 'ai', label: 'Gemini AI' },
+            ...(hasAiComposer || songs.some((s) => s.isAiGenerated || s.category === 'ai')
+              ? [{ id: 'ai', label: 'Gemini AI' }]
+              : []),
             { id: 'custom', label: 'Custom' },
           ].map((cat) => (
             <button

@@ -1,19 +1,29 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
-import { MusicBoxPin, SANKYO_18_TINES, PlayMode } from '../types';
 import {
-  Sparkles,
-  Info,
+  MusicBoxPin,
+  SANKYO_18_TINES,
+  PlayMode,
+  CombScaleId,
+  TineNote,
+  COMB_SCALES_MAP,
+} from '../types';
+import {
   RotateCw,
+  RefreshCw,
   ZoomIn,
   ZoomOut,
   Compass,
-  Layers,
-  Sparkle,
-  Zap,
   Leaf,
-  Battery,
+  Keyboard,
+  Sparkles,
 } from 'lucide-react';
+
+const KEYBOARD_SHORTCUTS = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
+  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',
+];
 
 interface MusicBoxMovementProps {
   currentStep: number;
@@ -22,9 +32,11 @@ interface MusicBoxMovementProps {
   isPlaying: boolean;
   tempoBpm: number;
   playMode: PlayMode;
-  springTension: number; // 0 to 1
+  springTension: number;
   activeTines: Set<number>;
   crankRpm?: number;
+  combScaleId?: CombScaleId;
+  customTines?: TineNote[];
   onPluckTine: (tineIndex: number) => void;
   onTogglePin?: (step: number, tineIndex: number) => void;
 }
@@ -41,6 +53,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   springTension,
   activeTines,
   crankRpm = 0,
+  combScaleId = 'sankyo-18',
+  customTines,
   onPluckTine,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -48,18 +62,21 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const [hoveredTine, setHoveredTine] = useState<number | null>(null);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
   const [currentCameraPreset, setCurrentCameraPreset] = useState<CameraPreset>('default');
-  const [targetFps, setTargetFps] = useState<number>(24); // 24 FPS maximum as instructed
+  const [zoomPercent, setZoomPercent] = useState<number>(100);
 
-  // Animation & Three.js references
+  const tinesList: TineNote[] = useMemo(() => {
+    if (customTines && customTines.length > 0) return customTines;
+    if (combScaleId && COMB_SCALES_MAP[combScaleId]) return COMB_SCALES_MAP[combScaleId].tines;
+    return SANKYO_18_TINES;
+  }, [customTines, combScaleId]);
+
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const reqIdRef = useRef<number | null>(null);
   const lastRenderTimestampRef = useRef<number>(0);
   const needsRenderRef = useRef<boolean>(true);
-  const targetFpsRef = useRef<number>(targetFps);
 
-  // Mesh references for dynamic animation
   const cylinderGroupRef = useRef<THREE.Group | null>(null);
   const governorFanRef = useRef<THREE.Group | null>(null);
   const intermediateGearRef = useRef<THREE.Group | null>(null);
@@ -69,7 +86,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const tineDeflectionRef = useRef<number[]>(new Array(18).fill(0));
   const particleGroupRef = useRef<THREE.Group | null>(null);
 
-  // Dynamic state refs for 24fps render loop (prevents re-mounting Three.js scene)
   const isPlayingRef = useRef(isPlaying);
   const tempoBpmRef = useRef(tempoBpm);
   const playModeRef = useRef(playMode);
@@ -80,7 +96,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const pinsRef = useRef(pins);
   const crankRpmRef = useRef(crankRpm);
 
-  // Synchronize state refs
   useEffect(() => {
     isPlayingRef.current = isPlaying;
     tempoBpmRef.current = tempoBpm;
@@ -91,85 +106,113 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     totalStepsRef.current = totalSteps;
     pinsRef.current = pins;
     crankRpmRef.current = crankRpm;
-    targetFpsRef.current = targetFps;
     needsRenderRef.current = true;
-  }, [isPlaying, tempoBpm, playMode, springTension, isAutoRotating, currentStep, totalSteps, pins, crankRpm, targetFps]);
+  }, [isPlaying, tempoBpm, playMode, springTension, isAutoRotating, currentStep, totalSteps, pins, crankRpm]);
 
-  // Orbit state
   const isDraggingRef = useRef(false);
+  const dragDistanceRef = useRef(0);
   const previousMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const cameraAngleRef = useRef<{ theta: number; phi: number; distance: number }>({
-    theta: 0.36, // authentic 3/4 isometric viewpoint from IMG_0105.jpeg
-    phi: 0.84,
-    distance: 13.8,
+  
+  // Camera calibrated to high-angle front 3/4 perspective with smooth target lerp
+  const currentCameraAngleRef = useRef<{ theta: number; phi: number; distance: number }>({
+    theta: 0.08,
+    phi: 0.54,
+    distance: 13.2,
   });
-  const targetLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, -0.1, 0));
+  const targetCameraAngleRef = useRef<{ theta: number; phi: number; distance: number }>({
+    theta: 0.08,
+    phi: 0.54,
+    distance: 13.2,
+  });
+  const currentLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0.1, -0.15, 0.35));
+  const targetLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0.1, -0.15, 0.35));
 
-  // Current cylinder rotation in radians
-  const cylinderAngle = useMemo(() => {
-    return (currentStep / totalSteps) * Math.PI * 2;
-  }, [currentStep, totalSteps]);
+  const updateZoomDisplay = useCallback((dist: number) => {
+    const defaultDist = 13.2;
+    const pct = Math.round((defaultDist / dist) * 100);
+    setZoomPercent(pct);
+  }, []);
 
-  // Set camera view preset
   const setCameraPreset = useCallback((preset: CameraPreset) => {
     setCurrentCameraPreset(preset);
     setIsAutoRotating(false);
+    isAutoRotatingRef.current = false;
+    needsRenderRef.current = true;
+
     switch (preset) {
-      case 'default': // Classic 3/4 Sankyo angle matching reference photo
-        cameraAngleRef.current = { theta: 0.36, phi: 0.84, distance: 13.8 };
-        targetLookAtRef.current.set(0, -0.1, 0);
+      case 'default':
+        targetCameraAngleRef.current = { theta: 0.08, phi: 0.54, distance: 13.2 };
+        targetLookAtRef.current.set(0.1, -0.15, 0.35);
         break;
-      case 'cylinder': // Close up on patinated bronze cylinder & glowing brass pins
-        cameraAngleRef.current = { theta: 0.18, phi: 0.68, distance: 8.8 };
-        targetLookAtRef.current.set(0.6, 0.3, -0.1);
+      case 'comb':
+        targetCameraAngleRef.current = { theta: 0.04, phi: 0.65, distance: 9.8 };
+        targetLookAtRef.current.set(0.72, -0.2, 1.2);
         break;
-      case 'comb': // Close up on 18 tempered steel tines & bronze Phillips screws
-        cameraAngleRef.current = { theta: 0.04, phi: 1.12, distance: 9.2 };
-        targetLookAtRef.current.set(0.3, -0.4, 0.9);
+      case 'cylinder':
+        targetCameraAngleRef.current = { theta: 0.12, phi: 0.48, distance: 8.2 };
+        targetLookAtRef.current.set(0.72, 0.4, -1.35);
         break;
-      case 'governor': // Close up on spinning air-brake governor and bone-nylon gear train
-        cameraAngleRef.current = { theta: 1.15, phi: 0.78, distance: 8.5 };
-        targetLookAtRef.current.set(-2.0, 0.7, -0.1);
+      case 'governor':
+        targetCameraAngleRef.current = { theta: 0.85, phi: 0.62, distance: 7.8 };
+        targetLookAtRef.current.set(-1.65, 0.1, 0.3);
         break;
-      case 'side': // Profile view showing gear mesh & comb clamping
-        cameraAngleRef.current = { theta: Math.PI / 2, phi: 0.95, distance: 12.0 };
-        targetLookAtRef.current.set(0, 0, 0);
+      case 'side':
+        targetCameraAngleRef.current = { theta: Math.PI / 2, phi: 0.82, distance: 12.5 };
+        targetLookAtRef.current.set(0, 0, 0.35);
         break;
-      case 'top': // Direct top-down view showing pin layout
-        cameraAngleRef.current = { theta: 0.0, phi: 0.04, distance: 14.5 };
-        targetLookAtRef.current.set(0, 0, 0);
+      case 'top':
+        targetCameraAngleRef.current = { theta: 0.0, phi: 0.04, distance: 14.8 };
+        targetLookAtRef.current.set(0.1, 0, 0.35);
         break;
     }
-  }, []);
+    updateZoomDisplay(targetCameraAngleRef.current.distance);
+  }, [updateZoomDisplay]);
 
-  // Helper to re-generate the 3D high-visibility pins on the drum
+  // Zoom In Handler
+  const handleZoomIn = useCallback(() => {
+    targetCameraAngleRef.current.distance = Math.max(5.0, targetCameraAngleRef.current.distance - 1.8);
+    needsRenderRef.current = true;
+    updateZoomDisplay(targetCameraAngleRef.current.distance);
+  }, [updateZoomDisplay]);
+
+  // Zoom Out Handler
+  const handleZoomOut = useCallback(() => {
+    targetCameraAngleRef.current.distance = Math.min(22.0, targetCameraAngleRef.current.distance + 1.8);
+    needsRenderRef.current = true;
+    updateZoomDisplay(targetCameraAngleRef.current.distance);
+  }, [updateZoomDisplay]);
+
+  // Reset Zoom Handler
+  const handleResetZoom = useCallback(() => {
+    targetCameraAngleRef.current.distance = 13.2;
+    needsRenderRef.current = true;
+    updateZoomDisplay(13.2);
+  }, [updateZoomDisplay]);
+
   const rebuildPinMeshes = useCallback((pinsList: MusicBoxPin[], stepsCount: number) => {
     const pinGroup = pinMeshesGroupRef.current;
     if (!pinGroup) return;
 
-    // Clear existing pins
     while (pinGroup.children.length > 0) {
       const child = pinGroup.children[0];
       pinGroup.remove(child);
     }
 
-    const combWidth = 3.25;
+    const combWidth = 3.35;
     const tineSpacing = combWidth / 18;
     const startX = -combWidth / 2 + tineSpacing / 2;
     const cylRadius = 0.96;
 
-    // High-visibility, polished golden brass dot material with subtle warm specular sheen
     const dotMat = new THREE.MeshStandardMaterial({
-      color: 0xffe890,
-      emissive: 0x4a3810,
-      metalness: 0.98,
-      roughness: 0.12,
-      envMapIntensity: 2.6,
+      color: 0xffdf78,
+      emissive: 0x5a420e,
+      metalness: 0.95,
+      roughness: 0.14,
+      envMapIntensity: 2.8,
     });
 
-    // Dot geometry: A compact spherical brass pip/stud sitting raised on the drum surface
-    const dotGeo = new THREE.SphereGeometry(0.062, 16, 14);
-    dotGeo.translate(0, 0.038, 0);
+    const dotGeo = new THREE.SphereGeometry(0.065, 14, 12);
+    dotGeo.translate(0, 0.036, 0);
 
     pinsList.forEach((pin) => {
       const pinAngle = (pin.step / stepsCount) * Math.PI * 2;
@@ -178,36 +221,30 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       const dotMesh = new THREE.Mesh(dotGeo, dotMat);
       dotMesh.castShadow = true;
 
-      // Position along cylinder circumference
       const py = Math.cos(pinAngle) * cylRadius;
       const pz = Math.sin(pinAngle) * cylRadius;
 
       dotMesh.position.set(px, py, pz);
-      // Point normal outward from cylinder axis
       dotMesh.rotation.x = pinAngle - Math.PI / 2;
 
       pinGroup.add(dotMesh);
     });
   }, []);
 
-  // Initialize Three.js 3D Scene (Runs ONCE on mount so scene is never destroyed during playback)
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
 
-    // 1. Scene setup
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x0e0a07); // Rich dark antique velvet background
+    scene.background = new THREE.Color(0x130e09);
 
-    // 2. Camera setup
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 480;
-    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 100);
     cameraRef.current = camera;
 
-    // 3. Power-efficient Renderer setup for Mobile & iPad (prevents GPU overheating & battery drain)
     const renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -216,14 +253,13 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     });
     rendererRef.current = renderer;
     renderer.setSize(width, height);
-    // Clamp DPR to 1.25 on high-density iPad Retina screens for massive thermal & GPU power savings
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.38;
+    renderer.toneMappingExposure = 1.45;
 
-    // 4. Procedural Studio Environment Reflection Map for Antique Bronze & Polished Pins
+    // Procedural Reflection Environment Map
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
 
@@ -232,310 +268,364 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     envCanvas.height = 256;
     const envCtx = envCanvas.getContext('2d');
     if (envCtx) {
-      // Warm antique bronze & dark studio reflection
       const grad = envCtx.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0, '#3e2a18');
-      grad.addColorStop(0.3, '#c29759');
-      grad.addColorStop(0.5, '#fff4d6');
-      grad.addColorStop(0.7, '#7a542b');
-      grad.addColorStop(1, '#18100a');
+      grad.addColorStop(0, '#584028');
+      grad.addColorStop(0.28, '#d4af6d');
+      grad.addColorStop(0.5, '#fff7de');
+      grad.addColorStop(0.72, '#8b6336');
+      grad.addColorStop(1, '#20150d');
       envCtx.fillStyle = grad;
       envCtx.fillRect(0, 0, 512, 256);
 
-      // Studio softbox highlights for metallic glints on pins
-      envCtx.fillStyle = 'rgba(255, 245, 220, 0.9)';
-      envCtx.fillRect(160, 15, 180, 75);
-      envCtx.fillStyle = 'rgba(230, 200, 140, 0.65)';
-      envCtx.fillRect(30, 70, 110, 90);
-      envCtx.fillStyle = 'rgba(255, 220, 160, 0.5)';
-      envCtx.fillRect(360, 90, 100, 70);
+      envCtx.fillStyle = 'rgba(255, 250, 235, 0.95)';
+      envCtx.fillRect(140, 15, 220, 85);
+      envCtx.fillStyle = 'rgba(240, 215, 150, 0.75)';
+      envCtx.fillRect(30, 75, 130, 95);
+      envCtx.fillStyle = 'rgba(255, 235, 180, 0.6)';
+      envCtx.fillRect(340, 90, 130, 80);
     }
     const envTexture = new THREE.CanvasTexture(envCanvas);
     envTexture.mapping = THREE.EquirectangularReflectionMapping;
     const envMap = pmremGenerator.fromEquirectangular(envTexture).texture;
     scene.environment = envMap;
 
-    // 5. Studio Lighting Setup (Warm Bronze Depth & Pin Specular Highlights)
-    const ambientLight = new THREE.AmbientLight(0xffecd6, 1.25);
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xfff1de, 1.45);
     scene.add(ambientLight);
 
-    // Warm key light with power-optimized 512x512 shadow map
-    const keyLight = new THREE.DirectionalLight(0xffeed1, 3.6);
-    keyLight.position.set(7, 13, 9);
+    const keyLight = new THREE.DirectionalLight(0xfff7e8, 3.9);
+    keyLight.position.set(5, 15, 10);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 512;
     keyLight.shadow.mapSize.height = 512;
     keyLight.shadow.bias = -0.0008;
     scene.add(keyLight);
 
-    // Cool fill light (soft pewter-blue rim for steel comb & bronze edge definition)
-    const fillLight = new THREE.DirectionalLight(0xd5e2f7, 1.7);
-    fillLight.position.set(-9, 7, -6);
+    const fillLight = new THREE.DirectionalLight(0xdce8ff, 1.8);
+    fillLight.position.set(-8, 8, -6);
     scene.add(fillLight);
 
-    // Specular Point light positioned directly over the cylinder to make the pins gleam
-    const cylPointLight = new THREE.PointLight(0xfff3c4, 3.4, 18, 1.2);
-    cylPointLight.position.set(0.6, 3.8, 2.8);
-    scene.add(cylPointLight);
+    const combGleamLight = new THREE.PointLight(0xfffaee, 4.2, 16, 1.2);
+    combGleamLight.position.set(0.8, 3.5, 2.8);
+    scene.add(combGleamLight);
 
-    // Comb Point light for tempered steel tines
-    const combPointLight = new THREE.PointLight(0xffedd4, 2.2, 12, 1.4);
-    combPointLight.position.set(0.4, 2.0, 2.8);
-    scene.add(combPointLight);
+    const cylGleamLight = new THREE.PointLight(0xffeec2, 3.5, 15, 1.2);
+    cylGleamLight.position.set(0.8, 3.6, -1.2);
+    scene.add(cylGleamLight);
 
-    // Under-chassis warm bronze bounce light
-    const bounceLight = new THREE.DirectionalLight(0x8f5e2d, 0.85);
-    bounceLight.position.set(0, -6, 2);
-    scene.add(bounceLight);
+    // ==========================================
+    // PROCEDURAL TEXTURES (Faithful to IMG_0110.jpeg)
+    // ==========================================
 
-    // 6. GENERATE HIGH-RESOLUTION PROCEDURAL RETRO DIE-CAST BRONZE TEXTURES
+    // 1. Cast Brass Stippled Bedplate Texture & Inscription "聲盒仔"
+    const bedplateCanvas = document.createElement('canvas');
+    bedplateCanvas.width = 1024;
+    bedplateCanvas.height = 1024;
+    const bpCtx = bedplateCanvas.getContext('2d');
+    if (bpCtx) {
+      // Golden brass sand-cast base
+      bpCtx.fillStyle = '#b6955c';
+      bpCtx.fillRect(0, 0, 1024, 1024);
 
-    // (A) Die-Cast Sand Bronze Texture & Bump Map with Sand-Cast Stippling & Lathe Turn Lines
-    const bronzeCylCanvas = document.createElement('canvas');
-    bronzeCylCanvas.width = 1024;
-    bronzeCylCanvas.height = 512;
-    const cCtx = bronzeCylCanvas.getContext('2d');
-    if (cCtx) {
-      // Dark antique retro bronze base
-      cCtx.fillStyle = '#6b4e2b';
-      cCtx.fillRect(0, 0, 1024, 512);
-
-      // Antique lathe turn lines & bronze grain
-      for (let y = 0; y < 512; y += 2) {
-        const val = Math.sin(y * 0.35) * 16 + (Math.random() - 0.5) * 14;
-        cCtx.fillStyle = `rgba(${95 + val}, ${72 + val * 0.8}, ${40 + val * 0.5}, 0.45)`;
-        cCtx.fillRect(0, y, 1024, 1.5);
+      // Stippled cast texture
+      for (let i = 0; i < 40000; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 1024;
+        const radius = Math.random() * 2.2 + 0.8;
+        const brightness = Math.random() * 54 - 27;
+        bpCtx.beginPath();
+        bpCtx.arc(x, y, radius, 0, Math.PI * 2);
+        bpCtx.fillStyle = `rgba(${182 + brightness}, ${149 + brightness * 0.85}, ${92 + brightness * 0.55}, 0.55)`;
+        bpCtx.fill();
       }
 
-      // Vertical micro-patina striations and oxidization flecks
-      for (let x = 0; x < 1024; x += 3) {
-        const darkPatina = Math.random() * 0.12;
-        cCtx.fillStyle = `rgba(35, 25, 12, ${darkPatina})`;
-        cCtx.fillRect(x, 0, 2, 512);
-      }
+      // Cast relief embossed characters: "聲 盒 仔"
+      bpCtx.font = 'bold 76px "Noto Serif TC", "Songti TC", "MS Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif';
+      bpCtx.textAlign = 'left';
+      bpCtx.textBaseline = 'middle';
+      
+      // Emboss highlight
+      bpCtx.fillStyle = '#fce5a8';
+      bpCtx.fillText('聲 盒 仔', 165, 875);
+      
+      // Emboss shadow
+      bpCtx.fillStyle = '#6e5025';
+      bpCtx.fillText('聲 盒 仔', 168, 878);
 
-      // Subtle antique verdigris patina speckles
-      for (let i = 0; i < 400; i++) {
-        const px = Math.random() * 1024;
-        const py = Math.random() * 512;
-        cCtx.fillStyle = 'rgba(74, 110, 88, 0.08)';
-        cCtx.fillRect(px, py, 2.5, 2.5);
-      }
-
-      // Authentic Stamped Sankyo Quality Mark "8-□" with dark recessed patina etching
-      cCtx.font = 'bold 24px monospace';
-      cCtx.fillStyle = '#2c1e0e';
-      cCtx.shadowColor = '#8c6b3e';
-      cCtx.shadowOffsetX = 1;
-      cCtx.shadowOffsetY = 1;
-      cCtx.fillText('8-□', 835, 260);
+      // Small secondary mark/seal (安 Q) above the characters
+      bpCtx.font = 'bold 36px serif';
+      bpCtx.fillStyle = '#7a5b2e';
+      bpCtx.fillText('安 Q', 220, 770);
+      bpCtx.fillStyle = '#ebd196';
+      bpCtx.fillText('安 Q', 218, 768);
     }
-    const bronzeCylTexture = new THREE.CanvasTexture(bronzeCylCanvas);
-    bronzeCylTexture.wrapS = THREE.RepeatWrapping;
-    bronzeCylTexture.wrapT = THREE.RepeatWrapping;
+    const bedplateTex = new THREE.CanvasTexture(bedplateCanvas);
+    bedplateTex.wrapS = THREE.RepeatWrapping;
+    bedplateTex.wrapT = THREE.RepeatWrapping;
 
-    // Bronze Sand-Cast & Lathe Bump Map
-    const bronzeBumpCanvas = document.createElement('canvas');
-    bronzeBumpCanvas.width = 512;
-    bronzeBumpCanvas.height = 256;
-    const bbCtx = bronzeBumpCanvas.getContext('2d');
-    if (bbCtx) {
-      bbCtx.fillStyle = '#808080';
-      bbCtx.fillRect(0, 0, 512, 256);
-      // Sand cast grain
+    // Bedplate bump map for cast metal grain
+    const bedplateBumpCanvas = document.createElement('canvas');
+    bedplateBumpCanvas.width = 512;
+    bedplateBumpCanvas.height = 512;
+    const bpbCtx = bedplateBumpCanvas.getContext('2d');
+    if (bpbCtx) {
+      bpbCtx.fillStyle = '#808080';
+      bpbCtx.fillRect(0, 0, 512, 512);
       for (let x = 0; x < 512; x += 2) {
-        for (let y = 0; y < 256; y += 2) {
-          const noise = (Math.random() - 0.5) * 45;
-          bbCtx.fillStyle = `rgb(${128 + noise}, ${128 + noise}, ${128 + noise})`;
-          bbCtx.fillRect(x, y, 2, 2);
+        for (let y = 0; y < 512; y += 2) {
+          const noise = (Math.random() - 0.5) * 60;
+          bpbCtx.fillStyle = `rgb(${128 + noise}, ${128 + noise}, ${128 + noise})`;
+          bpbCtx.fillRect(x, y, 2, 2);
         }
       }
-      // Concentric lathe grooves
-      for (let y = 0; y < 256; y += 3) {
-        const groove = Math.sin(y * 0.9) * 35;
-        bbCtx.fillStyle = `rgba(${128 + groove}, ${128 + groove}, ${128 + groove}, 0.5)`;
-        bbCtx.fillRect(0, y, 512, 1.5);
-      }
     }
-    const bronzeBumpTexture = new THREE.CanvasTexture(bronzeBumpCanvas);
+    const bedplateBumpTex = new THREE.CanvasTexture(bedplateBumpCanvas);
+    bedplateBumpTex.wrapS = THREE.RepeatWrapping;
+    bedplateBumpTex.wrapT = THREE.RepeatWrapping;
 
-    // (B) Antique Die-Cast Bronze Baseplate Sand-Cast Bump Map
-    const sandCastBumpCanvas = document.createElement('canvas');
-    sandCastBumpCanvas.width = 256;
-    sandCastBumpCanvas.height = 256;
-    const scCtx = sandCastBumpCanvas.getContext('2d');
+    // 2. Spring Barrel Top Cap with "Sankyo" Script and Lyre Emblem
+    const sankyoCapCanvas = document.createElement('canvas');
+    sankyoCapCanvas.width = 512;
+    sankyoCapCanvas.height = 512;
+    const scCtx = sankyoCapCanvas.getContext('2d');
     if (scCtx) {
-      scCtx.fillStyle = '#808080';
-      scCtx.fillRect(0, 0, 256, 256);
-      for (let x = 0; x < 256; x += 2) {
-        for (let y = 0; y < 256; y += 2) {
-          const grain = (Math.random() - 0.5) * 55;
-          scCtx.fillStyle = `rgb(${128 + grain}, ${128 + grain}, ${128 + grain})`;
-          scCtx.fillRect(x, y, 2, 2);
-        }
-      }
-    }
-    const sandCastBumpTexture = new THREE.CanvasTexture(sandCastBumpCanvas);
-    sandCastBumpTexture.wrapS = THREE.RepeatWrapping;
-    sandCastBumpTexture.wrapT = THREE.RepeatWrapping;
-    sandCastBumpTexture.repeat.set(4, 4);
+      scCtx.fillStyle = '#caa35c';
+      scCtx.fillRect(0, 0, 512, 512);
 
-    // (C) Embossed "Sankyo" Script Seal on Antique Patinated Spring Dome
-    const sankyoDomeCanvas = document.createElement('canvas');
-    sankyoDomeCanvas.width = 512;
-    sankyoDomeCanvas.height = 256;
-    const sCtx = sankyoDomeCanvas.getContext('2d');
-    if (sCtx) {
-      sCtx.clearRect(0, 0, 512, 256);
-      // Antique bronze background matching dome
-      sCtx.fillStyle = '#634727';
-      sCtx.fillRect(0, 0, 512, 256);
-
-      // Radial satin lathe grooves on dome top
-      for (let r = 10; r < 240; r += 3) {
-        sCtx.beginPath();
-        sCtx.arc(256, 128, r, 0, Math.PI * 2);
-        sCtx.strokeStyle = `rgba(180, 140, 80, ${0.09 + Math.random() * 0.08})`;
-        sCtx.lineWidth = 1.5;
-        sCtx.stroke();
+      // Concentric lathe satin grooves
+      for (let r = 10; r < 240; r += 2.5) {
+        scCtx.beginPath();
+        scCtx.arc(256, 256, r, 0, Math.PI * 2);
+        scCtx.strokeStyle = `rgba(255, 235, 180, ${0.12 + Math.random() * 0.08})`;
+        scCtx.lineWidth = 1.2;
+        scCtx.stroke();
       }
 
-      // Curved "Sankyo" font relief stamp in antique bronze with dark patina shadow
-      sCtx.font = 'bold 54px "Cinzel", "Times New Roman", Georgia, serif';
-      sCtx.textAlign = 'center';
-      sCtx.textBaseline = 'middle';
-      sCtx.fillStyle = '#221508';
-      sCtx.shadowColor = '#c99d63';
-      sCtx.shadowOffsetX = 1.5;
-      sCtx.shadowOffsetY = 1.5;
-      sCtx.shadowBlur = 3;
-      sCtx.fillText('Sankyo', 256, 75);
-    }
-    const sankyoDomeTex = new THREE.CanvasTexture(sankyoDomeCanvas);
+      // Curved Sankyo text along top perimeter
+      scCtx.save();
+      scCtx.translate(256, 256);
+      scCtx.rotate(-Math.PI * 0.58);
+      scCtx.font = 'bold 52px "Cinzel", "Times New Roman", Georgia, serif';
+      scCtx.fillStyle = '#593e18';
+      scCtx.shadowColor = '#ffe8ab';
+      scCtx.shadowOffsetX = 1.5;
+      scCtx.shadowOffsetY = 1.5;
+      scCtx.textAlign = 'center';
+      scCtx.textBaseline = 'middle';
+      scCtx.fillText('Sankyo', 0, -145);
+      scCtx.restore();
 
-    // (D) Tempered Spring Steel Comb Texture (Blued steel with ground bevels)
+      // Ornate Lyre / Harp emblem in the center (from IMG_0110.jpeg)
+      scCtx.save();
+      scCtx.translate(256, 260);
+      scCtx.strokeStyle = '#593e18';
+      scCtx.lineWidth = 4.5;
+      scCtx.lineCap = 'round';
+      scCtx.lineJoin = 'round';
+      scCtx.shadowColor = '#ffe8ab';
+      scCtx.shadowOffsetX = 1.5;
+      scCtx.shadowOffsetY = 1.5;
+
+      // Left scroll arm
+      scCtx.beginPath();
+      scCtx.moveTo(-45, -50);
+      scCtx.bezierCurveTo(-65, -35, -55, 25, -25, 45);
+      scCtx.lineTo(-10, 55);
+      scCtx.stroke();
+
+      // Left curl
+      scCtx.beginPath();
+      scCtx.arc(-45, -50, 10, 0, Math.PI * 2);
+      scCtx.stroke();
+
+      // Right scroll arm
+      scCtx.beginPath();
+      scCtx.moveTo(45, -50);
+      scCtx.bezierCurveTo(65, -35, 55, 25, 25, 45);
+      scCtx.lineTo(10, 55);
+      scCtx.stroke();
+
+      // Right curl
+      scCtx.beginPath();
+      scCtx.arc(45, -50, 10, 0, Math.PI * 2);
+      scCtx.stroke();
+
+      // Base bar
+      scCtx.beginPath();
+      scCtx.moveTo(-35, 55);
+      scCtx.lineTo(35, 55);
+      scCtx.stroke();
+
+      // Strings
+      scCtx.lineWidth = 2.5;
+      [-14, 0, 14].forEach((sx) => {
+        scCtx.beginPath();
+        scCtx.moveTo(sx, -30);
+        scCtx.lineTo(sx, 50);
+        scCtx.stroke();
+      });
+
+      scCtx.restore();
+    }
+    const sankyoCapTex = new THREE.CanvasTexture(sankyoCapCanvas);
+
+    // 3. Polished Brass Pin Cylinder Texture
+    const cylCanvas = document.createElement('canvas');
+    cylCanvas.width = 1024;
+    cylCanvas.height = 512;
+    const cylCtx = cylCanvas.getContext('2d');
+    if (cylCtx) {
+      cylCtx.fillStyle = '#caa35e';
+      cylCtx.fillRect(0, 0, 1024, 512);
+
+      // Lathe polishing marks
+      for (let y = 0; y < 512; y += 2) {
+        const val = Math.sin(y * 0.4) * 12 + (Math.random() - 0.5) * 10;
+        cylCtx.fillStyle = `rgba(${202 + val}, ${163 + val * 0.8}, ${94 + val * 0.5}, 0.35)`;
+        cylCtx.fillRect(0, y, 1024, 1.5);
+      }
+
+      // Authentic stamped number on right rim (18001 / patent mark from photo)
+      cylCtx.font = 'bold 22px monospace';
+      cylCtx.fillStyle = '#61461f';
+      cylCtx.shadowColor = '#f2dba6';
+      cylCtx.shadowOffsetX = 1;
+      cylCtx.shadowOffsetY = 1;
+      cylCtx.fillText('18001', 860, 260);
+    }
+    const cylTex = new THREE.CanvasTexture(cylCanvas);
+
+    // 4. Brushed Steel Comb Texture (Fine vertical grinding striations)
     const combCanvas = document.createElement('canvas');
     combCanvas.width = 512;
     combCanvas.height = 512;
     const cmbCtx = combCanvas.getContext('2d');
     if (cmbCtx) {
-      // Tempered blued-grey steel base
-      cmbCtx.fillStyle = '#545d68';
+      cmbCtx.fillStyle = '#cbd2d8';
       cmbCtx.fillRect(0, 0, 512, 512);
 
-      // Fine parallel grinding marks along the tines
-      for (let y = 0; y < 512; y += 2) {
-        const v = (Math.random() - 0.5) * 28;
-        cmbCtx.fillStyle = `rgb(${84 + v}, ${93 + v}, ${104 + v})`;
-        cmbCtx.fillRect(0, y, 512, 1);
+      // Vertical brushed metal hairline grooves
+      for (let x = 0; x < 512; x += 1.5) {
+        const v = (Math.random() - 0.5) * 38;
+        cmbCtx.fillStyle = `rgb(${203 + v}, ${210 + v}, ${216 + v})`;
+        cmbCtx.fillRect(x, 0, 1, 512);
       }
-      // Bevel highlight at tip
-      const tipGrad = cmbCtx.createLinearGradient(0, 0, 0, 90);
-      tipGrad.addColorStop(0, 'rgba(235, 240, 255, 0.45)');
-      tipGrad.addColorStop(1, 'rgba(235, 240, 255, 0.0)');
+      // Top tip specular bevel highlight
+      const tipGrad = cmbCtx.createLinearGradient(0, 0, 0, 80);
+      tipGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+      tipGrad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
       cmbCtx.fillStyle = tipGrad;
-      cmbCtx.fillRect(0, 0, 512, 90);
+      cmbCtx.fillRect(0, 0, 512, 80);
     }
-    const combTexture = new THREE.CanvasTexture(combCanvas);
+    const combTex = new THREE.CanvasTexture(combCanvas);
 
-    // 7. MATERIAL PALETTE (Antique Die-Cast Bronze & Retro Finishes)
-    const antiqueCastBronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x6e4e2a,
-      bumpMap: sandCastBumpTexture,
-      bumpScale: 0.035,
-      metalness: 0.85,
-      roughness: 0.38,
-      envMapIntensity: 1.35,
-    });
+    // ==========================================
+    // MATERIALS
+    // ==========================================
 
-    const antiquePolishedBronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x8a6538,
-      metalness: 0.90,
-      roughness: 0.22,
+    // Cast Gold/Brass Bedplate Material
+    const castBrassMat = new THREE.MeshStandardMaterial({
+      color: 0xb5935a,
+      map: bedplateTex,
+      bumpMap: bedplateBumpTex,
+      bumpScale: 0.025,
+      metalness: 0.88,
+      roughness: 0.35,
       envMapIntensity: 1.6,
     });
 
-    const antiqueCylinderBronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x684c2a,
-      map: bronzeCylTexture,
-      bumpMap: bronzeBumpTexture,
-      bumpScale: 0.03,
-      metalness: 0.89,
-      roughness: 0.26,
-      envMapIntensity: 1.45,
+    // Polished Golden Brass (Cylinder & Drum)
+    const polishedGoldBrassMat = new THREE.MeshStandardMaterial({
+      color: 0xcfab66,
+      map: cylTex,
+      metalness: 0.94,
+      roughness: 0.16,
+      envMapIntensity: 2.4,
     });
 
-    const temperedSteelCombMat = new THREE.MeshStandardMaterial({
-      color: 0x5b6570,
-      map: combTexture,
+    // Mirror Gold (Spring Cap & Teardrop Bracket)
+    const mirrorGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xd4b26f,
+      metalness: 0.96,
+      roughness: 0.12,
+      envMapIntensity: 2.6,
+    });
+
+    // Brushed Silver Steel Comb (Tines & Base Clamp)
+    const brushedSteelMat = new THREE.MeshStandardMaterial({
+      color: 0xd8dde2,
+      map: combTex,
       metalness: 0.92,
-      roughness: 0.24,
-      envMapIntensity: 1.3,
+      roughness: 0.20,
+      envMapIntensity: 1.9,
     });
 
-    const darkSteelClampBlockMat = new THREE.MeshStandardMaterial({
-      color: 0x33383e,
-      metalness: 0.88,
-      roughness: 0.36,
-      envMapIntensity: 1.1,
+    // Polished Chrome/Nickel for Large Screws
+    const polishedChromeScrewMat = new THREE.MeshStandardMaterial({
+      color: 0xe6edf2,
+      metalness: 0.98,
+      roughness: 0.08,
+      envMapIntensity: 2.9,
     });
 
-    const agedBoneNylonGearMat = new THREE.MeshStandardMaterial({
-      color: 0xe8dcbe,
-      metalness: 0.06,
-      roughness: 0.56,
+    // Cream / Ivory Nylon Gear
+    const creamNylonGearMat = new THREE.MeshStandardMaterial({
+      color: 0xf5eccb,
+      metalness: 0.04,
+      roughness: 0.50,
       envMapIntensity: 0.5,
     });
 
-    const blackenedGovernorFanMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
-      metalness: 0.4,
-      roughness: 0.6,
-      envMapIntensity: 0.8,
-    });
-
-    const agedSilverScrewMat = new THREE.MeshStandardMaterial({
-      color: 0xb5babf,
-      metalness: 0.92,
-      roughness: 0.25,
+    // Bronze Spur Gear on Cylinder
+    const bronzeCylGearMat = new THREE.MeshStandardMaterial({
+      color: 0x8a6336,
+      metalness: 0.88,
+      roughness: 0.32,
       envMapIntensity: 1.4,
     });
 
-    const darkDamperMat = new THREE.MeshStandardMaterial({
-      color: 0x141416,
-      metalness: 0.15,
-      roughness: 0.85,
+    // Black Butterfly Air-Brake Fan
+    const blackFanMat = new THREE.MeshStandardMaterial({
+      color: 0x1c1c1f,
+      metalness: 0.3,
+      roughness: 0.65,
     });
 
-    const knurledAntiqueBronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x76542d,
-      metalness: 0.88,
-      roughness: 0.42,
-      envMapIntensity: 1.3,
+    // Dark Damper Rubber Block
+    const darkRubberMat = new THREE.MeshStandardMaterial({
+      color: 0x18181a,
+      metalness: 0.1,
+      roughness: 0.9,
     });
 
-    // 8. Ground Shadow Receiver Plate & Velvet Tabletop
-    const groundGeo = new THREE.PlaneGeometry(36, 36);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0704,
-      roughness: 0.92,
-      metalness: 0.05,
+    // Silver Screws
+    const silverScrewMat = new THREE.MeshStandardMaterial({
+      color: 0xced3d8,
+      metalness: 0.92,
+      roughness: 0.22,
     });
-    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+
+    // Ground Plate
+    const groundMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(40, 40),
+      new THREE.MeshStandardMaterial({ color: 0x0c0805, roughness: 0.95, metalness: 0.05 })
+    );
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.position.y = -1.65;
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
 
-    // 9. BUILD AUTHENTIC SANKYO CHASSIS (Die-cast antique bronze base with fillets & mountings)
+    // ==========================================
+    // 1. CAST BRASS BEDPLATE (Accurate to IMG_0110.jpeg)
+    // ==========================================
     const chassisGroup = new THREE.Group();
     scene.add(chassisGroup);
 
-    // Main baseplate shape
+    // Main baseplate with beveled corners and stepped contours
     const baseplateShape = new THREE.Shape();
-    const bw = 6.4;
-    const bl = 5.4;
-    const br = 0.65;
+    const bw = 6.8;
+    const bl = 7.4;
+    const br = 0.85;
     baseplateShape.moveTo(-bw / 2 + br, -bl / 2);
     baseplateShape.lineTo(bw / 2 - br, -bl / 2);
     baseplateShape.quadraticCurveTo(bw / 2, -bl / 2, bw / 2, -bl / 2 + br);
@@ -547,264 +637,273 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     baseplateShape.quadraticCurveTo(-bw / 2, -bl / 2, -bw / 2 + br, -bl / 2);
 
     const baseplateExtrude = new THREE.ExtrudeGeometry(baseplateShape, {
-      depth: 0.48,
+      depth: 0.5,
       bevelEnabled: true,
       bevelSegments: 4,
       steps: 1,
-      bevelSize: 0.14,
-      bevelThickness: 0.14,
+      bevelSize: 0.15,
+      bevelThickness: 0.15,
     });
-    const baseplateMesh = new THREE.Mesh(baseplateExtrude, antiqueCastBronzeMat);
+    const baseplateMesh = new THREE.Mesh(baseplateExtrude, castBrassMat);
     baseplateMesh.rotation.x = Math.PI / 2;
-    baseplateMesh.position.set(0, -1.2, 0);
+    baseplateMesh.position.set(0, -1.18, 0.40);
     baseplateMesh.castShadow = true;
     baseplateMesh.receiveShadow = true;
     chassisGroup.add(baseplateMesh);
 
-    // Center Recessed Chassis Cavity underneath cylinder (darker patinated cavity)
-    const cavityMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(4.0, 0.25, 2.2),
-      new THREE.MeshStandardMaterial({
-        color: 0x412e1a,
-        metalness: 0.82,
-        roughness: 0.55,
-      })
-    );
-    cavityMesh.position.set(0.5, -0.96, -0.4);
-    chassisGroup.add(cavityMesh);
+    // Stepped shelf pedestal under comb extending to the front
+    const combShelfShape = new THREE.Shape();
+    const sw = 3.65;
+    const sl = 5.4;
+    combShelfShape.moveTo(-sw / 2, -sl / 2);
+    combShelfShape.lineTo(sw / 2 - 0.5, -sl / 2);
+    combShelfShape.lineTo(sw / 2, -sl / 2 + 0.5); // 45 deg beveled corner
+    combShelfShape.lineTo(sw / 2, sl / 2);
+    combShelfShape.lineTo(-sw / 2, sl / 2);
+    combShelfShape.lineTo(-sw / 2, -sl / 2);
 
-    // Chassis Mounting Holes with Internal Threading Grooves
-    const holePositions = [
-      { x: -2.65, z: -2.15 },
-      { x: 2.65, z: -2.15 },
-      { x: -2.65, z: 2.15 },
-      { x: 2.65, z: 2.15 },
+    const combShelfExtrude = new THREE.ExtrudeGeometry(combShelfShape, {
+      depth: 0.22,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      bevelSize: 0.05,
+      bevelThickness: 0.05,
+    });
+    const combShelfMesh = new THREE.Mesh(combShelfExtrude, castBrassMat);
+    combShelfMesh.rotation.x = Math.PI / 2;
+    combShelfMesh.position.set(0.72, -0.68, 1.45);
+    combShelfMesh.castShadow = true;
+    chassisGroup.add(combShelfMesh);
+
+    // Bedplate Mounting Screw Holes
+    const bedplateHoles = [
+      { x: -2.95, z: -0.7 },
+      { x: -2.85, z: 2.8 },
+      { x: -0.65, z: 3.15 },
+      { x: 2.95, z: 2.8 },
+      { x: 2.95, z: -2.2 },
     ];
-    holePositions.forEach((pos) => {
-      // Counterbored Rim
-      const holeRim = new THREE.Mesh(
-        new THREE.TorusGeometry(0.26, 0.07, 12, 28),
-        antiquePolishedBronzeMat
+    bedplateHoles.forEach((pos) => {
+      const rim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.22, 0.05, 12, 24),
+        castBrassMat
       );
-      holeRim.rotation.x = Math.PI / 2;
-      holeRim.position.set(pos.x, -0.96, pos.z);
-      chassisGroup.add(holeRim);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.set(pos.x, -0.92, pos.z);
+      chassisGroup.add(rim);
 
-      // Threaded Hole Cavity with dark interior
-      const holeDark = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.22, 0.55, 16),
-        new THREE.MeshBasicMaterial({ color: 0x110a05 })
+      const hole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 0.5, 16),
+        new THREE.MeshBasicMaterial({ color: 0x150e08 })
       );
-      holeDark.position.set(pos.x, -1.18, pos.z);
-      chassisGroup.add(holeDark);
-
-      // Internal thread spiral ring
-      const threadRing = new THREE.Mesh(
-        new THREE.TorusGeometry(0.21, 0.02, 6, 16),
-        antiquePolishedBronzeMat
-      );
-      threadRing.rotation.x = Math.PI / 2;
-      threadRing.position.set(pos.x, -1.05, pos.z);
-      chassisGroup.add(threadRing);
+      hole.position.set(pos.x, -1.15, pos.z);
+      chassisGroup.add(hole);
     });
 
-    // Cylinder Right Axle Pillar (Vertical Antique Bronze Bracket)
-    const rightPillarGeo = new THREE.BoxGeometry(0.58, 1.45, 0.8);
-    const rightPillar = new THREE.Mesh(rightPillarGeo, antiqueCastBronzeMat);
-    rightPillar.position.set(2.5, -0.28, -0.4);
+    // Helper for Slotted Screws
+    const createSlottedScrew = (radius: number, height: number, material: THREE.Material) => {
+      const group = new THREE.Group();
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+        material
+      );
+      group.add(head);
+
+      const slot = new THREE.Mesh(
+        new THREE.BoxGeometry(radius * 2.1, height * 1.5, radius * 0.28),
+        new THREE.MeshBasicMaterial({ color: 0x101012 })
+      );
+      slot.position.y = radius * 0.7;
+      group.add(slot);
+      return group;
+    };
+
+    // Right Cylinder Axle Post (moved as back as possible: z = -1.4)
+    const rightPillar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 1.45, 0.8),
+      castBrassMat
+    );
+    rightPillar.position.set(2.65, -0.25, -1.4);
     rightPillar.castShadow = true;
     chassisGroup.add(rightPillar);
 
-    // Knurled Antique Bronze Axle Bushing on Right Pillar
-    const knurledBushing = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.24, 0.38, 24),
-      knurledAntiqueBronzeMat
-    );
-    knurledBushing.rotation.z = Math.PI / 2;
-    knurledBushing.position.set(2.5, 0.25, -0.4);
-    knurledBushing.castShadow = true;
-    chassisGroup.add(knurledBushing);
+    // Slotted machine screw on top of right pillar
+    const pillarScrew = createSlottedScrew(0.18, 0.12, silverScrewMat);
+    pillarScrew.position.set(2.65, 0.48, -1.4);
+    chassisGroup.add(pillarScrew);
 
-    // Center Set-Screw on Bushing
-    const bushingSetScrew = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, 0.42, 12),
-      agedSilverScrewMat
-    );
-    bushingSetScrew.position.set(2.5, 0.48, -0.4);
-    chassisGroup.add(bushingSetScrew);
-
-    // 10. SPRING HOUSING CASING (Antique Bronze dome with embossed Sankyo signature)
+    // ==========================================
+    // 2. MAINSPRING DRUM & SANKYO CAP (Moved Back to z = -1.45)
+    // ==========================================
     const springGroup = new THREE.Group();
-    springGroup.position.set(-1.85, -0.08, -0.85);
+    springGroup.position.set(-1.85, -0.05, -1.45);
     scene.add(springGroup);
 
-    // Antique Bronze Spring Drum Cylindrical Wall
+    // Polished gold mainspring barrel cylinder
     const drumWall = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.22, 1.22, 1.15, 48),
-      antiquePolishedBronzeMat
+      new THREE.CylinderGeometry(1.22, 1.22, 1.25, 48),
+      mirrorGoldMat
     );
     drumWall.castShadow = true;
     springGroup.add(drumWall);
 
-    // Top Dome with beveled rim
+    // Top Cap with Sankyo Lyre Emblem
     const drumCap = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.24, 1.24, 0.2, 48),
-      antiquePolishedBronzeMat
+      new THREE.CylinderGeometry(1.25, 1.25, 0.18, 48),
+      mirrorGoldMat
     );
-    drumCap.position.y = 0.6;
+    drumCap.position.y = 0.65;
     springGroup.add(drumCap);
 
-    // Stamped Sankyo Logo Decal Plate directly on the bronze cap
-    const sankyoDecal = new THREE.Mesh(
-      new THREE.CircleGeometry(1.15, 36),
+    const sankyoEmblemDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.2, 36),
       new THREE.MeshStandardMaterial({
-        map: sankyoDomeTex,
-        metalness: 0.86,
-        roughness: 0.32,
-        envMapIntensity: 1.4,
+        map: sankyoCapTex,
+        metalness: 0.94,
+        roughness: 0.15,
+        envMapIntensity: 2.2,
       })
     );
-    sankyoDecal.rotation.x = -Math.PI / 2;
-    sankyoDecal.position.set(0, 0.71, 0);
-    springGroup.add(sankyoDecal);
+    sankyoEmblemDisc.rotation.x = -Math.PI / 2;
+    sankyoEmblemDisc.position.set(0, 0.75, 0);
+    springGroup.add(sankyoEmblemDisc);
 
-    // Center Aged Rivet Washer & Pin on Spring Housing
-    const springWasher = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.3, 0.3, 0.06, 24),
-      agedSilverScrewMat
+    // Center silver rivet pin
+    const centerPin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.2, 0.16, 20),
+      silverScrewMat
     );
-    springWasher.position.y = 0.72;
-    springGroup.add(springWasher);
+    centerPin.position.y = 0.8;
+    springGroup.add(centerPin);
 
-    const springRivet = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.16, 0.18, 16),
-      agedSilverScrewMat
+    // Left rubber stop bumper
+    const stopBumper = new THREE.Mesh(
+      new THREE.BoxGeometry(0.35, 0.65, 0.5),
+      darkRubberMat
     );
-    springRivet.position.y = 0.78;
-    springGroup.add(springRivet);
+    stopBumper.position.set(-1.26, 0.15, 0.1);
+    stopBumper.castShadow = true;
+    springGroup.add(stopBumper);
 
-    // Black Rubber Stop Buffer Block on Left Side of Spring Housing
-    const stopBuffer = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35, 0.7, 0.55),
-      darkDamperMat
-    );
-    stopBuffer.position.set(-1.25, 0.2, 0.2);
-    stopBuffer.castShadow = true;
-    springGroup.add(stopBuffer);
-
-    // 11. GOVERNOR & GEAR TRAIN (Front-Left Mechanism)
+    // ==========================================
+    // 3. SPEED GOVERNOR & GEAR TRAIN (Bottom-Left)
+    // ==========================================
     const governorGroup = new THREE.Group();
-    governorGroup.position.set(-2.2, -0.2, 1.1);
+    governorGroup.position.set(-1.75, -0.3, 0.45);
     scene.add(governorGroup);
 
-    // Stepped Bone-Nylon Governor Reduction Gear
-    const intermediateGearGroup = new THREE.Group();
-    intermediateGearGroup.position.set(0.65, -0.08, -0.4);
-    governorGroup.add(intermediateGearGroup);
-    intermediateGearRef.current = intermediateGearGroup;
+    // Cream / Ivory Nylon Intermediate Reduction Gear
+    const nylonGearGroup = new THREE.Group();
+    nylonGearGroup.position.set(0.65, 0.25, -1.05);
+    governorGroup.add(nylonGearGroup);
+    intermediateGearRef.current = nylonGearGroup;
 
-    // Main Gear Disc
     const nylonGearDisc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.68, 0.68, 0.24, 32),
-      agedBoneNylonGearMat
+      new THREE.CylinderGeometry(0.72, 0.72, 0.22, 36),
+      creamNylonGearMat
     );
     nylonGearDisc.rotation.x = Math.PI / 2;
     nylonGearDisc.castShadow = true;
-    intermediateGearGroup.add(nylonGearDisc);
+    nylonGearGroup.add(nylonGearDisc);
 
-    // Stepped Small Pinion Gear
-    const nylonPinion = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.35, 0.38, 20),
-      agedBoneNylonGearMat
-    );
-    nylonPinion.rotation.x = Math.PI / 2;
-    nylonPinion.position.z = 0.15;
-    nylonPinion.castShadow = true;
-    intermediateGearGroup.add(nylonPinion);
-
-    // 24 radial spur gear teeth around the nylon gear perimeter
     for (let t = 0; t < 24; t++) {
       const toothAngle = (t / 24) * Math.PI * 2;
       const tooth = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.12, 0.22),
-        agedBoneNylonGearMat
+        new THREE.BoxGeometry(0.08, 0.14, 0.2),
+        creamNylonGearMat
       );
-      tooth.position.set(
-        Math.cos(toothAngle) * 0.68,
-        Math.sin(toothAngle) * 0.68,
-        0
-      );
+      tooth.position.set(Math.cos(toothAngle) * 0.72, Math.sin(toothAngle) * 0.72, 0);
       tooth.rotation.z = toothAngle;
-      intermediateGearGroup.add(tooth);
+      nylonGearGroup.add(tooth);
     }
 
-    // Governor Bridge / Bracket arch in antique bronze
-    const govBracket = new THREE.Mesh(
-      new THREE.BoxGeometry(0.95, 1.25, 0.95),
-      antiqueCastBronzeMat
-    );
-    govBracket.position.set(0, 0.12, 0);
-    govBracket.castShadow = true;
-    governorGroup.add(govBracket);
-
-    // Governor Flywheel Spindle & 2-Blade Butterfly Air Brake Fan
+    // Governor Flywheel Spindle & Black Butterfly Air-Brake Fan
     const govFanGroup = new THREE.Group();
-    govFanGroup.position.set(0, 0.78, 0);
+    govFanGroup.position.set(0, 0.45, 0);
     governorFanRef.current = govFanGroup;
     governorGroup.add(govFanGroup);
 
-    // Steel Spindle shaft
     const fanSpindle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, 0.55, 16),
-      agedSilverScrewMat
+      new THREE.CylinderGeometry(0.05, 0.05, 0.7, 16),
+      silverScrewMat
     );
     govFanGroup.add(fanSpindle);
 
-    // Nylon Worm Gear collar under fan
-    const wormCollar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.18, 0.16, 16),
-      agedBoneNylonGearMat
-    );
-    wormCollar.position.y = -0.15;
-    govFanGroup.add(wormCollar);
-
-    // 2-Blade Black Butterfly Air Brake Fan
     const fanBlade1 = new THREE.Mesh(
-      new THREE.BoxGeometry(1.02, 0.24, 0.035),
-      blackenedGovernorFanMat
+      new THREE.BoxGeometry(1.05, 0.26, 0.035),
+      blackFanMat
     );
     fanBlade1.castShadow = true;
     govFanGroup.add(fanBlade1);
 
     const fanBlade2 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.035, 0.24, 1.02),
-      blackenedGovernorFanMat
+      new THREE.BoxGeometry(0.035, 0.26, 1.05),
+      blackFanMat
     );
     fanBlade2.castShadow = true;
     govFanGroup.add(fanBlade2);
 
-    // 12. ANTIQUE BRONZE CYLINDER DRUM & DRIVING GEAR
+    // Gold Teardrop Top Cover Bracket (Exact match to IMG_0110.jpeg)
+    const teardropShape = new THREE.Shape();
+    teardropShape.moveTo(-0.55, 0);
+    teardropShape.arc(0.55, 0, 0.55, Math.PI, 0, false);
+    teardropShape.lineTo(0.25, -0.75);
+    teardropShape.lineTo(-0.25, -0.75);
+    teardropShape.closePath();
+
+    const teardropExtrude = new THREE.ExtrudeGeometry(teardropShape, {
+      depth: 0.15,
+      bevelEnabled: true,
+      bevelSegments: 3,
+      bevelSize: 0.06,
+      bevelThickness: 0.06,
+    });
+    const teardropMesh = new THREE.Mesh(teardropExtrude, mirrorGoldMat);
+    teardropMesh.rotation.x = Math.PI / 2;
+    teardropMesh.position.set(0, 0.65, 0.15);
+    teardropMesh.castShadow = true;
+    governorGroup.add(teardropMesh);
+
+    // Center white/silver pivot jewel on teardrop bracket
+    const pivotJewel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 0.08, 16),
+      new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.2, metalness: 0.3 })
+    );
+    pivotJewel.position.set(0, 0.75, 0.15);
+    governorGroup.add(pivotJewel);
+
+    // Slotted mounting screws around governor plate
+    const govScrew1 = createSlottedScrew(0.16, 0.1, silverScrewMat);
+    govScrew1.position.set(0.65, -0.15, 0.1);
+    governorGroup.add(govScrew1);
+
+    const govScrew2 = createSlottedScrew(0.16, 0.1, silverScrewMat);
+    govScrew2.position.set(-0.65, -0.15, -0.4);
+    governorGroup.add(govScrew2);
+
+    // ==========================================
+    // 4. POLISHED GOLD BRASS CYLINDER (Moved as back as possible: z = -1.4)
+    // ==========================================
     const cylinderGroup = new THREE.Group();
-    cylinderGroup.position.set(0.4, 0.25, -0.4);
+    cylinderGroup.position.set(0.72, 0.40, -1.4);
     cylinderGroupRef.current = cylinderGroup;
     scene.add(cylinderGroup);
 
-    // Main Cylinder Drum in Patinated Retro Bronze
     const cylLength = 3.65;
     const cylRadius = 0.96;
     const cylinderMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(cylRadius, cylRadius, cylLength, 64),
-      antiqueCylinderBronzeMat
+      polishedGoldBrassMat
     );
     cylinderMesh.rotation.z = Math.PI / 2;
     cylinderMesh.castShadow = true;
     cylinderMesh.receiveShadow = true;
     cylinderGroup.add(cylinderMesh);
 
-    // Cylinder End Flanges / Caps
+    // Cylinder End Flanges
     const leftCap = new THREE.Mesh(
       new THREE.CylinderGeometry(0.98, 0.98, 0.08, 36),
-      antiquePolishedBronzeMat
+      mirrorGoldMat
     );
     leftCap.rotation.z = Math.PI / 2;
     leftCap.position.x = -cylLength / 2;
@@ -812,158 +911,163 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
     const rightCap = new THREE.Mesh(
       new THREE.CylinderGeometry(0.98, 0.98, 0.08, 36),
-      antiquePolishedBronzeMat
+      mirrorGoldMat
     );
     rightCap.rotation.z = Math.PI / 2;
     rightCap.position.x = cylLength / 2;
     cylinderGroup.add(rightCap);
 
-    // Left Gear Ring on Cylinder Drum (Spur gear teeth)
+    // Left Bronze Spur Ring Gear
     const cylGearGroup = new THREE.Group();
-    cylGearGroup.position.x = -cylLength / 2 + 0.24;
+    cylGearGroup.position.x = -cylLength / 2 + 0.22;
     cylinderGroup.add(cylGearGroup);
 
     const cylGearBase = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.14, 1.14, 0.32, 48),
-      antiquePolishedBronzeMat
+      new THREE.CylinderGeometry(1.15, 1.15, 0.3, 48),
+      bronzeCylGearMat
     );
     cylGearBase.rotation.z = Math.PI / 2;
     cylGearBase.castShadow = true;
     cylGearGroup.add(cylGearBase);
 
-    // 36 Antique Bronze Gear Teeth on Cylinder Driving Ring
     for (let g = 0; g < 36; g++) {
       const toothAngle = (g / 36) * Math.PI * 2;
       const gTooth = new THREE.Mesh(
-        new THREE.BoxGeometry(0.32, 0.06, 0.12),
-        antiquePolishedBronzeMat
+        new THREE.BoxGeometry(0.3, 0.06, 0.12),
+        bronzeCylGearMat
       );
-      gTooth.position.set(
-        0,
-        Math.cos(toothAngle) * 1.15,
-        Math.sin(toothAngle) * 1.15
-      );
+      gTooth.position.set(0, Math.cos(toothAngle) * 1.16, Math.sin(toothAngle) * 1.16);
       gTooth.rotation.x = toothAngle;
       cylGearGroup.add(gTooth);
     }
 
-    // Cylinder Axle Shaft
+    // Cylinder Center Axle
     const cylAxle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.12, cylLength + 0.95, 20),
-      agedSilverScrewMat
+      new THREE.CylinderGeometry(0.12, 0.12, cylLength + 0.9, 20),
+      silverScrewMat
     );
     cylAxle.rotation.z = Math.PI / 2;
     cylinderGroup.add(cylAxle);
 
-    // Group holding all high-visibility 3D extruded pins (Child of cylinderGroup -> always rotates cleanly!)
+    // Group holding all active 3D song pins
     const pinMeshesGroup = new THREE.Group();
     cylinderGroup.add(pinMeshesGroup);
     pinMeshesGroupRef.current = pinMeshesGroup;
-
-    // Immediately build initial pins
     rebuildPinMeshes(pinsRef.current, totalStepsRef.current);
 
-    // 13. TUNED 18-NOTE TEMPERED STEEL COMB ASSEMBLY
+    // ==========================================
+    // 5. 18-NOTE TUNED STEEL COMB (Front-most Base & Extra Long Tines)
+    // ==========================================
     const combGroup = new THREE.Group();
-    combGroup.position.set(0.4, -0.35, 1.25);
+    // Base centered at x = 0.72, y = -0.40, z = 0.0
+    combGroup.position.set(0.72, -0.40, 0.0);
     scene.add(combGroup);
 
-    // Dark Steel Clamp Base Block with Chamfered Front Edge
-    const clampBlockGeo = new THREE.BoxGeometry(3.65, 0.46, 1.25);
-    const clampBlock = new THREE.Mesh(clampBlockGeo, darkSteelClampBlockMat);
-    clampBlock.position.set(0, 0, 0);
-    clampBlock.castShadow = true;
-    clampBlock.receiveShadow = true;
-    combGroup.add(clampBlock);
+    // Solid Brushed Steel Clamp Plate with Beveled Bottom-Right Corner (Moved even further front: z = 2.75)
+    const combPlateShape = new THREE.Shape();
+    const pw = 3.55;
+    const pl = 1.55;
+    combPlateShape.moveTo(-pw / 2, -pl / 2);
+    combPlateShape.lineTo(pw / 2 - 0.45, -pl / 2);
+    combPlateShape.lineTo(pw / 2, -pl / 2 + 0.45); // Authentic corner chamfer from photo!
+    combPlateShape.lineTo(pw / 2, pl / 2);
+    combPlateShape.lineTo(-pw / 2, pl / 2);
+    combPlateShape.lineTo(-pw / 2, -pl / 2);
 
-    // High-detail domed Antique Bronze Phillips Cross Screws
-    const createBronzePhillipsScrew = (xPos: number) => {
+    const combPlateExtrude = new THREE.ExtrudeGeometry(combPlateShape, {
+      depth: 0.38,
+      bevelEnabled: true,
+      bevelSegments: 3,
+      bevelSize: 0.06,
+      bevelThickness: 0.06,
+    });
+    const combPlateMesh = new THREE.Mesh(combPlateExtrude, brushedSteelMat);
+    combPlateMesh.rotation.x = Math.PI / 2;
+    // Pushed even further front: z = 2.75
+    combPlateMesh.position.set(0, 0.15, 2.75);
+    combPlateMesh.castShadow = true;
+    combPlateMesh.receiveShadow = true;
+    combGroup.add(combPlateMesh);
+
+    // Two Large Polished Chrome Slotted Dome Screws (Moved to front with base clamp)
+    const createLargeSlottedScrew = (xPos: number, zPos: number) => {
       const screwGroup = new THREE.Group();
-      screwGroup.position.set(xPos, 0.26, 0.06);
+      screwGroup.position.set(xPos, 0.34, zPos);
 
-      // Domed Antique Bronze Head
+      // Large domed head
       const domeHead = new THREE.Mesh(
-        new THREE.SphereGeometry(0.33, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
-        antiquePolishedBronzeMat
+        new THREE.SphereGeometry(0.38, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+        polishedChromeScrewMat
       );
-      domeHead.position.y = 0;
       domeHead.castShadow = true;
       screwGroup.add(domeHead);
 
-      // Beveled Bronze Washer Collar
-      const washer = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.36, 0.36, 0.05, 24),
-        antiquePolishedBronzeMat
+      // Single straight deep screwdriver slot
+      const slot = new THREE.Mesh(
+        new THREE.BoxGeometry(0.78, 0.22, 0.08),
+        new THREE.MeshBasicMaterial({ color: 0x121214 })
       );
-      washer.position.y = -0.02;
-      screwGroup.add(washer);
-
-      // Recessed Dark Phillips Cross Slots
-      const slotMat = new THREE.MeshBasicMaterial({ color: 0x150e06 });
-      const slot1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.07), slotMat);
-      slot1.position.y = 0.28;
-      screwGroup.add(slot1);
-
-      const slot2 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.42), slotMat);
-      slot2.position.y = 0.28;
-      screwGroup.add(slot2);
+      slot.position.y = 0.28;
+      screwGroup.add(slot);
 
       return screwGroup;
     };
 
-    // 2 Large Bronze Phillips Screws clamping the comb block
-    combGroup.add(createBronzePhillipsScrew(-1.12));
-    combGroup.add(createBronzePhillipsScrew(1.12));
+    // Clamping screws at the front plate (matching photo)
+    combGroup.add(createLargeSlottedScrew(-0.95, 2.85));
+    combGroup.add(createLargeSlottedScrew(0.85, 2.65));
 
-    // 18 Tuned High-Carbon Tempered Steel Tines
+    // 18 High-Carbon Tuned Spring Steel Tines (Extra long from front clamp z = 2.65 to drum z = -0.44)
     const tinesMeshes: THREE.Mesh[] = [];
     const originalPos: { x: number; y: number; z: number }[] = [];
-    const combWidth = 3.25;
+    const combWidth = 3.35;
     const tineSpacing = combWidth / 18;
     const startX = -combWidth / 2 + tineSpacing / 2;
 
+    // Contact point at drum underside/front: z = -0.44
+    // Front clamp root: z = 2.65
+    // Total tine length ~ 3.82 to 4.26
     for (let i = 0; i < 18; i++) {
       const tx = startX + i * tineSpacing;
-      const tineLen = 1.68 + (17 - i) * 0.038;
-      const tineWidth = tineSpacing * 0.82;
+      // In the reference photo, bass tines have a slightly longer free span than treble tines
+      const tineLen = 3.82 + (17 - i) * 0.026;
+      const tineWidth = tineSpacing * 0.84;
       const tineThick = 0.075;
 
       const tineGeo = new THREE.BoxGeometry(tineWidth, tineThick, tineLen);
+      // Anchor origin at the front clamp, extending backward to cylinder
       tineGeo.translate(0, 0, -tineLen / 2);
 
-      const tineMesh = new THREE.Mesh(tineGeo, temperedSteelCombMat.clone());
-      tineMesh.position.set(tx, 0.23, -0.46);
+      const tineMesh = new THREE.Mesh(tineGeo, brushedSteelMat.clone());
+      // Root positioned at z = 2.65 inside the clamp plate
+      tineMesh.position.set(tx, 0.22, 2.65);
       tineMesh.castShadow = true;
       tineMesh.receiveShadow = true;
       tineMesh.userData = { tineIndex: i };
 
-      // Lead-weight tuning pads underneath low-frequency bass tines (0-6)
+      // Lead weights under bass tines (0-6)
       if (i < 7) {
         const leadPad = new THREE.Mesh(
-          new THREE.BoxGeometry(tineWidth * 0.9, 0.08, 0.25),
-          new THREE.MeshStandardMaterial({
-            color: 0x3d434a,
-            metalness: 0.65,
-            roughness: 0.65,
-          })
+          new THREE.BoxGeometry(tineWidth * 0.9, 0.08, 0.32),
+          new THREE.MeshStandardMaterial({ color: 0x444a52, metalness: 0.6, roughness: 0.65 })
         );
-        leadPad.position.set(0, -0.06, -tineLen + 0.15);
+        leadPad.position.set(0, -0.058, -tineLen + 0.25);
         tineMesh.add(leadPad);
       }
 
       combGroup.add(tineMesh);
       tinesMeshes.push(tineMesh);
-      originalPos.push({ x: tx, y: 0.23, z: -0.46 });
+      originalPos.push({ x: tx, y: 0.22, z: 2.65 });
     }
     tinesMeshesRef.current = tinesMeshes;
     tineOriginalPosRef.current = originalPos;
 
-    // 14. Harmonic Light Particle Sparkles System
+    // Harmonic Sparkle Particles
     const particleGroup = new THREE.Group();
     scene.add(particleGroup);
     particleGroupRef.current = particleGroup;
 
-    // Handle Resize
+    // Resize Handler
     const handleResize = () => {
       if (!container || !camera || !renderer) return;
       const w = container.clientWidth;
@@ -975,52 +1079,70 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
     window.addEventListener('resize', handleResize);
 
-    // 24 FPS Battery-Saving Animation Loop (Optimized for Mobile & iPad)
+    // Animation Loop
     let localGovernorAngle = 0;
     let localCylinderAngle = (currentStepRef.current / totalStepsRef.current) * Math.PI * 2;
 
     const animate = (timestamp: number) => {
       reqIdRef.current = requestAnimationFrame(animate);
 
-      // Strict FPS Cap throttling (<= 24 FPS) to prevent device overheating and conserve battery
-      const fps = targetFpsRef.current || 24;
+      const fps = 24;
       const frameInterval = 1000 / fps;
       const elapsed = timestamp - lastRenderTimestampRef.current;
 
-      if (elapsed < frameInterval) {
-        return; // Skip intermediate frame to save GPU & CPU cycles
-      }
+      if (elapsed < frameInterval) return;
       lastRenderTimestampRef.current = timestamp - (elapsed % frameInterval);
 
-      // Check if scene has dynamic movement requiring render updates
+      // 1. Camera interpolation
+      const dTheta = targetCameraAngleRef.current.theta - currentCameraAngleRef.current.theta;
+      const dPhi = targetCameraAngleRef.current.phi - currentCameraAngleRef.current.phi;
+      const dDist = targetCameraAngleRef.current.distance - currentCameraAngleRef.current.distance;
+      const dLookAt = currentLookAtRef.current.distanceTo(targetLookAtRef.current);
+      const isCameraInterpolating =
+        Math.abs(dTheta) > 0.0003 ||
+        Math.abs(dPhi) > 0.0003 ||
+        Math.abs(dDist) > 0.005 ||
+        dLookAt > 0.005;
+
+      if (isCameraInterpolating) {
+        currentCameraAngleRef.current.theta += dTheta * 0.22;
+        currentCameraAngleRef.current.phi += dPhi * 0.22;
+        currentCameraAngleRef.current.distance += dDist * 0.22;
+        currentLookAtRef.current.lerp(targetLookAtRef.current, 0.22);
+      }
+
+      if (isAutoRotatingRef.current) {
+        targetCameraAngleRef.current.theta += 0.003;
+        currentCameraAngleRef.current.theta += 0.003;
+      }
+
       const isCranking = playModeRef.current === 'crank' && crankRpmRef.current > 0.5;
       const shouldSpinGears = isPlayingRef.current || isCranking;
       const isRotating = isAutoRotatingRef.current;
       const isDragging = isDraggingRef.current;
       const hasParticles = (particleGroupRef.current?.children.length ?? 0) > 0;
       const hasTineDeflection = tineDeflectionRef.current.some((d) => d > 0.001);
-      const isDynamic = shouldSpinGears || isRotating || isDragging || hasParticles || hasTineDeflection || needsRenderRef.current;
+      const isDynamic =
+        shouldSpinGears ||
+        isRotating ||
+        isDragging ||
+        isCameraInterpolating ||
+        hasParticles ||
+        hasTineDeflection ||
+        needsRenderRef.current;
 
-      if (!isDynamic) {
-        // Sleep state: scene is stable and static, no work needed
-        return;
-      }
+      if (!isDynamic) return;
       needsRenderRef.current = false;
 
-      // 1. Camera positioning and smooth interpolation
-      if (isAutoRotatingRef.current) {
-        cameraAngleRef.current.theta += 0.0025;
-      }
-
-      const { theta, phi, distance } = cameraAngleRef.current;
-      const cx = targetLookAtRef.current.x + distance * Math.sin(phi) * Math.sin(theta);
-      const cy = targetLookAtRef.current.y + distance * Math.cos(phi);
-      const cz = targetLookAtRef.current.z + distance * Math.sin(phi) * Math.cos(theta);
+      const { theta, phi, distance } = currentCameraAngleRef.current;
+      const cx = currentLookAtRef.current.x + distance * Math.sin(phi) * Math.sin(theta);
+      const cy = currentLookAtRef.current.y + distance * Math.cos(phi);
+      const cz = currentLookAtRef.current.z + distance * Math.sin(phi) * Math.cos(theta);
 
       camera.position.set(cx, cy, cz);
-      camera.lookAt(targetLookAtRef.current);
+      camera.lookAt(currentLookAtRef.current);
 
-      // 2. Governor fan and gear spinning
+      // 2. Governor & gear rotation
       if (shouldSpinGears && governorFanRef.current) {
         let speed = 0;
         if (isCranking) {
@@ -1037,7 +1159,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         }
       }
 
-      // 3. Smooth cylinder drum rotation tracking currentStep (24fps interpolated)
+      // 3. Cylinder rotation
       if (cylinderGroupRef.current) {
         const targetCylinderAngle = (currentStepRef.current / totalStepsRef.current) * Math.PI * 2;
         let angleDiff = targetCylinderAngle - localCylinderAngle;
@@ -1052,7 +1174,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         cylinderGroupRef.current.rotation.x = -localCylinderAngle;
       }
 
-      // 4. Tine deflection vibration physics update
+      // 4. Tine vibration physics
       tinesMeshesRef.current.forEach((tine, idx) => {
         let defl = tineDeflectionRef.current[idx];
         if (defl > 0.001) {
@@ -1070,7 +1192,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         }
       });
 
-      // 5. Particles update (fade out and drift upwards)
+      // 5. Particles update
       if (particleGroupRef.current) {
         for (let i = particleGroupRef.current.children.length - 1; i >= 0; i--) {
           const p = particleGroupRef.current.children[i] as THREE.Mesh;
@@ -1091,21 +1213,17 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     reqIdRef.current = requestAnimationFrame(animate);
 
     return () => {
-      if (reqIdRef.current) {
-        cancelAnimationFrame(reqIdRef.current);
-      }
+      if (reqIdRef.current) cancelAnimationFrame(reqIdRef.current);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
       pmremGenerator.dispose();
     };
   }, [rebuildPinMeshes]);
 
-  // Update 3D Extruded Pins on Cylinder Drum whenever pins or totalSteps change
   useEffect(() => {
     rebuildPinMeshes(pins, totalSteps);
   }, [pins, totalSteps, rebuildPinMeshes]);
 
-  // Trigger 3D Tine physical deflection and warm spark particle on note pluck
   useEffect(() => {
     activeTines.forEach((tineIndex) => {
       tineDeflectionRef.current[tineIndex] = 1.0;
@@ -1113,24 +1231,24 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       const mesh = tinesMeshesRef.current[tineIndex];
       if (mesh) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
-        mat.color.setHex(0xfad36b);
-        mat.emissive.setHex(0x8a6210);
+        mat.color.setHex(0xfce28a);
+        mat.emissive.setHex(0x916812);
         setTimeout(() => {
-          mat.color.setHex(0x5b6570);
+          mat.color.setHex(0xd8dde2);
           mat.emissive.setHex(0x000000);
         }, 150);
 
         if (particleGroupRef.current) {
-          const sparkGeo = new THREE.SphereGeometry(0.09, 8, 8);
+          const sparkGeo = new THREE.SphereGeometry(0.08, 8, 8);
           const sparkMat = new THREE.MeshBasicMaterial({
-            color: 0xfff2be,
+            color: 0xfffae0,
             transparent: true,
             opacity: 0.95,
           });
           const spark = new THREE.Mesh(sparkGeo, sparkMat);
           const orig = tineOriginalPosRef.current[tineIndex];
           if (orig) {
-            spark.position.set(orig.x + 0.4, 0.35, orig.z + 1.25 - 0.7);
+            spark.position.set(orig.x + 0.72, 0.45, -0.44);
             particleGroupRef.current.add(spark);
           }
         }
@@ -1138,24 +1256,29 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     });
   }, [activeTines]);
 
-  // Pointer drag orbit controls on Canvas
   const handlePointerDown = (e: React.PointerEvent) => {
     isDraggingRef.current = true;
+    dragDistanceRef.current = 0;
     previousMousePosRef.current = { x: e.clientX, y: e.clientY };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    needsRenderRef.current = true;
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDraggingRef.current) return;
     const deltaX = e.clientX - previousMousePosRef.current.x;
     const deltaY = e.clientY - previousMousePosRef.current.y;
+    dragDistanceRef.current += Math.hypot(deltaX, deltaY);
     previousMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-    cameraAngleRef.current.theta -= deltaX * 0.008;
-    cameraAngleRef.current.phi = Math.max(
-      0.08,
-      Math.min(Math.PI / 2 - 0.05, cameraAngleRef.current.phi - deltaY * 0.008)
+    targetCameraAngleRef.current.theta -= deltaX * 0.008;
+    currentCameraAngleRef.current.theta -= deltaX * 0.008;
+    targetCameraAngleRef.current.phi = Math.max(
+      0.05,
+      Math.min(Math.PI / 2 - 0.05, targetCameraAngleRef.current.phi - deltaY * 0.008)
     );
+    currentCameraAngleRef.current.phi = targetCameraAngleRef.current.phi;
+    needsRenderRef.current = true;
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -1167,17 +1290,18 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     }
   };
 
-  // Zoom on wheel
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    cameraAngleRef.current.distance = Math.max(
-      6.5,
-      Math.min(22.0, cameraAngleRef.current.distance + e.deltaY * 0.012)
+    targetCameraAngleRef.current.distance = Math.max(
+      5.0,
+      Math.min(22.0, targetCameraAngleRef.current.distance + e.deltaY * 0.012)
     );
+    needsRenderRef.current = true;
+    updateZoomDisplay(targetCameraAngleRef.current.distance);
   };
 
-  // Raycast click to pluck 3D tines directly from 3D viewport
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (dragDistanceRef.current > 5) return;
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
     const scene = sceneRef.current;
@@ -1199,77 +1323,104 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     }
   };
 
+  // Listen for physical computer keyboard key presses to pluck tines
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input, textarea, or contentEditable element
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      const shortcutIndex = KEYBOARD_SHORTCUTS.indexOf(key);
+      if (shortcutIndex !== -1 && shortcutIndex < tinesList.length) {
+        e.preventDefault();
+        onPluckTine(shortcutIndex);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [tinesList.length, onPluckTine]);
+
   return (
     <div className="relative w-full max-w-4xl mx-auto flex flex-col items-center select-none">
-      {/* 3D Realistic Mechanical Movement Card - Antique Bronze Atmosphere */}
-      <div className="relative w-full rounded-2xl bg-[#17110a] p-4 sm:p-5 border border-[#6b4e2b]/50 shadow-[0_16px_40px_rgba(20,14,8,0.45)] overflow-hidden">
-        {/* Background Warm Bronze & Patina Ambient Sheen */}
-        <div className="absolute -top-32 -left-32 w-80 h-80 bg-[#7a542b]/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#8c6538]/15 rounded-full blur-3xl pointer-events-none" />
+      {/* 3D Realistic Sankyo Mechanical Movement Card */}
+      <div className="relative w-full rounded-2xl bg-[#17110a] p-4 sm:p-5 border border-[#8a6838]/60 shadow-[0_16px_40px_rgba(20,14,8,0.5)] overflow-hidden">
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-[#c99f52]/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#a67c3b]/15 rounded-full blur-3xl pointer-events-none" />
 
         {/* Top Status & Brand Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3 text-xs sm:text-sm text-[#bda991]">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3 text-xs sm:text-sm text-[#caa87c]">
           <div className="flex items-center space-x-2.5">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#dfb26b] shadow-sm shadow-[#dfb26b]/60 animate-pulse" />
-            <span className="font-serif tracking-wider uppercase text-[#edd9bf] font-bold">
-              Sankyo 18-Note Antique Die-Cast Movement
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#f0c465] shadow-sm shadow-[#f0c465]/70 animate-pulse" />
+            <span className="font-serif tracking-wider uppercase text-[#faebd4] font-bold">
+              Sankyo 18-Note Movement • 聲盒仔
             </span>
-            {/* Battery & Power Saver Indicator */}
             <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-[#27381d]/80 border border-[#486b32]/60 text-[#a3d977] text-[10px] font-mono shadow-xs">
               <Leaf className="w-3 h-3 text-[#8ce053]" />
-              <span>{targetFps} FPS Eco</span>
+              <span>24 FPS Eco</span>
             </div>
           </div>
 
-          {/* 3D Camera Angles & FPS Limit Control */}
-          <div className="flex items-center space-x-1.5 bg-[#241a10]/95 backdrop-blur-md p-1 rounded-xl border border-[#4a3520]">
-            <span className="text-[10px] uppercase font-serif text-[#8f7962] px-1.5 hidden sm:inline">
+          {/* 3D Camera Angles */}
+          <div className="flex items-center space-x-1 sm:space-x-1.5 bg-[#241a10]/95 backdrop-blur-md p-1 rounded-xl border border-[#523c24] overflow-x-auto max-w-full">
+            <span className="text-[10px] uppercase font-serif text-[#a68d72] px-1.5 hidden md:inline shrink-0">
               3D View:
             </span>
             <button
               id="camera-preset-default-btn"
               onClick={() => setCameraPreset('default')}
-              title="Isometric 3/4 View (Photo Angle)"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
+              title="Classic 3/4 Perspective View"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
                 currentCameraPreset === 'default'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
             >
               Classic 3/4
             </button>
             <button
+              id="camera-preset-comb-btn"
+              onClick={() => setCameraPreset('comb')}
+              title="Close up on Extra-Long 18-Tine Steel Comb"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+                currentCameraPreset === 'comb'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
+              }`}
+            >
+              Visible Comb
+            </button>
+            <button
               id="camera-preset-cylinder-btn"
               onClick={() => setCameraPreset('cylinder')}
-              title="Close up on Bronze Cylinder & Polished Pins"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
+              title="Close up on Polished Brass Cylinder & Pins"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
                 currentCameraPreset === 'cylinder'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
             >
               Cylinder & Pins
             </button>
             <button
-              id="camera-preset-comb-btn"
-              onClick={() => setCameraPreset('comb')}
-              title="Close up on Steel Comb Striker & Bronze Screws"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
-                currentCameraPreset === 'comb'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
-              }`}
-            >
-              Comb
-            </button>
-            <button
               id="camera-preset-governor-btn"
               onClick={() => setCameraPreset('governor')}
-              title="Close up on Air-Brake Governor Fan & Gear"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
+              title="Close up on Speed Governor & Gear"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
                 currentCameraPreset === 'governor'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
             >
               Governor
@@ -1277,23 +1428,23 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             <button
               id="camera-preset-side-btn"
               onClick={() => setCameraPreset('side')}
-              title="Profile Side View showing Gear Mesh"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
+              title="Side Profile View"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
                 currentCameraPreset === 'side'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
             >
-              Profile
+              Side
             </button>
             <button
               id="camera-preset-top-btn"
               onClick={() => setCameraPreset('top')}
-              title="Top Down Angle"
-              className={`px-2 py-1 rounded-lg text-xs font-serif transition-all ${
+              title="Top-down Overview"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
                 currentCameraPreset === 'top'
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold shadow-xs'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
             >
               Top
@@ -1301,10 +1452,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
           </div>
         </div>
 
-        {/* 3D WebGL Canvas Viewport Container */}
+        {/* 3D WebGL Canvas Viewport */}
         <div
           ref={containerRef}
-          className="relative w-full aspect-[16/10] sm:aspect-[16/9] max-h-[480px] flex items-center justify-center bg-[#0e0a07] rounded-xl border border-[#4a3520] overflow-hidden group shadow-inner cursor-grab active:cursor-grabbing"
+          className="relative w-full aspect-[16/10] sm:aspect-[16/9] max-h-[480px] flex items-center justify-center bg-[#100b07] rounded-xl border border-[#523c24] overflow-hidden group shadow-inner cursor-grab active:cursor-grabbing"
         >
           <canvas
             ref={canvasRef}
@@ -1316,15 +1467,18 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             className="w-full h-full object-cover touch-none"
           />
 
-          {/* Quick 3D View Controls Overlay (Orbit / Auto-rotate / Reset) */}
-          <div className="absolute top-3 left-3 flex items-center space-x-1.5 bg-[#20160d]/90 backdrop-blur-md px-2 py-1.5 rounded-xl border border-[#4a3520] shadow-sm">
+          {/* Quick 3D View & Zoom Controls */}
+          <div className="absolute top-3 left-3 flex items-center space-x-1 sm:space-x-1.5 bg-[#241a10]/95 backdrop-blur-md px-2 py-1.5 rounded-xl border border-[#523c24] shadow-md z-10">
             <button
               id="toggle-autorotate-btn"
-              onClick={() => setIsAutoRotating((prev) => !prev)}
-              className={`p-1.5 rounded-lg text-xs transition-all flex items-center space-x-1 ${
+              onClick={() => {
+                setIsAutoRotating((prev) => !prev);
+                needsRenderRef.current = true;
+              }}
+              className={`px-2 py-1 rounded-lg text-xs transition-all flex items-center space-x-1.5 ${
                 isAutoRotating
-                  ? 'bg-[#8a6538] text-[#fef9f0] font-bold'
-                  : 'text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718]'
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
               }`}
               title={isAutoRotating ? 'Stop Turntable Rotation' : 'Auto Turntable 3D Rotation'}
             >
@@ -1332,80 +1486,145 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               <span className="text-[11px] font-serif hidden sm:inline">Turntable</span>
             </button>
 
+            <div className="w-[1px] h-4 bg-[#523c24]" />
+
             <button
               id="zoom-in-btn"
-              onClick={() => {
-                cameraAngleRef.current.distance = Math.max(6.5, cameraAngleRef.current.distance - 1.5);
-              }}
-              className="p-1.5 rounded-lg text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718] transition"
+              onClick={handleZoomIn}
+              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
               title="Zoom In"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-4 h-4" />
+            </button>
+
+            <button
+              id="zoom-reset-btn"
+              onClick={handleResetZoom}
+              className="px-1.5 py-0.5 rounded-md text-[11px] font-mono text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] transition"
+              title="Reset Zoom to 100%"
+            >
+              {zoomPercent}%
             </button>
 
             <button
               id="zoom-out-btn"
-              onClick={() => {
-                cameraAngleRef.current.distance = Math.min(22.0, cameraAngleRef.current.distance + 1.5);
-              }}
-              className="p-1.5 rounded-lg text-[#bda991] hover:text-[#f4e8d8] hover:bg-[#382718] transition"
+              onClick={handleZoomOut}
+              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
               title="Zoom Out"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-4 h-4" />
+            </button>
+
+            <div className="w-[1px] h-4 bg-[#523c24]" />
+
+            <button
+              id="camera-reset-view-btn"
+              onClick={() => setCameraPreset('default')}
+              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
+              title="Reset 3D View Angle"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Interactive Clickable 18-Tine Key Strip Overlay */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[94%] sm:w-[82%] h-12 flex justify-between items-end px-1 pointer-events-auto bg-[#171008]/90 backdrop-blur-md p-1 rounded-xl border border-[#4a3520]/80 shadow-md">
-            {SANKYO_18_TINES.map((tine) => {
-              const isActive = activeTines.has(tine.index);
-              return (
-                <button
-                  key={tine.index}
-                  id={`tine-key-${tine.index}`}
-                  title={`Pluck ${tine.note} (${tine.frequency.toFixed(0)} Hz)`}
-                  onMouseEnter={() => setHoveredTine(tine.index)}
-                  onMouseLeave={() => setHoveredTine(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPluckTine(tine.index);
-                  }}
-                  className={`relative flex-1 mx-[1px] h-9 sm:h-10 rounded-lg transition-all duration-75 flex flex-col items-center justify-end pb-1 border ${
-                    isActive
-                      ? 'bg-gradient-to-t from-[#8a6538] to-[#dfb26b] border-[#dfb26b] shadow-lg shadow-[#8a6538]/60 -translate-y-1'
-                      : 'bg-[#22180f]/90 hover:bg-[#3d2b1b] border-[#382617] hover:border-[#8a6538]/60'
-                  }`}
-                >
-                  <span
-                    className={`text-[8px] sm:text-[9px] font-mono leading-none font-medium ${
-                      isActive ? 'text-[#1c1309] font-bold' : 'text-[#c7b49d]'
-                    }`}
-                  >
-                    {tine.keyLabel.replace(/\d/, '')}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Hint Overlay badge */}
-          <div className="absolute top-3 right-3 bg-[#20160d]/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-[#6b4e2b]/40 text-[11px] text-[#dfcdb5] flex items-center space-x-1.5 pointer-events-none shadow-sm">
-            <Compass className="w-3 h-3 text-[#c99d63]" />
-            <span className="font-serif-sub italic">Drag 3D to rotate • Scroll to zoom</span>
+          <div className="absolute top-3 right-3 bg-[#241a10]/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-[#8a6838]/50 text-[11px] text-[#eedcc5] flex items-center space-x-1.5 pointer-events-none shadow-sm">
+            <Compass className="w-3 h-3 text-[#f0c465]" />
+            <span className="font-serif">Click any 3D tine or drag to rotate</span>
           </div>
         </div>
 
-        {/* Real-time Tine Spectrum & Note Scale Legend */}
-        <div className="mt-3 pt-3 border-t border-[#362617] flex flex-wrap items-center justify-between gap-2 text-xs text-[#a8947d]">
-          <div className="flex items-center space-x-1.5">
-            <Info className="w-3.5 h-3.5 text-[#c99d63]" />
-            <span className="text-[#decfae] font-medium font-serif">Movement Specs:</span>
-            <span className="font-mono text-[#ddcbb2]">18-Tine Blued Spring Steel • Antique Sand-Cast Bronze Finish • High-Relief Pins</span>
+        {/* Dedicated User Keyboard Under the Music Box (No Overlap, 100% Width Fit) */}
+        <div className="mt-4 pt-3.5 border-t border-[#523c24]/70 flex flex-col space-y-2 w-full">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center space-x-2">
+              <Keyboard className="w-4 h-4 text-[#f0c465]" />
+              <span className="font-serif text-xs sm:text-sm font-semibold text-[#faebd4]">
+                Interactive Comb Keyboard
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2b1e13] border border-[#523c24] text-[#caa87c] font-mono">
+                {tinesList.length} Notes
+              </span>
+            </div>
+            <div className="flex items-center space-x-2 text-[11px] text-[#caa87c]">
+              <span className="hidden sm:inline font-serif text-[#a68d72]">
+                Press keys <kbd className="px-1 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465]">1-0</kbd> <kbd className="px-1 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465]">Q-P</kbd> or click tines
+              </span>
+              <span className="sm:hidden font-serif text-[#a68d72]">
+                Tap keys or press keyboard
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <span className="text-[#87745e]">Active Pins:</span>
-            <span className="text-[#dfb26b] font-mono font-bold">{pins.length}</span>
+          {/* Interactive Keyboard Keys Rack - Full Width Fit with No Scroll */}
+          <div className="w-full">
+            <div className="w-full flex items-stretch gap-0.5 sm:gap-1 p-1 sm:p-1.5 rounded-xl bg-[#120d08] border border-[#523c24]/90 shadow-inner">
+              {tinesList.map((tine, idx) => {
+                const isActive = activeTines.has(idx);
+                const isHovered = hoveredTine === idx;
+                const shortcut = KEYBOARD_SHORTCUTS[idx]?.toUpperCase();
+                const isAccidental = tine.isFlat || tine.note.includes('b') || tine.note.includes('#');
+
+                return (
+                  <button
+                    key={`${tine.note}-${idx}`}
+                    id={`keyboard-tine-key-${idx}`}
+                    onClick={() => onPluckTine(idx)}
+                    onMouseEnter={() => setHoveredTine(idx)}
+                    onMouseLeave={() => setHoveredTine(null)}
+                    title={`Tine #${idx + 1}: ${tine.note} (${tine.frequency ? tine.frequency.toFixed(1) + ' Hz' : ''}) • Keyboard shortcut: [${shortcut || ''}]`}
+                    className={`group relative flex-1 min-w-0 flex flex-col items-center justify-between h-18 sm:h-22 md:h-24 px-0.5 sm:px-1 py-1 sm:py-1.5 rounded sm:rounded-lg border transition-all select-none cursor-pointer ${
+                      isActive
+                        ? 'bg-gradient-to-b from-[#ffe599] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#ffe8a3] shadow-[0_0_10px_rgba(240,196,101,0.7)] -translate-y-1 scale-105 z-10'
+                        : isHovered
+                        ? 'bg-gradient-to-b from-[#5c4228] to-[#3a2717] text-[#fffdf7] border-[#8a6838] shadow-xs -translate-y-0.5'
+                        : isAccidental
+                        ? 'bg-gradient-to-b from-[#2a1d12] via-[#20150b] to-[#160d06] text-[#dfc39e] border-[#47321e] hover:border-[#6d4d2e]'
+                        : 'bg-gradient-to-b from-[#3a2818] via-[#2c1d11] to-[#1f1309] text-[#faebd4] border-[#553b22] hover:border-[#7d5732]'
+                    }`}
+                  >
+                    {/* Top tuned comb tooth screw / pin notch accent */}
+                    <div
+                      className={`w-1.5 sm:w-2 h-1 rounded-full mb-0.5 transition-colors ${
+                        isActive
+                          ? 'bg-[#7a5416]'
+                          : isHovered
+                          ? 'bg-[#caa87c]'
+                          : 'bg-[#523c24]'
+                      }`}
+                    />
+
+                    {/* Note Label */}
+                    <div className="flex flex-col items-center min-w-0 w-full overflow-hidden">
+                      <span className="text-[9px] sm:text-[11px] md:text-xs font-serif font-bold tracking-tight leading-tight truncate w-full text-center">
+                        {tine.note}
+                      </span>
+                      <span
+                        className={`hidden sm:inline text-[7px] sm:text-[8px] md:text-[9px] font-mono leading-none ${
+                          isActive ? 'text-[#3d2706]' : 'text-[#8a765e]'
+                        }`}
+                      >
+                        #{idx + 1}
+                      </span>
+                    </div>
+
+                    {/* Keyboard Shortcut Keycap Badge */}
+                    {shortcut && (
+                      <div
+                        className={`mt-0.5 px-0.5 sm:px-1 py-0.5 rounded text-[7px] sm:text-[8px] md:text-[9px] font-mono font-bold uppercase transition-colors shadow-xs leading-none ${
+                          isActive
+                            ? 'bg-[#1c1208] text-[#f0c465]'
+                            : isHovered
+                            ? 'bg-[#17110a] text-[#fffdf7] border border-[#caa87c]/40'
+                            : 'bg-[#19110a] text-[#9e8568] border border-[#523c24]/70'
+                        }`}
+                      >
+                        {shortcut}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

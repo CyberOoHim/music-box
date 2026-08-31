@@ -7,6 +7,7 @@ interface GeminiComposerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoadSong: (song: MusicBoxSong) => void;
+  hasAiComposer?: boolean;
 }
 
 const INSPIRATION_PROMPTS = [
@@ -46,6 +47,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   isOpen,
   onClose,
   onLoadSong,
+  hasAiComposer = false,
 }) => {
   const [prompt, setPrompt] = useState('');
   const [style, setStyle] = useState('nostalgic');
@@ -54,7 +56,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
 
-  if (!isOpen) return null;
+  if (!isOpen || !hasAiComposer) return null;
 
   const handleGenerate = async (customPrompt?: string, customStyle?: string) => {
     const textToUse = customPrompt || prompt;

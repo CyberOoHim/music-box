@@ -34,6 +34,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// Check if Gemini AI composer is enabled (API key configured)
+app.get('/api/gemini/status', (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const isEnabled = Boolean(apiKey && apiKey.trim().length > 0);
+  res.json({ enabled: isEnabled });
+});
+
 // Helper: Procedural algorithmic music box generator (used as graceful fallback if API is unavailable)
 function generateProceduralMusic(prompt: string, style: string, totalSteps: number) {
   const isWaltz = style === 'waltz' || /waltz|3\/4/i.test(prompt);
@@ -105,6 +112,13 @@ function generateProceduralMusic(prompt: string, style: string, totalSteps: numb
 
 // Gemini AI Music Box Composer Endpoint
 app.post('/api/gemini/compose', async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(403).json({
+      error: 'AI Composer is disabled because GEMINI_API_KEY is not configured in the environment.',
+    });
+  }
+
   const { prompt, style = 'melodic', totalSteps = 64, tempoPreference, combScaleId = 'romantic-flat' } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {

@@ -133,20 +133,28 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
   }, [playMode]);
 
   useEffect(() => {
+    // Reset dragging, ratchet accumulators, and velocity on mode change
+    setIsDragging(false);
+    isDraggingRef.current = false;
+    angularVelocityRef.current = 0;
+    setCrankRpm(0);
+    reverseRatchetAccumRef.current = 0;
+    springRatchetAccumRef.current = 0;
+
     if (playMode === 'crank') {
       startPhysicsLoopIfNeeded();
     } else {
       if (reqAnimIdRef.current) {
         cancelAnimationFrame(reqAnimIdRef.current);
+        reqAnimIdRef.current = null;
       }
       isLoopRunningRef.current = false;
-      angularVelocityRef.current = 0;
-      setCrankRpm(0);
     }
 
     return () => {
       if (reqAnimIdRef.current) {
         cancelAnimationFrame(reqAnimIdRef.current);
+        reqAnimIdRef.current = null;
       }
       isLoopRunningRef.current = false;
     };
