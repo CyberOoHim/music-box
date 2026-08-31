@@ -1024,7 +1024,7 @@ class MusicBoxAudioEngine {
         this.playPluckClick(now, baseFreq, velocity, 'vintage');
       } else if (preset === 'retro-8bit') {
         // 5. 8-BIT RETRO ARCADE: Programmable Sound Generator (PSG) square / pulse wave synthesis
-        // Authentic NES/Game Boy APU sound: Primary square wave + quick pitch-blip attack + overtone
+        // Authentic NES/Game Boy pure square wave notes with instant, clean pitch and zero chirp
         const f1 = baseFreq;
         const f2 = baseFreq * 2.0; // Octave harmonic pulse
 
@@ -1032,14 +1032,13 @@ class MusicBoxAudioEngine {
         const gain1 = this.ctx.createGain();
         osc1.type = 'square';
 
-        // Fast 12ms 8-bit pitch-blip transient (authentic arcade coin/pluck chirp)
-        osc1.frequency.setValueAtTime(f1 * 1.4, now);
-        osc1.frequency.exponentialRampToValueAtTime(f1, now + 0.012);
+        // Pure, stable pitch from note onset — no pitch chirp or frequency ramp
+        osc1.frequency.setValueAtTime(f1, now);
 
-        // Snappy 8-bit chiptune envelope
-        const retroDecay = Math.max(0.25, Math.min(1.1, decayFactor * 0.52));
+        // Snappy, clean 8-bit chiptune envelope with smooth 3ms de-clicked attack
+        const retroDecay = Math.max(0.28, Math.min(1.2, decayFactor * 0.55));
         gain1.gain.setValueAtTime(0.0001, now);
-        gain1.gain.linearRampToValueAtTime(0.46 * velocity, now + 0.002);
+        gain1.gain.linearRampToValueAtTime(0.48 * velocity, now + 0.003);
         gain1.gain.exponentialRampToValueAtTime(0.00001, now + retroDecay);
 
         osc1.connect(gain1);
@@ -1048,17 +1047,16 @@ class MusicBoxAudioEngine {
         let osc2: OscillatorNode | null = null;
         let gain2: GainNode | null = null;
 
-        // Secondary pulse overtone
-        if (f2 < 14000) {
+        // Subtle secondary pulse harmonic for rich chiptune warmth
+        if (f2 < 12000) {
           osc2 = this.ctx.createOscillator();
           gain2 = this.ctx.createGain();
           osc2.type = 'square';
-          osc2.frequency.setValueAtTime(f2 * 1.4, now);
-          osc2.frequency.exponentialRampToValueAtTime(f2, now + 0.012);
+          osc2.frequency.setValueAtTime(f2, now);
 
-          const f2Decay = retroDecay * 0.45;
+          const f2Decay = retroDecay * 0.40;
           gain2.gain.setValueAtTime(0.0001, now);
-          gain2.gain.linearRampToValueAtTime(0.18 * velocity, now + 0.002);
+          gain2.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.003);
           gain2.gain.exponentialRampToValueAtTime(0.00001, now + f2Decay);
 
           osc2.connect(gain2);
@@ -1097,9 +1095,6 @@ class MusicBoxAudioEngine {
 
         osc1.start(now);
         osc1.stop(now + retroDecay + 0.03);
-
-        // Retro chiptune pluck noise transient
-        this.playPluckClick(now, baseFreq, velocity, 'chiptune');
       }
     } catch (e) {
       console.warn('playFrequency error:', e);
