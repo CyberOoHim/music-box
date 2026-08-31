@@ -656,6 +656,64 @@ export default function App() {
     subStepRef.current = 0;
   }, []);
 
+  // Play song directly from music card: go to Mechanical Movement panel and proceed with previous play mode
+  const handlePlaySong = useCallback(
+    async (song: MusicBoxSong) => {
+      // 1. Initialize audio context
+      await ensureAudioInitialized();
+
+      // 2. Silence any currently ringing notes & clear vibrating tines
+      musicBoxAudio.stopAllMusicVoices();
+      setActiveTines(new Set());
+      setCrankRpm(0);
+
+      // 3. Update song, scale, tempo & step
+      setCurrentSong(song);
+      currentSongRef.current = song;
+      if (song.combScaleId) {
+        setCombScaleId(song.combScaleId);
+        combScaleIdRef.current = song.combScaleId;
+      }
+      const songTempo = song.tempoBpm || 88;
+      setTempoBpm(songTempo);
+      tempoBpmRef.current = songTempo;
+      setCurrentStep(0);
+      currentStepRef.current = 0;
+      subStepRef.current = 0;
+      lastStepTimeRef.current = performance.now();
+
+      // 4. Switch to Mechanical Movement panel
+      setActiveTab('movement');
+
+      // 5. Proceed as previous play mode
+      let currentMode = playModeRef.current;
+      if (currentMode === 'crank') {
+        currentMode = 'spring';
+        setPlayMode('spring');
+        playModeRef.current = 'spring';
+      }
+
+      if (currentMode === 'spring') {
+        if (springTensionRef.current < 0.15) {
+          setSpringTension(1.0);
+          springTensionRef.current = 1.0;
+        }
+      }
+
+      musicBoxAudio.setMechanicalHum(true, songTempo / 90);
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+      executeStep(0);
+      notifyStepSubscribers(0);
+
+      showToast(
+        `Playing "${song.title}" in ${currentMode === 'spring' ? 'Wind-Up Spring' : 'Continuous'} mode`,
+        'success'
+      );
+    },
+    [ensureAudioInitialized, executeStep, notifyStepSubscribers, showToast]
+  );
+
   // Save new / AI-generated song
   const handleLoadNewSong = useCallback((song: MusicBoxSong) => {
     setSongs((prevSongs) => {
@@ -1235,6 +1293,7 @@ export default function App() {
               songs={songs}
               currentSongId={currentSong.id}
               onSelectSong={handleSelectSong}
+              onPlaySong={handlePlaySong}
               onImportSong={handleLoadNewSong}
               onDeleteCustomSong={handleDeleteCustomSong}
               onOpenGeminiModal={() => hasAiComposer && setIsGeminiModalOpen(true)}

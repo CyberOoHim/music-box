@@ -10,12 +10,14 @@ import {
   Check,
   FolderArchive,
   RotateCcw,
+  Play,
 } from 'lucide-react';
 
 interface SongLibraryProps {
   songs: MusicBoxSong[];
   currentSongId: string;
   onSelectSong: (song: MusicBoxSong) => void;
+  onPlaySong?: (song: MusicBoxSong) => void;
   onDeleteCustomSong?: (songId: string) => void;
   onImportSong: (song: MusicBoxSong) => void;
   onOpenGeminiModal?: () => void;
@@ -27,6 +29,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   songs,
   currentSongId,
   onSelectSong,
+  onPlaySong,
   onDeleteCustomSong,
   onImportSong,
   onOpenGeminiModal,
@@ -84,7 +87,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <button
               id="library-gemini-compose-btn"
               onClick={onOpenGeminiModal}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition"
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>AI Compose</span>
@@ -96,7 +99,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <button
               id="library-manage-data-btn"
               onClick={onOpenImportExportModal}
-              className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 transition shadow-2xs font-semibold"
+              className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 transition shadow-2xs font-semibold cursor-pointer"
             >
               <FolderArchive className="w-3.5 h-3.5 text-[#8a765e]" />
               <span>Backup & Import ({customOrAiCount})</span>
@@ -135,7 +138,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-2.5 py-1 rounded-lg font-serif transition whitespace-nowrap ${
+              className={`px-2.5 py-1 rounded-lg font-serif transition whitespace-nowrap cursor-pointer ${
                 selectedCategory === cat.id
                   ? 'bg-[#433422] text-[#fbf8f2] font-semibold shadow-xs'
                   : 'text-[#6f5e49] hover:text-[#2d2419]'
@@ -202,15 +205,28 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   <span>{song.tempoBpm} BPM</span>
                   <span>•</span>
                   <span>{song.pins.length} pins</span>
-                  <span>•</span>
-                  <span className="text-[#78592d] font-semibold">{totalSteps} steps ({measureLabel})</span>
                 </div>
 
                 <div className="flex items-center space-x-1.5">
+                  {onPlaySong && (
+                    <button
+                      id={`play-song-${song.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPlaySong(song);
+                      }}
+                      title={`Play "${song.title}" in Mechanical Movement`}
+                      className="px-2 py-1 rounded-lg bg-[#433422] hover:bg-[#2d2419] text-[#fbf8f2] shadow-2xs hover:scale-105 transition flex items-center gap-1 font-serif text-[11px] font-semibold cursor-pointer"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>Play</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={(e) => handleExport(song, e)}
                     title="Export score to JSON"
-                    className="p-1 rounded hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition"
+                    className="p-1.5 rounded-lg hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                   </button>
@@ -222,14 +238,14 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                         onDeleteCustomSong(song.id);
                       }}
                       title="Delete saved score"
-                      className="p-1 rounded hover:bg-[#fce9e6] text-[#8a765e] hover:text-[#9c3826] transition"
+                      className="p-1.5 rounded-lg hover:bg-[#fce9e6] text-[#8a765e] hover:text-[#9c3826] transition cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
 
                   {isSelected && (
-                    <span className="w-5 h-5 rounded-full bg-[#433422] text-[#fbf8f2] flex items-center justify-center">
+                    <span className="w-5 h-5 rounded-full bg-[#433422] text-[#fbf8f2] flex items-center justify-center ml-0.5" title="Currently selected in cylinder">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </span>
                   )}
