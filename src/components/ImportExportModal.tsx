@@ -339,7 +339,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                     )}
                   </div>
                   <span className="text-xs font-mono text-[#8a765e]">
-                    {currentSong.pins.length} pins • {currentSong.tempoBpm} BPM
+                    {currentSong.pins.length} pins • {currentSong.tempoBpm} BPM • {currentSong.totalSteps || 64} steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))} measures)
                   </span>
                 </div>
 
@@ -500,7 +500,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                           )}
                         </div>
                         <span className="font-mono text-[11px] text-[#8a765e]">
-                          {s.pins.length} pins • {s.tempoBpm} BPM
+                          {s.pins.length} pins • {s.tempoBpm} BPM • {s.totalSteps || 64} steps ({Math.max(1, Math.round((s.totalSteps || 64) / 16))}m)
                         </span>
                       </div>
                     ))}

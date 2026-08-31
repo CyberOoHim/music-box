@@ -150,6 +150,10 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         {filteredSongs.map((song) => {
           const isSelected = song.id === currentSongId;
           const isCustom = song.category === 'custom' || song.id.startsWith('custom-') || song.id.startsWith('imported-');
+          const totalSteps = song.totalSteps || 64;
+          const measures = Math.max(1, Math.round(totalSteps / 16));
+          const measureLabel = measures === 1 ? '1 measure' : `${measures} measures`;
+
           return (
             <div
               key={song.id}
@@ -166,17 +170,22 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   <span className={`text-sm font-serif font-bold leading-tight ${isSelected ? 'text-[#433422]' : 'text-[#433422] group-hover:text-[#8a6b3e]'}`}>
                     {song.title}
                   </span>
-                  {song.isAiGenerated && (
-                    <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
-                      <Sparkles className="w-2.5 h-2.5" />
-                      Gemini
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#eee5d5] text-[#6d5538] border border-[#d9cdbe] font-medium" title={`${totalSteps} total rotation steps across ${measureLabel}`}>
+                      {totalSteps} steps • {measures}m
                     </span>
-                  )}
-                  {isCustom && !song.isAiGenerated && (
-                    <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
-                      Custom
-                    </span>
-                  )}
+                    {song.isAiGenerated && (
+                      <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        Gemini
+                      </span>
+                    )}
+                    {isCustom && !song.isAiGenerated && (
+                      <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
+                        Custom
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {song.description && (
@@ -187,9 +196,13 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               </div>
 
               <div className="mt-3 pt-2.5 border-t border-[#e5dcce] flex items-center justify-between text-[11px] text-[#8a765e]">
-                <span className="font-mono text-[#8a765e]">
-                  {song.tempoBpm} BPM • {song.pins.length} pins
-                </span>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[#8a765e]">
+                  <span>{song.tempoBpm} BPM</span>
+                  <span>•</span>
+                  <span>{song.pins.length} pins</span>
+                  <span>•</span>
+                  <span className="text-[#78592d] font-semibold">{totalSteps} steps ({measureLabel})</span>
+                </div>
 
                 <div className="flex items-center space-x-1.5">
                   <button

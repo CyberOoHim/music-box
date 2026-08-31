@@ -252,7 +252,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                   {generatedSong.title}
                 </span>
                 <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-semibold">
-                  {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins
+                  {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))} Measures)
                 </span>
               </div>
               <p className="text-xs text-[#5e4c36] font-serif-sub italic">

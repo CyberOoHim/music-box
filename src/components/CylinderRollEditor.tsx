@@ -266,7 +266,9 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = ({
             <span className="font-serif">Empty Slot</span>
           </span>
         </div>
-        <span className="text-[#8a765e] font-mono">Total {pins.length} active pins</span>
+        <span className="text-[#8a765e] font-mono">
+          Total {pins.length} active pins • {totalSteps} steps ({Math.max(1, Math.round(totalSteps / 16))} measures)
+        </span>
       </div>
     </div>
   );

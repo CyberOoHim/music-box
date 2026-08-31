@@ -939,6 +939,10 @@ export default function App() {
                 {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat Scale'} (
                 {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)
               </span>
+              {/* Step / Measure Badge */}
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
+                {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))} Measures)
+              </span>
             </div>
             <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
               {currentSong.title}
