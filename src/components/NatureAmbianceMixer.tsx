@@ -110,6 +110,9 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
       'crystal-bell',
       'vintage-antique',
       'retro-8bit',
+      'kalimba-mbira',
+      'cathedral-bell',
+      'fm-digital',
     ];
 
     presets.forEach((presetKey, idx) => {
@@ -324,6 +327,12 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
               idleMod = (Math.sin(t * 2.2) + Math.sin(t * 4.8) * 0.3) * 0.18;
             } else if (soundPreset === 'retro-8bit') {
               idleMod = (Math.sin(t * 3) >= 0 ? 0.22 : -0.22) + (Math.sin(t * 6) >= 0 ? 0.08 : -0.08);
+            } else if (soundPreset === 'kalimba-mbira') {
+              idleMod = Math.sin(t * 1.5) * 0.25 + Math.sin(t * 5.5) * 0.06;
+            } else if (soundPreset === 'cathedral-bell') {
+              idleMod = Math.sin(t * 0.75) * 0.28 + Math.sin(t * 2.25) * 0.14 + Math.sin(t * 4.5) * 0.08;
+            } else if (soundPreset === 'fm-digital') {
+              idleMod = Math.sin(t * 2.0 + Math.sin(t * 7.0) * 1.5) * 0.22;
             }
             v = 1.0 + idleMod * 0.4;
           }

@@ -156,6 +156,9 @@ class MusicBoxAudioEngine {
           'crystal-bell',
           'vintage-antique',
           'retro-8bit',
+          'kalimba-mbira',
+          'cathedral-bell',
+          'fm-digital',
         ];
         for (const preset of presets) {
           const impulseBuf = this.getOrCreateImpulseResponse(preset);
@@ -297,6 +300,15 @@ class MusicBoxAudioEngine {
     } else if (preset === 'retro-8bit') {
       duration = 0.22;
       decayRate = 7.2;
+    } else if (preset === 'kalimba-mbira') {
+      duration = 0.38;
+      decayRate = 5.2;
+    } else if (preset === 'cathedral-bell') {
+      duration = 1.35;
+      decayRate = 1.6;
+    } else if (preset === 'fm-digital') {
+      duration = 0.55;
+      decayRate = 3.4;
     }
 
     const length = Math.max(512, Math.floor(sampleRate * duration));
@@ -345,6 +357,25 @@ class MusicBoxAudioEngine {
         const cabR = (Math.random() * 2 - 1) * 0.25 - blip;
         left[i] = cabL * env * 0.35;
         right[i] = cabR * env * 0.35;
+      } else if (preset === 'kalimba-mbira') {
+        const gourdAir = Math.sin(2 * Math.PI * 190 * t) * 0.45 * Math.exp(-t * 6.5);
+        const tineWood = Math.sin(2 * Math.PI * 520 * t) * 0.25 * Math.exp(-t * 8.0);
+        const buzz = (Math.random() * 2 - 1) * 0.15 * Math.exp(-t * 12.0) * (Math.sin(2 * Math.PI * 45 * t) > 0 ? 1 : 0);
+        left[i] = (gourdAir + tineWood + buzz) * env * 0.75;
+        right[i] = (gourdAir + tineWood * 0.9 - buzz * 0.8) * env * 0.75;
+      } else if (preset === 'cathedral-bell') {
+        const chimeEcho1 = Math.sin(2 * Math.PI * 440 * t) * 0.20;
+        const chimeEcho2 = Math.sin(2 * Math.PI * 880 * t) * 0.14;
+        const chimeEcho3 = Math.sin(2 * Math.PI * 1760 * t) * 0.08;
+        const stoneNoiseL = (Math.random() * 2 - 1) * 0.45 + chimeEcho1 + chimeEcho2 + chimeEcho3;
+        const stoneNoiseR = (Math.random() * 2 - 1) * 0.45 + chimeEcho1 * 0.85 - chimeEcho2 + chimeEcho3 * 0.7;
+        left[i] = stoneNoiseL * env * 0.95;
+        right[i] = stoneNoiseR * env * 0.95;
+      } else if (preset === 'fm-digital') {
+        const plateL = (Math.random() * 2 - 1) * 0.4 + Math.sin(2 * Math.PI * 2200 * t) * 0.15;
+        const plateR = (Math.random() * 2 - 1) * 0.4 - Math.sin(2 * Math.PI * 2200 * t) * 0.15;
+        left[i] = plateL * env * 0.65;
+        right[i] = plateR * env * 0.65;
       }
     }
 
@@ -478,6 +509,66 @@ class MusicBoxAudioEngine {
         this.dryGain.gain.setTargetAtTime(0.72, now, 0.03);
         this.wetGain.gain.setTargetAtTime(0.26 * this.chamberReverbAmount, now, 0.03);
         break;
+
+      case 'kalimba-mbira':
+        // Option 6: African Calabash Gourd Mbira / Thumb Piano
+        this.chamberFilter.type = 'peaking';
+        this.chamberFilter.frequency.setTargetAtTime(195, now, 0.03); // Deep Helmholtz air cavity body
+        this.chamberFilter.gain.setTargetAtTime(7.5 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.6, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1150, now, 0.03); // Woody reed ring
+        this.chamberResonanceBoost.gain.setTargetAtTime(2.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.2, now, 0.03);
+
+        this.chamberToneFilter.type = 'lowpass';
+        this.chamberToneFilter.frequency.setTargetAtTime(2800, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(0, now, 0.03);
+
+        this.dryGain.gain.setTargetAtTime(0.78, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.32 * this.chamberReverbAmount, now, 0.03);
+        break;
+
+      case 'cathedral-bell':
+        // Option 7: Grand Cathedral Glockenspiel & Bronze Carillon
+        this.chamberFilter.type = 'peaking';
+        this.chamberFilter.frequency.setTargetAtTime(480, now, 0.03); // Bronze bell waist resonance
+        this.chamberFilter.gain.setTargetAtTime(6.0 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.3, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(1850, now, 0.03); // Metallic clapper strike
+        this.chamberResonanceBoost.gain.setTargetAtTime(4.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.8, now, 0.03);
+
+        this.chamberToneFilter.type = 'highshelf';
+        this.chamberToneFilter.frequency.setTargetAtTime(4200, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(3.0, now, 0.03);
+
+        this.dryGain.gain.setTargetAtTime(0.62, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.68 * this.chamberReverbAmount, now, 0.03);
+        break;
+
+      case 'fm-digital':
+        // Option 8: 1980s 2-Operator FM Synthesizer Chime
+        this.chamberFilter.type = 'peaking';
+        this.chamberFilter.frequency.setTargetAtTime(2400, now, 0.03); // Glassy FM sidebands
+        this.chamberFilter.gain.setTargetAtTime(3.5 * depth, now, 0.03);
+        this.chamberFilter.Q.setTargetAtTime(1.4, now, 0.03);
+
+        this.chamberResonanceBoost.type = 'peaking';
+        this.chamberResonanceBoost.frequency.setTargetAtTime(5500, now, 0.03); // Crystal FM sparkle
+        this.chamberResonanceBoost.gain.setTargetAtTime(2.5 * depth, now, 0.03);
+        this.chamberResonanceBoost.Q.setTargetAtTime(1.2, now, 0.03);
+
+        this.chamberToneFilter.type = 'highshelf';
+        this.chamberToneFilter.frequency.setTargetAtTime(6000, now, 0.03);
+        this.chamberToneFilter.gain.setTargetAtTime(3.0, now, 0.03);
+
+        this.dryGain.gain.setTargetAtTime(0.75, now, 0.03);
+        this.wetGain.gain.setTargetAtTime(0.38 * this.chamberReverbAmount, now, 0.03);
+        break;
     }
   }
 
@@ -502,6 +593,15 @@ class MusicBoxAudioEngine {
     } else if (this.currentPreset === 'retro-8bit') {
       this.chamberFilter.gain.setTargetAtTime(2.0 * currentDepth, now, 0.04);
       this.chamberResonanceBoost.gain.setTargetAtTime(1.2 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'kalimba-mbira') {
+      this.chamberFilter.gain.setTargetAtTime(7.5 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(2.5 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'cathedral-bell') {
+      this.chamberFilter.gain.setTargetAtTime(6.0 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(4.5 * currentDepth, now, 0.04);
+    } else if (this.currentPreset === 'fm-digital') {
+      this.chamberFilter.gain.setTargetAtTime(3.5 * currentDepth, now, 0.04);
+      this.chamberResonanceBoost.gain.setTargetAtTime(2.5 * currentDepth, now, 0.04);
     }
   }
 
@@ -519,6 +619,12 @@ class MusicBoxAudioEngine {
         ? 0.70
         : this.currentPreset === 'retro-8bit'
         ? 0.26
+        : this.currentPreset === 'kalimba-mbira'
+        ? 0.32
+        : this.currentPreset === 'cathedral-bell'
+        ? 0.68
+        : this.currentPreset === 'fm-digital'
+        ? 0.38
         : 0.42;
 
     this.wetGain.gain.setTargetAtTime(baseWet * this.chamberReverbAmount, now, 0.04);
@@ -539,6 +645,27 @@ class MusicBoxAudioEngine {
       this.playTine(7, 0.75, now + 0.16);
       this.playTine(12, 0.80, now + 0.24);
       this.playTine(16, 0.85, now + 0.32);
+    } else if (this.currentPreset === 'kalimba-mbira') {
+      // Rhythmic African Mbira pentatonic pattern
+      this.playTine(0, 0.85, now);
+      this.playTine(2, 0.75, now + 0.10);
+      this.playTine(4, 0.80, now + 0.20);
+      this.playTine(7, 0.85, now + 0.30);
+      this.playTine(9, 0.90, now + 0.40);
+      this.playTine(12, 0.95, now + 0.50);
+    } else if (this.currentPreset === 'cathedral-bell') {
+      // Majestic Westminster Carillon bell fanfare
+      this.playTine(4, 0.90, now);
+      this.playTine(0, 0.85, now + 0.18);
+      this.playTine(2, 0.88, now + 0.36);
+      this.playTine(7, 0.95, now + 0.54);
+    } else if (this.currentPreset === 'fm-digital') {
+      // Sparkling 80s DX7 synth chime chord
+      this.playTine(0, 0.85, now);
+      this.playTine(7, 0.80, now + 0.09);
+      this.playTine(12, 0.85, now + 0.18);
+      this.playTine(16, 0.90, now + 0.27);
+      this.playTine(19, 0.95, now + 0.36);
     } else {
       // Distinct audition arpeggio pattern (C5, G5, C6, E6, G6)
       this.playTine(0, 0.85, now);
@@ -1096,6 +1223,345 @@ class MusicBoxAudioEngine {
 
         osc1.start(now);
         osc1.stop(now + retroDecay + 0.04);
+      } else if (preset === 'kalimba-mbira') {
+        // 6. AFRICAN KALIMBA / MBIRA: Organic gourd body, thumb-pluck micro-envelope & buzzing spring rattle
+        const f1 = baseFreq;
+        const fAir = Math.min(baseFreq * 0.5, 220); // Gourd air cavity sub
+        const fBuzz = baseFreq * 3.82; // Spring rattle overtone
+
+        // Main warm reed tine
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'triangle';
+
+        // Thumb release micro-pitch transient (starts 2.5% higher, settles in 12ms)
+        osc1.frequency.setValueAtTime(f1 * 1.025, now);
+        osc1.frequency.exponentialRampToValueAtTime(f1, now + 0.012);
+
+        const kalimbaDecay = Math.max(0.65, Math.min(2.6, decayFactor * 0.85));
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.55 * velocity, now + 0.004);
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + kalimbaDecay);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+
+        // Gourd cavity Helmholtz air puff
+        const oscAir = this.ctx.createOscillator();
+        const gainAir = this.ctx.createGain();
+        oscAir.type = 'sine';
+        oscAir.frequency.setValueAtTime(fAir, now);
+
+        const airDecay = 0.32;
+        gainAir.gain.setValueAtTime(0.0001, now);
+        gainAir.gain.linearRampToValueAtTime(0.25 * velocity, now + 0.006);
+        gainAir.gain.exponentialRampToValueAtTime(0.00001, now + airDecay);
+
+        oscAir.connect(gainAir);
+        gainAir.connect(this.musicGain);
+
+        // Buzzing shell / spring rattle partial
+        let oscBuzz: OscillatorNode | null = null;
+        let gainBuzz: GainNode | null = null;
+        if (fBuzz < 14000) {
+          oscBuzz = this.ctx.createOscillator();
+          gainBuzz = this.ctx.createGain();
+          oscBuzz.type = 'sine';
+          oscBuzz.frequency.setValueAtTime(fBuzz, now);
+
+          const buzzDecay = 0.22;
+          gainBuzz.gain.setValueAtTime(0.0001, now);
+          gainBuzz.gain.linearRampToValueAtTime(0.12 * velocity, now + 0.003);
+          gainBuzz.gain.exponentialRampToValueAtTime(0.00001, now + buzzDecay);
+
+          oscBuzz.connect(gainBuzz);
+          gainBuzz.connect(this.musicGain);
+          oscBuzz.onended = () => {
+            try {
+              oscBuzz?.disconnect();
+              gainBuzz?.disconnect();
+            } catch {}
+          };
+          oscBuzz.start(now);
+          oscBuzz.stop(now + buzzDecay + 0.03);
+        }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            osc1.stop(stopTime + 0.012);
+
+            gainAir.gain.cancelScheduledValues(stopTime);
+            gainAir.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            oscAir.stop(stopTime + 0.012);
+
+            if (oscBuzz && gainBuzz) {
+              gainBuzz.gain.cancelScheduledValues(stopTime);
+              gainBuzz.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              oscBuzz.stop(stopTime + 0.012);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+            oscAir.disconnect();
+            gainAir.disconnect();
+          } catch {}
+        };
+
+        osc1.start(now);
+        oscAir.start(now);
+        osc1.stop(now + kalimbaDecay + 0.04);
+        oscAir.stop(now + airDecay + 0.04);
+
+        // Warm thumb pad and wood knock click
+        this.playPluckClick(now, baseFreq, velocity, 'kalimba');
+      } else if (preset === 'cathedral-bell') {
+        // 7. GRAND CATHEDRAL BELL: Bronze bell carillon with sub-octave hum tone, tierce, and quint
+        const f1 = baseFreq;
+        const fHum = baseFreq * 0.5; // Sub-octave hum tone
+        const fTierce = baseFreq * 1.1892; // Minor third (tierce)
+        const fQuint = baseFreq * 1.4983; // Perfect fifth (quint)
+        const fSuper = baseFreq * 2.756; // Super-octave shimmer
+
+        const bellDecay = Math.max(1.5, decayFactor * 1.35);
+
+        // Strike note (Nominal / fundamental)
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(f1, now);
+
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.linearRampToValueAtTime(0.48 * velocity, now + 0.002);
+        gain1.gain.exponentialRampToValueAtTime(0.00001, now + bellDecay);
+
+        osc1.connect(gain1);
+        gain1.connect(this.musicGain);
+
+        // Deep hum tone (blooms slightly after strike and sustains long)
+        const oscHum = this.ctx.createOscillator();
+        const gainHum = this.ctx.createGain();
+        oscHum.type = 'sine';
+        oscHum.frequency.setValueAtTime(fHum, now);
+
+        const humDecay = bellDecay * 1.4;
+        gainHum.gain.setValueAtTime(0.0001, now);
+        gainHum.gain.linearRampToValueAtTime(0.28 * velocity, now + 0.015);
+        gainHum.gain.exponentialRampToValueAtTime(0.00001, now + humDecay);
+
+        oscHum.connect(gainHum);
+        gainHum.connect(this.musicGain);
+
+        // Tierce & Quint partials
+        const oscTierce = this.ctx.createOscillator();
+        const gainTierce = this.ctx.createGain();
+        oscTierce.type = 'sine';
+        oscTierce.frequency.setValueAtTime(fTierce, now);
+
+        const tierceDecay = bellDecay * 0.65;
+        gainTierce.gain.setValueAtTime(0.0001, now);
+        gainTierce.gain.linearRampToValueAtTime(0.18 * velocity, now + 0.002);
+        gainTierce.gain.exponentialRampToValueAtTime(0.00001, now + tierceDecay);
+
+        oscTierce.connect(gainTierce);
+        gainTierce.connect(this.musicGain);
+
+        const oscQuint = this.ctx.createOscillator();
+        const gainQuint = this.ctx.createGain();
+        oscQuint.type = 'sine';
+        oscQuint.frequency.setValueAtTime(fQuint, now);
+
+        const quintDecay = bellDecay * 0.55;
+        gainQuint.gain.setValueAtTime(0.0001, now);
+        gainQuint.gain.linearRampToValueAtTime(0.14 * velocity, now + 0.002);
+        gainQuint.gain.exponentialRampToValueAtTime(0.00001, now + quintDecay);
+
+        oscQuint.connect(gainQuint);
+        gainQuint.connect(this.musicGain);
+
+        // High shimmer
+        let oscSuper: OscillatorNode | null = null;
+        let gainSuper: GainNode | null = null;
+        if (fSuper < 18000) {
+          oscSuper = this.ctx.createOscillator();
+          gainSuper = this.ctx.createGain();
+          oscSuper.type = 'sine';
+          oscSuper.frequency.setValueAtTime(fSuper, now);
+
+          const superDecay = 0.40;
+          gainSuper.gain.setValueAtTime(0.0001, now);
+          gainSuper.gain.linearRampToValueAtTime(0.08 * velocity, now + 0.001);
+          gainSuper.gain.exponentialRampToValueAtTime(0.00001, now + superDecay);
+
+          oscSuper.connect(gainSuper);
+          gainSuper.connect(this.musicGain);
+          oscSuper.onended = () => {
+            try {
+              oscSuper?.disconnect();
+              gainSuper?.disconnect();
+            } catch {}
+          };
+          oscSuper.start(now);
+          oscSuper.stop(now + superDecay + 0.03);
+        }
+
+        const stopper = (stopTime: number) => {
+          try {
+            gain1.gain.cancelScheduledValues(stopTime);
+            gain1.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+            osc1.stop(stopTime + 0.015);
+
+            gainHum.gain.cancelScheduledValues(stopTime);
+            gainHum.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+            oscHum.stop(stopTime + 0.015);
+
+            gainTierce.gain.cancelScheduledValues(stopTime);
+            gainTierce.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+            oscTierce.stop(stopTime + 0.015);
+
+            gainQuint.gain.cancelScheduledValues(stopTime);
+            gainQuint.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+            oscQuint.stop(stopTime + 0.015);
+
+            if (oscSuper && gainSuper) {
+              gainSuper.gain.cancelScheduledValues(stopTime);
+              gainSuper.gain.linearRampToValueAtTime(0.0001, stopTime + 0.01);
+              oscSuper.stop(stopTime + 0.015);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        osc1.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            osc1.disconnect();
+            gain1.disconnect();
+            oscHum.disconnect();
+            gainHum.disconnect();
+            oscTierce.disconnect();
+            gainTierce.disconnect();
+            oscQuint.disconnect();
+            gainQuint.disconnect();
+          } catch {}
+        };
+
+        osc1.start(now);
+        oscHum.start(now);
+        oscTierce.start(now);
+        oscQuint.start(now);
+
+        osc1.stop(now + bellDecay + 0.05);
+        oscHum.stop(now + humDecay + 0.05);
+        oscTierce.stop(now + tierceDecay + 0.05);
+        oscQuint.stop(now + quintDecay + 0.05);
+
+        // Heavy bronze clapper impact click
+        this.playPluckClick(now, baseFreq, velocity, 'cathedral');
+      } else if (preset === 'fm-digital') {
+        // 8. 1980s FM DIGITAL CHIME: 2-Operator Phase/Frequency Modulation synthesis (Yamaha DX7 / Genesis)
+        const fCarrier = baseFreq;
+        const fModulator = baseFreq * 3.52; // Signature 80s glassy electric chime ratio
+        const fMod2 = baseFreq * 7.04; // High crystal sparkle ratio
+
+        const fmDecay = Math.max(0.8, Math.min(2.8, decayFactor * 0.95));
+
+        // Carrier Oscillator
+        const carrierOsc = this.ctx.createOscillator();
+        const carrierGain = this.ctx.createGain();
+        carrierOsc.type = 'sine';
+        carrierOsc.frequency.setValueAtTime(fCarrier, now);
+
+        carrierGain.gain.setValueAtTime(0.0001, now);
+        carrierGain.gain.linearRampToValueAtTime(0.46 * velocity, now + 0.003);
+        carrierGain.gain.exponentialRampToValueAtTime(0.00001, now + fmDecay);
+
+        carrierOsc.connect(carrierGain);
+        carrierGain.connect(this.musicGain);
+
+        // Modulator 1 (FM Operator 2)
+        const modOsc = this.ctx.createOscillator();
+        const modGain = this.ctx.createGain();
+        modOsc.type = 'sine';
+        modOsc.frequency.setValueAtTime(fModulator, now);
+
+        // Exponential modulation index decay (creates bright metallic attack settling to smooth sine)
+        const modIndex = baseFreq * 2.6 * velocity;
+        modGain.gain.setValueAtTime(modIndex, now);
+        modGain.gain.exponentialRampToValueAtTime(baseFreq * 0.02, now + 0.42);
+
+        modOsc.connect(modGain);
+        modGain.connect(carrierOsc.frequency); // Frequency modulation routing!
+
+        // Secondary FM Sparkle Operator
+        let modOsc2: OscillatorNode | null = null;
+        let modGain2: GainNode | null = null;
+        if (fMod2 < 18000) {
+          modOsc2 = this.ctx.createOscillator();
+          modGain2 = this.ctx.createGain();
+          modOsc2.type = 'sine';
+          modOsc2.frequency.setValueAtTime(fMod2, now);
+
+          const modIndex2 = baseFreq * 0.8 * velocity;
+          modGain2.gain.setValueAtTime(modIndex2, now);
+          modGain2.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+          modOsc2.connect(modGain2);
+          modGain2.connect(carrierOsc.frequency);
+
+          modOsc2.onended = () => {
+            try {
+              modOsc2?.disconnect();
+              modGain2?.disconnect();
+            } catch {}
+          };
+          modOsc2.start(now);
+          modOsc2.stop(now + 0.15);
+        }
+
+        const stopper = (stopTime: number) => {
+          try {
+            carrierGain.gain.cancelScheduledValues(stopTime);
+            carrierGain.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            carrierOsc.stop(stopTime + 0.012);
+
+            modGain.gain.cancelScheduledValues(stopTime);
+            modGain.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+            modOsc.stop(stopTime + 0.012);
+
+            if (modOsc2 && modGain2) {
+              modGain2.gain.cancelScheduledValues(stopTime);
+              modGain2.gain.linearRampToValueAtTime(0.0001, stopTime + 0.008);
+              modOsc2.stop(stopTime + 0.012);
+            }
+          } catch {}
+        };
+        this.activeVoiceStoppers.add(stopper);
+
+        carrierOsc.onended = () => {
+          this.activeVoiceStoppers.delete(stopper);
+          try {
+            carrierOsc.disconnect();
+            carrierGain.disconnect();
+            modOsc.disconnect();
+            modGain.disconnect();
+          } catch {}
+        };
+
+        carrierOsc.start(now);
+        modOsc.start(now);
+        carrierOsc.stop(now + fmDecay + 0.04);
+        modOsc.stop(now + 0.45);
+
+        // Snappy digital FM pluck click
+        this.playPluckClick(now, baseFreq, velocity, 'fm');
       }
     } catch (e) {
       console.warn('playFrequency error:', e);
@@ -1107,7 +1573,15 @@ class MusicBoxAudioEngine {
     time: number,
     baseFreq: number,
     velocity: number,
-    material: 'metallic' | 'wooden' | 'crystal' | 'vintage' | 'chiptune' = 'metallic'
+    material:
+      | 'metallic'
+      | 'wooden'
+      | 'crystal'
+      | 'vintage'
+      | 'chiptune'
+      | 'kalimba'
+      | 'cathedral'
+      | 'fm' = 'metallic'
   ): void {
     if (!this.ctx || !this.musicGain) return;
 
@@ -1137,6 +1611,21 @@ class MusicBoxAudioEngine {
         filterFreq = Math.min(baseFreq * 2.5, 4500); // Gentle 8-bit blip noise
         filterQ = 3.0;
         clickVol = 0.08 * velocity;
+      } else if (material === 'kalimba') {
+        clickDuration = 0.018;
+        filterFreq = Math.min(baseFreq * 1.8, 1600); // Warm woody thumb knock
+        filterQ = 2.0;
+        clickVol = 0.15 * velocity;
+      } else if (material === 'cathedral') {
+        clickDuration = 0.026;
+        filterFreq = Math.min(baseFreq * 2.8, 3800); // Heavy cast bronze clapper strike
+        filterQ = 3.0;
+        clickVol = 0.20 * velocity;
+      } else if (material === 'fm') {
+        clickDuration = 0.006;
+        filterFreq = Math.min(baseFreq * 4.0, 8000); // Snappy digital crystal transient
+        filterQ = 4.5;
+        clickVol = 0.10 * velocity;
       }
 
       const t = Math.max(time, this.ctx.currentTime);

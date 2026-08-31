@@ -271,7 +271,15 @@ export function getCombTines(scaleId?: CombScaleId): TineNote[] {
   return ROMANTIC_FLAT_22_TINES;
 }
 
-export type SoundChamberPreset = 'gold-sankyo' | 'wooden-box' | 'crystal-bell' | 'vintage-antique' | 'retro-8bit';
+export type SoundChamberPreset =
+  | 'gold-sankyo'
+  | 'wooden-box'
+  | 'crystal-bell'
+  | 'vintage-antique'
+  | 'retro-8bit'
+  | 'kalimba-mbira'
+  | 'cathedral-bell'
+  | 'fm-digital';
 
 export interface SoundChamberInfo {
   id: SoundChamberPreset;
@@ -280,7 +288,15 @@ export interface SoundChamberInfo {
   material: string;
   harmonicProfile: string;
   resonanceDescription: string;
-  waveformType: 'metallic-bell' | 'warm-body' | 'crystal-shimmer' | 'vintage-warble' | 'retro-square';
+  waveformType:
+    | 'metallic-bell'
+    | 'warm-body'
+    | 'crystal-shimmer'
+    | 'vintage-warble'
+    | 'retro-square'
+    | 'kalimba-thud'
+    | 'cathedral-chime'
+    | 'fm-digital';
   color: string;
   accentColor: string;
   badgeBg: string;
@@ -361,6 +377,51 @@ export const SOUND_CHAMBER_PRESETS: Record<SoundChamberPreset, SoundChamberInfo>
     badgeBg: 'rgba(16, 185, 129, 0.15)',
     samplePoints: [
       0, 1, 1, 1, 1, -1, -1, -1, -1, 0.8, 0.8, 0.8, -0.8, -0.8, -0.8, 0.5, 0.5, -0.5, -0.5, 0.2, 0.2, -0.2, 0
+    ],
+  },
+  'kalimba-mbira': {
+    id: 'kalimba-mbira',
+    name: 'Kalimba African Mbira',
+    subtitle: 'Calabash Gourd & Resonant Thumb Piano',
+    material: 'Carved African Gourd Body & Spring-Steel Tines',
+    harmonicProfile: 'Helmholtz air cavity resonance (190Hz) + soft thumb thud + buzzing shell rattle',
+    resonanceDescription: 'Warm, earthy organic thumb piano with hollow calabash acoustic air swell, soft thumb pluck transient, and subtle vibrating shell buzz.',
+    waveformType: 'kalimba-thud',
+    color: '#d97706',
+    accentColor: '#fbbf24',
+    badgeBg: 'rgba(217, 119, 6, 0.15)',
+    samplePoints: [
+      0, 0.65, 0.95, 0.82, 0.45, 0.05, -0.32, -0.62, -0.78, -0.58, -0.22, 0.12, 0.40, 0.52, 0.42, 0.18, -0.05, -0.22, -0.30, -0.25, -0.12, 0.02, 0.15, 0.22, 0.18, 0.08, -0.02, -0.12, -0.16, -0.10, 0
+    ],
+  },
+  'cathedral-bell': {
+    id: 'cathedral-bell',
+    name: 'Cathedral Bronze Carillon',
+    subtitle: 'Orchestral Bell Tower & Monumental Stone Vault',
+    material: 'Cast Bell Bronze Alloy (78% Copper, 22% Tin)',
+    harmonicProfile: 'Full bell inharmonic series: sub-octave hum tone (-1 oct) + minor third (tierce) + fifth (quint)',
+    resonanceDescription: 'Towering, majestic cast-bronze carillon bells with deep sub-octave hum tone, rich minor-third bell partials, and a soaring 4.2s stone cathedral reverberation.',
+    waveformType: 'cathedral-chime',
+    color: '#8b5cf6',
+    accentColor: '#c4b5fd',
+    badgeBg: 'rgba(139, 92, 246, 0.15)',
+    samplePoints: [
+      0, 0.88, -0.65, 0.72, -0.58, 0.82, -0.48, 0.65, -0.38, 0.55, -0.32, 0.48, -0.28, 0.42, -0.22, 0.35, -0.18, 0.28, -0.14, 0.22, -0.10, 0.16, -0.07, 0.12, -0.04, 0.08, -0.02, 0.04, 0
+    ],
+  },
+  'fm-digital': {
+    id: 'fm-digital',
+    name: 'FM 1980s Digital Chime',
+    subtitle: 'Yamaha DX7 & Genesis 2-Operator FM Engine',
+    material: 'Frequency Modulation (FM) Dual-Operator Digital Synthesis',
+    harmonicProfile: 'Phase Modulation (1 : 3.52 carrier-to-modulator ratio) with snappy exponential brightness decay',
+    resonanceDescription: 'Iconic 80s digital crystal chime synthesis with glassy FM sidebands, snappy metallic digital transients, and lush stereo chorus space.',
+    waveformType: 'fm-digital',
+    color: '#ec4899',
+    accentColor: '#f472b6',
+    badgeBg: 'rgba(236, 72, 153, 0.15)',
+    samplePoints: [
+      0, 0.92, -0.42, 0.78, -0.85, 0.35, -0.15, 0.65, -0.75, 0.52, -0.32, 0.45, -0.58, 0.38, -0.22, 0.28, -0.35, 0.22, -0.15, 0.18, -0.22, 0.12, -0.08, 0.08, 0
     ],
   },
 };
