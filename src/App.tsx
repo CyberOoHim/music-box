@@ -376,6 +376,7 @@ export default function App() {
         if (playModeRef.current === 'spring') {
           const tension = springTensionRef.current;
           if (tension <= 0.0001) {
+            isPlayingRef.current = false;
             setIsPlaying(false);
             musicBoxAudio.setMechanicalHum(false);
             return;
@@ -490,20 +491,45 @@ export default function App() {
     [ensureAudioInitialized, showToast]
   );
 
-  // Handle Play/Pause
-  const handleTogglePlay = async () => {
+  // Handle Play/Pause with robust mode handling & automatic spring recovery
+  const handleTogglePlay = useCallback(async () => {
     await ensureAudioInitialized();
-    if (!isPlaying) {
-      if (playMode === 'spring' && springTension <= 0.005) {
-        // Automatically wind spring if user presses play at 0%
-        setSpringTension(1.0);
-        springTensionRef.current = 1.0;
+
+    if (!isPlayingRef.current) {
+      // 1. If currently in Hand Crank mode, switch to Spring mode automatically so playback runs
+      let mode = playModeRef.current;
+      if (mode === 'crank') {
+        mode = 'spring';
+        setPlayMode('spring');
+        playModeRef.current = 'spring';
       }
+
+      // 2. If in Spring mode and tension is depleted or low (< 0.15), freshly wind to 100% (1.0)
+      if (mode === 'spring') {
+        let tension = springTensionRef.current;
+        if (tension < 0.15) {
+          tension = 1.0;
+          setSpringTension(1.0);
+          springTensionRef.current = 1.0;
+        }
+      }
+
+      // 3. Clear active tines & reset crank RPM
+      setActiveTines(new Set());
+      setCrankRpm(0);
+
+      // 4. Start playback loop & mechanical hum
       lastStepTimeRef.current = performance.now();
       isPlayingRef.current = true;
       setIsPlaying(true);
-      musicBoxAudio.setMechanicalHum(true, tempoBpm / 90);
+      musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+
+      // 5. Instantly play current step
+      const currentStepVal = Math.floor(currentStepRef.current);
+      executeStep(currentStepVal);
+      notifyStepSubscribers(currentStepVal);
     } else {
+      // Cleanly pause playback
       isPlayingRef.current = false;
       setIsPlaying(false);
       musicBoxAudio.stopAllMusicVoices();
@@ -512,7 +538,7 @@ export default function App() {
       setCurrentStep(currentStepRef.current);
       setSpringTension(springTensionRef.current);
     }
-  };
+  }, [ensureAudioInitialized, executeStep, notifyStepSubscribers]);
 
   // Rewind to step 0
   const handleRewind = () => {

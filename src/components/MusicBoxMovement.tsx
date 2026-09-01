@@ -507,7 +507,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             {onTogglePlay && (
               <button
                 id="movement-quick-play-btn"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   musicBoxAudio.playWindingClick();
                   onTogglePlay();
                 }}

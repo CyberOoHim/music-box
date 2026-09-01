@@ -312,7 +312,8 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
   };
 
   // Mechanical switch click handler with tactile audio
-  const handleMechanicalSwitchToggle = () => {
+  const handleMechanicalSwitchToggle = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     musicBoxAudio.playWindingClick();
     onTogglePlay();
   };
