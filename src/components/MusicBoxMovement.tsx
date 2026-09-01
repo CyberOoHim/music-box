@@ -11,12 +11,7 @@ import {
 import {
   RotateCw,
   RefreshCw,
-  ZoomIn,
-  ZoomOut,
-  Compass,
-  Leaf,
   Keyboard,
-  Sparkles,
 } from 'lucide-react';
 
 const KEYBOARD_SHORTCUTS = [
@@ -65,7 +60,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const [hoveredTine, setHoveredTine] = useState<number | null>(null);
   const [isAutoRotating, setIsAutoRotating] = useState(false);
   const [currentCameraPreset, setCurrentCameraPreset] = useState<CameraPreset>('default');
-  const [zoomPercent, setZoomPercent] = useState<number>(100);
 
   const tinesList: TineNote[] = useMemo(() => {
     if (customTines && customTines.length > 0) return customTines;
@@ -128,6 +122,9 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   const isDraggingRef = useRef(false);
   const dragDistanceRef = useRef(0);
   const previousMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const initialPinchDistanceRef = useRef<number | null>(null);
+  const initialPinchCameraDistanceRef = useRef<number | null>(null);
   
   // Camera calibrated to high-angle front 3/4 perspective with smooth target lerp
   const currentCameraAngleRef = useRef<{ theta: number; phi: number; distance: number }>({
@@ -142,12 +139,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   });
   const currentLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0.1, -0.15, 0.35));
   const targetLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0.1, -0.15, 0.35));
-
-  const updateZoomDisplay = useCallback((dist: number) => {
-    const defaultDist = 13.2;
-    const pct = Math.round((defaultDist / dist) * 100);
-    setZoomPercent(pct);
-  }, []);
 
   const setCameraPreset = useCallback((preset: CameraPreset) => {
     setCurrentCameraPreset(preset);
@@ -181,29 +172,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         targetLookAtRef.current.set(0.1, 0, 0.35);
         break;
     }
-    updateZoomDisplay(targetCameraAngleRef.current.distance);
-  }, [updateZoomDisplay]);
-
-  // Zoom In Handler
-  const handleZoomIn = useCallback(() => {
-    targetCameraAngleRef.current.distance = Math.max(5.0, targetCameraAngleRef.current.distance - 1.8);
-    needsRenderRef.current = true;
-    updateZoomDisplay(targetCameraAngleRef.current.distance);
-  }, [updateZoomDisplay]);
-
-  // Zoom Out Handler
-  const handleZoomOut = useCallback(() => {
-    targetCameraAngleRef.current.distance = Math.min(22.0, targetCameraAngleRef.current.distance + 1.8);
-    needsRenderRef.current = true;
-    updateZoomDisplay(targetCameraAngleRef.current.distance);
-  }, [updateZoomDisplay]);
-
-  // Reset Zoom Handler
-  const handleResetZoom = useCallback(() => {
-    targetCameraAngleRef.current.distance = 13.2;
-    needsRenderRef.current = true;
-    updateZoomDisplay(13.2);
-  }, [updateZoomDisplay]);
+  }, []);
 
   const rebuildPinMeshes = useCallback((pinsList: MusicBoxPin[], stepsCount: number) => {
     const pinGroup = pinMeshesGroupRef.current;
@@ -1339,9 +1308,25 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   }, [activeTines]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    isDraggingRef.current = true;
-    dragDistanceRef.current = 0;
-    previousMousePosRef.current = { x: e.clientX, y: e.clientY };
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      isDraggingRef.current = true;
+      dragDistanceRef.current = 0;
+      previousMousePosRef.current = { x: e.clientX, y: e.clientY };
+    } else if (activePointersRef.current.size === 2) {
+      // 2-finger touch pinch-to-zoom gesture
+      isDraggingRef.current = false;
+      const pointers: { x: number; y: number }[] = [];
+      activePointersRef.current.forEach((p) => pointers.push(p));
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      if (p1 && p2) {
+        initialPinchDistanceRef.current = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        initialPinchCameraDistanceRef.current = targetCameraAngleRef.current.distance;
+      }
+    }
+
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -1351,6 +1336,34 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (
+      activePointersRef.current.size >= 2 &&
+      initialPinchDistanceRef.current !== null &&
+      initialPinchCameraDistanceRef.current !== null
+    ) {
+      // Handle multi-touch pinch to zoom
+      const pointers: { x: number; y: number }[] = [];
+      activePointersRef.current.forEach((p) => pointers.push(p));
+      const p1 = pointers[0];
+      const p2 = pointers[1];
+      if (p1 && p2) {
+        const currentPinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        if (currentPinchDist > 0 && initialPinchDistanceRef.current > 0) {
+          const scale = initialPinchDistanceRef.current / currentPinchDist;
+          const newDist = Math.max(
+            5.0,
+            Math.min(22.0, initialPinchCameraDistanceRef.current * scale)
+          );
+          targetCameraAngleRef.current.distance = newDist;
+          needsRenderRef.current = true;
+        }
+      }
+      dragDistanceRef.current += 10;
+      return;
+    }
+
     if (!isDraggingRef.current) return;
     const deltaX = e.clientX - previousMousePosRef.current.x;
     const deltaY = e.clientY - previousMousePosRef.current.y;
@@ -1368,7 +1381,23 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    isDraggingRef.current = false;
+    activePointersRef.current.delete(e.pointerId);
+
+    if (activePointersRef.current.size === 0) {
+      isDraggingRef.current = false;
+      initialPinchDistanceRef.current = null;
+      initialPinchCameraDistanceRef.current = null;
+    } else if (activePointersRef.current.size === 1) {
+      const remaining: { x: number; y: number }[] = [];
+      activePointersRef.current.forEach((p) => remaining.push(p));
+      if (remaining[0]) {
+        previousMousePosRef.current = { x: remaining[0].x, y: remaining[0].y };
+      }
+      initialPinchDistanceRef.current = null;
+      initialPinchCameraDistanceRef.current = null;
+      isDraggingRef.current = true;
+    }
+
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
@@ -1382,7 +1411,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       Math.min(22.0, targetCameraAngleRef.current.distance + e.deltaY * 0.012)
     );
     needsRenderRef.current = true;
-    updateZoomDisplay(targetCameraAngleRef.current.distance);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1454,14 +1482,30 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             <span className="font-serif tracking-wider uppercase text-[#faebd4] font-bold">
               Sankyo 18-Note Movement • 聲盒仔
             </span>
-            <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-[#27381d]/80 border border-[#486b32]/60 text-[#a3d977] text-[10px] font-mono shadow-xs">
-              <Leaf className="w-3 h-3 text-[#8ce053]" />
-              <span>24 FPS Eco</span>
-            </div>
           </div>
 
-          {/* 3D Camera Angles */}
+          {/* 3D Controls & Camera Angles */}
           <div className="flex items-center space-x-1 sm:space-x-1.5 bg-[#241a10]/95 backdrop-blur-md p-1 rounded-xl border border-[#523c24] overflow-x-auto max-w-full">
+            {/* Retained Turntable Auto-Rotate Button outside viewport */}
+            <button
+              id="toggle-autorotate-btn"
+              onClick={() => {
+                setIsAutoRotating((prev) => !prev);
+                needsRenderRef.current = true;
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-serif shrink-0 transition-all flex items-center space-x-1.5 ${
+                isAutoRotating
+                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
+                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
+              }`}
+              title={isAutoRotating ? 'Stop Turntable Rotation' : 'Auto Turntable 3D Rotation'}
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isAutoRotating ? 'animate-spin' : ''}`} />
+              <span>Rotate</span>
+            </button>
+
+            <div className="w-[1px] h-4 bg-[#523c24] shrink-0" />
+
             <span className="text-[10px] uppercase font-serif text-[#a68d72] px-1.5 hidden md:inline shrink-0">
               3D View:
             </span>
@@ -1537,10 +1581,21 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             >
               Top
             </button>
+
+            <div className="w-[1px] h-4 bg-[#523c24] shrink-0" />
+
+            <button
+              id="camera-reset-view-btn"
+              onClick={() => setCameraPreset('default')}
+              className="p-1 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] shrink-0 transition"
+              title="Reset 3D View Angle"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
-        {/* 3D WebGL Canvas Viewport */}
+        {/* 3D WebGL Canvas Viewport - Completely Clean Viewport */}
         <div
           ref={containerRef}
           className="relative w-full aspect-[16/10] sm:aspect-[16/9] max-h-[480px] flex items-center justify-center bg-[#100b07] rounded-xl border border-[#523c24] overflow-hidden group shadow-inner cursor-grab active:cursor-grabbing"
@@ -1550,75 +1605,11 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
             onClick={handleCanvasClick}
             className="w-full h-full object-cover touch-none"
           />
-
-          {/* Quick 3D View & Zoom Controls */}
-          <div className="absolute top-3 left-3 flex items-center space-x-1 sm:space-x-1.5 bg-[#241a10]/95 backdrop-blur-md px-2 py-1.5 rounded-xl border border-[#523c24] shadow-md z-10">
-            <button
-              id="toggle-autorotate-btn"
-              onClick={() => {
-                setIsAutoRotating((prev) => !prev);
-                needsRenderRef.current = true;
-              }}
-              className={`px-2 py-1 rounded-lg text-xs transition-all flex items-center space-x-1.5 ${
-                isAutoRotating
-                  ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
-                  : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
-              }`}
-              title={isAutoRotating ? 'Stop Turntable Rotation' : 'Auto Turntable 3D Rotation'}
-            >
-              <RotateCw className={`w-3.5 h-3.5 ${isAutoRotating ? 'animate-spin' : ''}`} />
-              <span className="text-[11px] font-serif hidden sm:inline">Turntable</span>
-            </button>
-
-            <div className="w-[1px] h-4 bg-[#523c24]" />
-
-            <button
-              id="zoom-in-btn"
-              onClick={handleZoomIn}
-              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-
-            <button
-              id="zoom-reset-btn"
-              onClick={handleResetZoom}
-              className="px-1.5 py-0.5 rounded-md text-[11px] font-mono text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] transition"
-              title="Reset Zoom to 100%"
-            >
-              {zoomPercent}%
-            </button>
-
-            <button
-              id="zoom-out-btn"
-              onClick={handleZoomOut}
-              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-
-            <div className="w-[1px] h-4 bg-[#523c24]" />
-
-            <button
-              id="camera-reset-view-btn"
-              onClick={() => setCameraPreset('default')}
-              className="p-1.5 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] active:scale-95 transition"
-              title="Reset 3D View Angle"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="absolute top-3 right-3 bg-[#241a10]/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-[#8a6838]/50 text-[11px] text-[#eedcc5] flex items-center space-x-1.5 pointer-events-none shadow-sm">
-            <Compass className="w-3 h-3 text-[#f0c465]" />
-            <span className="font-serif">Click any 3D tine or drag to rotate</span>
-          </div>
         </div>
 
         {/* Dedicated User Keyboard Under the Music Box (No Overlap, 100% Width Fit) */}
