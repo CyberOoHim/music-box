@@ -1137,89 +1137,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
-        {/* Active Song Banner & Controls */}
-        <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_4px_24px_rgba(67,52,34,0.06)]">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {/* Category tag (omitted if AI to avoid redundancy with Model badge) */}
-              {!(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
-                <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#f4efe4] text-[#8a6b3e] border border-[#d8caa8]">
-                  {currentSong.category.toUpperCase()}
-                </span>
-              )}
-              {/* Gemini / AI Model Badge */}
-              {(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
-                <span className="text-xs font-serif px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
-                  <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
-                  {formatModelDisplayName(currentSong.modelUsed, true)}
-                </span>
-              )}
-              {/* Comb Scale Badge */}
-              <span
-                className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1"
-                title={`Comb Profile: ${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat'} (${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)`}
-              >
-                <Sliders className="w-3 h-3 text-[#bfa175]" />
-                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} ({COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || 'C5–Bb6'})
-              </span>
-              {/* Step / Measure Badge */}
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
-                {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))}m)
-              </span>
-            </div>
-            <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
-              {currentSong.title}
-            </h2>
-            {currentSong.description && (
-              <p className="text-xs text-[#75644e] max-w-xl font-serif-sub italic">
-                {currentSong.description}
-              </p>
-            )}
-          </div>
-
-          {/* Quick Tempo, Play/Pause & Rewind Controls */}
-          <div className="flex items-center space-x-2.5 sm:space-x-3.5 w-full sm:w-auto justify-between sm:justify-end">
-            <div className="flex flex-col items-end space-y-1">
-              <div className="flex items-center space-x-2 text-xs">
-                <span className="text-[#84735c]">Tempo:</span>
-                <span className="font-mono text-[#8a6b3e] font-bold">{tempoBpm} BPM</span>
-              </div>
-              <input
-                type="range"
-                min="40"
-                max="160"
-                step="2"
-                value={tempoBpm}
-                onChange={(e) => setTempoBpm(parseInt(e.target.value))}
-                className="w-28 sm:w-32 accent-[#a68656] cursor-pointer h-1.5 bg-[#e8e0d1] rounded-lg appearance-none"
-              />
-            </div>
-
-            {/* Quick Play/Pause Control Button */}
-            <button
-              id="top-banner-play-btn"
-              onClick={handleTogglePlay}
-              title={isPlaying ? 'Engage Brake (Pause)' : 'Release Brake (Play)'}
-              className={`p-2.5 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer ${
-                isPlaying
-                  ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_10px_rgba(240,196,101,0.5)]'
-                  : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419]'
-              }`}
-            >
-              {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-            </button>
-
-            <button
-              id="rewind-step-btn"
-              onClick={handleRewind}
-              title="Rewind to beginning"
-              className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419] transition shadow-xs cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
         {/* View Navigation Tabs */}
         <div className="w-full max-w-4xl mx-auto flex items-center justify-center">
           <div className="inline-flex p-1 rounded-2xl bg-[#eee7da] border border-[#ded3be] overflow-x-auto text-xs sm:text-sm font-medium shadow-xs">
@@ -1314,6 +1231,89 @@ export default function App() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Active Song Banner & Controls (Right above the Music Box Movement Deck) */}
+            <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_4px_24px_rgba(67,52,34,0.06)]">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  {/* Category tag (omitted if AI to avoid redundancy with Model badge) */}
+                  {!(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
+                    <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#f4efe4] text-[#8a6b3e] border border-[#d8caa8]">
+                      {currentSong.category.toUpperCase()}
+                    </span>
+                  )}
+                  {/* Gemini / AI Model Badge */}
+                  {(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
+                    <span className="text-xs font-serif px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                      <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
+                      {formatModelDisplayName(currentSong.modelUsed, true)}
+                    </span>
+                  )}
+                  {/* Comb Scale Badge */}
+                  <span
+                    className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1"
+                    title={`Comb Profile: ${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat'} (${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)`}
+                  >
+                    <Sliders className="w-3 h-3 text-[#bfa175]" />
+                    {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} ({COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || 'C5–Bb6'})
+                  </span>
+                  {/* Step / Measure Badge */}
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
+                    {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))}m)
+                  </span>
+                </div>
+                <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
+                  {currentSong.title}
+                </h2>
+                {currentSong.description && (
+                  <p className="text-xs text-[#75644e] max-w-xl font-serif-sub italic">
+                    {currentSong.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Quick Tempo, Play/Pause & Rewind Controls */}
+              <div className="flex items-center space-x-2.5 sm:space-x-3.5 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="flex flex-col items-end space-y-1">
+                  <div className="flex items-center space-x-2 text-xs">
+                    <span className="text-[#84735c]">Tempo:</span>
+                    <span className="font-mono text-[#8a6b3e] font-bold">{tempoBpm} BPM</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="160"
+                    step="2"
+                    value={tempoBpm}
+                    onChange={(e) => setTempoBpm(parseInt(e.target.value))}
+                    className="w-28 sm:w-32 accent-[#a68656] cursor-pointer h-1.5 bg-[#e8e0d1] rounded-lg appearance-none"
+                  />
+                </div>
+
+                {/* Quick Play/Pause Control Button */}
+                <button
+                  id="top-banner-play-btn"
+                  onClick={handleTogglePlay}
+                  title={isPlaying ? 'Engage Brake (Pause)' : 'Release Brake (Play)'}
+                  className={`p-2.5 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer ${
+                    isPlaying
+                      ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_10px_rgba(240,196,101,0.5)]'
+                      : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419]'
+                  }`}
+                >
+                  {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                </button>
+
+                <button
+                  id="rewind-step-btn"
+                  onClick={handleRewind}
+                  title="Rewind to beginning"
+                  className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419] transition shadow-xs cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
