@@ -418,14 +418,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
                 <line x1="5" y1="-6" x2="5" y2="18" stroke="#fae7b5" strokeWidth="1.5" />
               </g>
 
-              {/* Sankyo Script Arch */}
-              <path id="sankyoArch" d="M -36,0 A 36 36 0 0 1 36,0" fill="none" />
-              <text fontSize="11" fontFamily="serif" fontWeight="bold" fill="#3b270c">
-                <textPath href="#sankyoArch" startOffset="50%" textAnchor="middle">
-                  Sankyo Japan
-                </textPath>
-              </text>
-
               {/* Center Arbor Screw Rivet */}
               <circle r="8" fill="url(#chromeScrewGrad)" stroke="#2b2011" strokeWidth="1" />
               <line x1="-5" y1="0" x2="5" y2="0" stroke="#1c1409" strokeWidth="2" />
