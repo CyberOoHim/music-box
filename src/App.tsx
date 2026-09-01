@@ -644,6 +644,26 @@ export default function App() {
     });
   }, [persistCustomSongs]);
 
+  // Centralized comb scale changer (Movement tab, keyboard pills, editor, and library)
+  const handleChangeCombScale = useCallback((newScaleId: CombScaleId) => {
+    setCombScaleId(newScaleId);
+    combScaleIdRef.current = newScaleId;
+    setCurrentSong((prevSong) => {
+      const updatedSong: MusicBoxSong = {
+        ...prevSong,
+        combScaleId: newScaleId,
+      };
+      setSongs((prevSongs) => {
+        const updatedSongs = prevSongs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
+        persistCustomSongs(updatedSongs);
+        return updatedSongs;
+      });
+      return updatedSong;
+    });
+    const scaleInfo = COMB_SCALES_MAP[newScaleId];
+    showToast(`Switched comb to ${scaleInfo?.shortLabel || scaleInfo?.name || newScaleId} (${scaleInfo?.tinesCount} Tines • ${scaleInfo?.rangeLabel})`, 'info');
+  }, [persistCustomSongs, showToast]);
+
   // Select song from library
   const handleSelectSong = useCallback((song: MusicBoxSong) => {
     setCurrentSong(song);
@@ -1052,8 +1072,8 @@ export default function App() {
               {/* Comb Scale Badge */}
               <span className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1">
                 <Sliders className="w-3 h-3 text-[#bfa175]" />
-                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat Scale'} (
-                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)
+                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} (
+                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines • {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || ''})
               </span>
               {/* Step / Measure Badge */}
               <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
@@ -1208,6 +1228,7 @@ export default function App() {
               crankRpm={crankRpm}
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
+              onChangeCombScale={handleChangeCombScale}
               onPluckTine={handlePluckTine}
               onSubscribeStep={handleSubscribeStep}
             />
@@ -1240,18 +1261,7 @@ export default function App() {
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
               onSubscribeStep={handleSubscribeStep}
-              onChangeCombScale={(newScaleId) => {
-                setCombScaleId(newScaleId);
-                const updatedSong: MusicBoxSong = {
-                  ...currentSong,
-                  combScaleId: newScaleId,
-                };
-                setCurrentSong(updatedSong);
-                const updatedSongs = songs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
-                setSongs(updatedSongs);
-                persistCustomSongs(updatedSongs);
-                showToast(`Switched cylinder comb to ${COMB_SCALES_MAP[newScaleId]?.name}`, 'info');
-              }}
+              onChangeCombScale={handleChangeCombScale}
               onTogglePin={handleTogglePin}
               onClearAll={handleClearPins}
               onShiftPins={handleShiftPins}

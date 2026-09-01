@@ -76,11 +76,11 @@ const STYLE_PRESETS = [
   { id: 'custom', label: '✨ Custom Style...', desc: 'Type any custom genre or mood' },
 ];
 
-const COMB_CHOICES: { id: CombScaleId; label: string; tines: number; desc: string }[] = [
-  { id: 'romantic-flat', label: 'Romantic Flat Comb', tines: 22, desc: 'Eb5, Eb6, Ab, Bb, Gb flat accidentals' },
-  { id: 'chromatic-30', label: 'Deluxe Chromatic Comb', tines: 30, desc: 'Full 12-semitone spectrum (C5-F7)' },
-  { id: 'flat-major-18', label: 'Flat Major Comb', tines: 18, desc: 'Eb / Bb / Ab Major rich lullabies' },
-  { id: 'sankyo-18', label: 'Vintage Sankyo 18N', tines: 18, desc: 'Standard C-Major with F# overtones' },
+const COMB_CHOICES: { id: CombScaleId; label: string; tines: number; range: string; desc: string }[] = [
+  { id: 'sankyo-18', label: 'Sankyo 18N', tines: 18, range: 'C5–D7', desc: 'Standard C-Major with F# overtones' },
+  { id: 'romantic-flat', label: 'Romantic Flat 22N', tines: 22, range: 'C5–Bb6', desc: 'Eb5, Eb6, Ab, Bb, Gb flat accidentals' },
+  { id: 'chromatic-30', label: 'Chromatic 30N', tines: 30, range: 'C5–F7', desc: 'Full 12-semitone spectrum (C5-F7)' },
+  { id: 'flat-major-18', label: 'Flat Major 18N', tines: 18, range: 'Bb4–Eb7', desc: 'Eb / Bb / Ab Major rich lullabies' },
 ];
 
 export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({

@@ -32,6 +32,7 @@ interface MusicBoxMovementProps {
   crankRpm?: number;
   combScaleId?: CombScaleId;
   customTines?: TineNote[];
+  onChangeCombScale?: (scaleId: CombScaleId) => void;
   onPluckTine: (tineIndex: number) => void;
   onTogglePin?: (step: number, tineIndex: number) => void;
   onSubscribeStep?: (cb: (step: number) => void) => () => void;
@@ -51,6 +52,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
   crankRpm = 0,
   combScaleId = 'sankyo-18',
   customTines,
+  onChangeCombScale,
   onPluckTine,
   onSubscribeStep,
 }) => {
@@ -1494,7 +1496,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
           <div className="flex items-center space-x-2.5">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#f0c465] shadow-sm shadow-[#f0c465]/70 animate-pulse" />
             <span className="font-serif tracking-wider uppercase text-[#faebd4] font-bold">
-              Sankyo 18-Note Movement • 聲盒仔
+              {COMB_SCALES_MAP[combScaleId]?.shortLabel || 'Sankyo 18N'} • {tinesList.length} Tines • 聲盒仔
             </span>
           </div>
 
@@ -1504,7 +1506,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             <button
               id="toggle-autorotate-btn"
               onClick={handleToggleAutoRotate}
-              className={`px-2.5 py-1 rounded-lg text-xs font-serif shrink-0 transition-all flex items-center space-x-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-serif shrink-0 transition-all flex items-center space-x-1.5 cursor-pointer ${
                 isAutoRotating
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1524,7 +1526,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               id="camera-preset-default-btn"
               onClick={() => setCameraPreset('default')}
               title="Classic 3/4 Perspective View"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'default'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1535,8 +1537,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             <button
               id="camera-preset-comb-btn"
               onClick={() => setCameraPreset('comb')}
-              title="Close up on Extra-Long 18-Tine Steel Comb"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              title="Close up on Extra-Long Steel Comb"
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'comb'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1548,7 +1550,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               id="camera-preset-cylinder-btn"
               onClick={() => setCameraPreset('cylinder')}
               title="Close up on Polished Brass Cylinder & Pins"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'cylinder'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1560,7 +1562,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               id="camera-preset-governor-btn"
               onClick={() => setCameraPreset('governor')}
               title="Close up on Speed Governor & Gear"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'governor'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1572,7 +1574,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               id="camera-preset-side-btn"
               onClick={() => setCameraPreset('side')}
               title="Side Profile View"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'side'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1584,7 +1586,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
               id="camera-preset-top-btn"
               onClick={() => setCameraPreset('top')}
               title="Top-down Overview"
-              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all ${
+              className={`px-2 py-1 rounded-lg text-xs font-serif shrink-0 transition-all cursor-pointer ${
                 currentCameraPreset === 'top'
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
                   : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a]'
@@ -1598,7 +1600,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             <button
               id="camera-reset-view-btn"
               onClick={() => setCameraPreset('default')}
-              className="p-1 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] shrink-0 transition"
+              className="p-1 rounded-lg text-[#caa87c] hover:text-[#faebd4] hover:bg-[#3d2b1a] shrink-0 transition cursor-pointer"
               title="Reset 3D View Angle"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -1624,25 +1626,61 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         </div>
 
         {/* Dedicated User Keyboard Under the Music Box (No Overlap, 100% Width Fit) */}
-        <div className="mt-4 pt-3.5 border-t border-[#523c24]/70 flex flex-col space-y-2 w-full">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center space-x-2">
+        <div className="mt-4 pt-3.5 border-t border-[#523c24]/70 flex flex-col space-y-2.5 w-full">
+          {/* Header Row: Title & Active Count + Concise Comb Type Pills Selector */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 px-1">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
               <Keyboard className="w-4 h-4 text-[#f0c465]" />
               <span className="font-serif text-xs sm:text-sm font-semibold text-[#faebd4]">
                 Interactive Comb Keyboard
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2b1e13] border border-[#523c24] text-[#caa87c] font-mono">
-                {tinesList.length} Notes
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2b1e13] border border-[#523c24] text-[#caa87c] font-mono font-medium">
+                {tinesList.length} Notes • {COMB_SCALES_MAP[combScaleId]?.rangeLabel || ''}
               </span>
             </div>
-            <div className="flex items-center space-x-2 text-[11px] text-[#caa87c]">
-              <span className="hidden sm:inline font-serif text-[#a68d72]">
-                Press keys <kbd className="px-1 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465]">1-0</kbd> <kbd className="px-1 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465]">Q-P</kbd> or click tines
-              </span>
-              <span className="sm:hidden font-serif text-[#a68d72]">
-                Tap keys or press keyboard
-              </span>
-            </div>
+
+            {/* Concise Comb Type Switcher Pills */}
+            {onChangeCombScale && (
+              <div className="flex items-center space-x-1 p-1 rounded-xl bg-[#120d08] border border-[#523c24] overflow-x-auto max-w-full">
+                <span className="text-[10px] uppercase font-serif text-[#9e8568] px-1.5 hidden lg:inline shrink-0 font-medium">
+                  Comb Type:
+                </span>
+                {(Object.keys(COMB_SCALES_MAP) as CombScaleId[]).map((scaleKey) => {
+                  const scale = COMB_SCALES_MAP[scaleKey];
+                  const isSelected = combScaleId === scaleKey;
+                  return (
+                    <button
+                      key={scale.id}
+                      id={`keyboard-comb-pill-${scale.id}`}
+                      onClick={() => onChangeCombScale(scaleKey)}
+                      title={`${scale.name} (${scale.tinesCount} Tines • ${scale.rangeLabel})\n${scale.description}`}
+                      className={`px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-serif shrink-0 transition-all cursor-pointer flex items-center space-x-1 ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] font-bold shadow-xs border border-[#f3e18a]'
+                          : 'text-[#caa87c] hover:text-[#faebd4] hover:bg-[#2b1e13] border border-transparent'
+                      }`}
+                    >
+                      <span>{scale.shortLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Subheader: Physical Keyboard Shortcuts Hint */}
+          <div className="flex items-center justify-between px-1 text-[11px] text-[#caa87c]">
+            <span className="font-serif text-[#a68d72]">
+              Tap keys, click tines, or press keyboard{' '}
+              <kbd className="px-1.5 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465] font-semibold">1-0</kbd>{' '}
+              <kbd className="px-1.5 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465] font-semibold">Q-P</kbd>{' '}
+              {tinesList.length > 20 && (
+                <kbd className="px-1.5 py-0.5 bg-[#17110a] border border-[#523c24] rounded text-[10px] font-mono text-[#f0c465] font-semibold">A-;</kbd>
+              )}
+            </span>
+            <span className="text-[10px] font-mono text-[#8a765e] hidden sm:inline">
+              Note Numbers (#1–#{tinesList.length})
+            </span>
           </div>
 
           {/* Interactive Keyboard Keys Rack - Full Width Fit with No Scroll */}
@@ -1661,10 +1699,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
                     onClick={() => onPluckTine(idx)}
                     onMouseEnter={() => setHoveredTine(idx)}
                     onMouseLeave={() => setHoveredTine(null)}
-                    title={`Tine #${idx + 1}: ${tine.note} (${tine.frequency ? tine.frequency.toFixed(1) + ' Hz' : ''}) • Keyboard shortcut: [${shortcut || ''}]`}
-                    className={`group relative flex-1 min-w-0 flex flex-col items-center justify-between h-18 sm:h-22 md:h-24 px-0.5 sm:px-1 py-1 sm:py-1.5 rounded sm:rounded-lg border transition-all select-none cursor-pointer ${
+                    title={`Note #${idx + 1}: ${tine.note} (${tine.frequency ? tine.frequency.toFixed(1) + ' Hz' : ''})${tine.flatEnharmonic ? ` • ${tine.flatEnharmonic}` : ''} • Keyboard shortcut: [${shortcut || ''}]`}
+                    className={`group relative flex-1 min-w-0 flex flex-col items-center justify-between h-20 sm:h-24 md:h-26 px-0.5 sm:px-1 py-1 sm:py-1.5 rounded sm:rounded-lg border transition-all select-none cursor-pointer ${
                       isActive
-                        ? 'bg-gradient-to-b from-[#ffe599] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#ffe8a3] shadow-[0_0_10px_rgba(240,196,101,0.7)] -translate-y-1 scale-105 z-10'
+                        ? 'bg-gradient-to-b from-[#ffe599] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#ffe8a3] shadow-[0_0_12px_rgba(240,196,101,0.85)] -translate-y-1 scale-105 z-10'
                         : isHovered
                         ? 'bg-gradient-to-b from-[#5c4228] to-[#3a2717] text-[#fffdf7] border-[#8a6838] shadow-xs -translate-y-0.5'
                         : isAccidental
@@ -1683,24 +1721,39 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
                       }`}
                     />
 
-                    {/* Note Label */}
-                    <div className="flex flex-col items-center min-w-0 w-full overflow-hidden">
+                    {/* Note Number (#1, #2, etc.) - Always visible across all devices */}
+                    <span
+                      className={`text-[8px] sm:text-[9px] md:text-[10px] font-mono font-bold leading-none ${
+                        isActive
+                          ? 'text-[#3d2706]'
+                          : isAccidental
+                          ? 'text-[#c49d70]'
+                          : 'text-[#a68d72]'
+                      }`}
+                    >
+                      #{idx + 1}
+                    </span>
+
+                    {/* Musical Note Name */}
+                    <div className="flex flex-col items-center min-w-0 w-full overflow-hidden my-0.5">
                       <span className="text-[9px] sm:text-[11px] md:text-xs font-serif font-bold tracking-tight leading-tight truncate w-full text-center">
                         {tine.note}
                       </span>
-                      <span
-                        className={`hidden sm:inline text-[7px] sm:text-[8px] md:text-[9px] font-mono leading-none ${
-                          isActive ? 'text-[#3d2706]' : 'text-[#8a765e]'
-                        }`}
-                      >
-                        #{idx + 1}
-                      </span>
+                      {isAccidental && (
+                        <span
+                          className={`text-[7px] sm:text-[8px] font-sans font-bold leading-none ${
+                            isActive ? 'text-[#5a3b08]' : 'text-[#d6a048]'
+                          }`}
+                        >
+                          ♭
+                        </span>
+                      )}
                     </div>
 
                     {/* Keyboard Shortcut Keycap Badge */}
                     {shortcut && (
                       <div
-                        className={`mt-0.5 px-0.5 sm:px-1 py-0.5 rounded text-[7px] sm:text-[8px] md:text-[9px] font-mono font-bold uppercase transition-colors shadow-xs leading-none ${
+                        className={`px-0.5 sm:px-1 py-0.5 rounded text-[7px] sm:text-[8px] md:text-[9px] font-mono font-bold uppercase transition-colors shadow-xs leading-none ${
                           isActive
                             ? 'bg-[#1c1208] text-[#f0c465]'
                             : isHovered

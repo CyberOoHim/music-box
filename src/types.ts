@@ -219,6 +219,8 @@ export const SANKYO_18_TINES: TineNote[] = [
 export interface CombScaleInfo {
   id: CombScaleId;
   name: string;
+  shortLabel: string;
+  rangeLabel: string;
   subtitle: string;
   description: string;
   tinesCount: number;
@@ -230,6 +232,8 @@ export const COMB_SCALES_MAP: Record<CombScaleId, CombScaleInfo> = {
   'romantic-flat': {
     id: 'romantic-flat',
     name: 'Romantic Flat Scale Comb',
+    shortLabel: 'Romantic Flat 22N',
+    rangeLabel: 'C5–Bb6',
     subtitle: '22-Tine Flat Scale Tuning (Eb5, Eb6, Ab, Bb, Gb)',
     description: 'Specially engineered comb with dedicated flat accidental tines for authentic Für Elise, Clair de Lune, and Romantic masterpieces.',
     tinesCount: 22,
@@ -239,6 +243,8 @@ export const COMB_SCALES_MAP: Record<CombScaleId, CombScaleInfo> = {
   'chromatic-30': {
     id: 'chromatic-30',
     name: 'Deluxe Chromatic Comb',
+    shortLabel: 'Chromatic 30N',
+    rangeLabel: 'C5–F7',
     subtitle: '30-Tine Full 12-Tone Semitone Spectrum (C5 - F7)',
     description: 'Master studio comb with every flat, sharp, and natural pitch across 2.5 full octaves for unrestricted musical realism.',
     tinesCount: 30,
@@ -248,6 +254,8 @@ export const COMB_SCALES_MAP: Record<CombScaleId, CombScaleInfo> = {
   'flat-major-18': {
     id: 'flat-major-18',
     name: 'Flat Major & Lullaby Comb',
+    shortLabel: 'Flat Major 18N',
+    rangeLabel: 'Bb4–Eb7',
     subtitle: '18-Tine Eb / Bb / Ab Flat Scale Tuning',
     description: 'Rich resonant tuning in pure flat major keys, ideal for peaceful nocturnal lullabies and impressionistic compositions.',
     tinesCount: 18,
@@ -257,6 +265,8 @@ export const COMB_SCALES_MAP: Record<CombScaleId, CombScaleInfo> = {
   'sankyo-18': {
     id: 'sankyo-18',
     name: 'Vintage Sankyo 18N',
+    shortLabel: 'Sankyo 18N',
+    rangeLabel: 'C5–D7',
     subtitle: 'Standard 18-Tine Classical Comb',
     description: 'Traditional standard 18-note mechanical comb tuned in C-Major with F# overtones.',
     tinesCount: 18,

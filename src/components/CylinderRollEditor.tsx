@@ -138,7 +138,7 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
               >
                 {Object.values(COMB_SCALES_MAP).map((scale) => (
                   <option key={scale.id} value={scale.id} className="bg-[#fcfbf8] text-[#2d2419]">
-                    {scale.name} ({scale.tinesCount}T)
+                    {scale.shortLabel} ({scale.tinesCount}T • {scale.rangeLabel})
                   </option>
                 ))}
               </select>
@@ -181,7 +181,7 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
         <div className="w-24 sm:w-28 shrink-0 bg-[#f2ecde] border-r border-[#ded3be] select-none z-10 overflow-y-auto custom-scrollbar">
           <div className="h-7 border-b border-[#ded3be] px-2 flex items-center justify-between text-[10px] uppercase font-mono text-[#8a765e] font-semibold sticky top-0 bg-[#f2ecde] z-20">
             <span>Note</span>
-            <span>Tine</span>
+            <span>No. #</span>
           </div>
           {/* Render in reverse so High pitches are at top, Bass at bottom */}
           {[...activeTines].reverse().map((tine) => {
@@ -190,7 +190,7 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
               <div
                 key={tine.index}
                 onClick={() => onPluckTine(tine.index)}
-                title={`Click to listen: ${tine.note} (${tine.frequency.toFixed(1)}Hz)${tine.flatEnharmonic ? ` • ${tine.flatEnharmonic}` : ''}`}
+                title={`Click to listen: Note #${tine.index + 1} (${tine.note}, ${tine.frequency.toFixed(1)}Hz)${tine.flatEnharmonic ? ` • ${tine.flatEnharmonic}` : ''}`}
                 className={`h-6 sm:h-7 px-2 border-b border-[#e5dcce] flex items-center justify-between text-xs font-mono cursor-pointer transition-colors ${
                   isFlatAccidental
                     ? 'bg-[#f5ede0] text-[#7d561a] hover:bg-[#ecdcbe]'
@@ -207,7 +207,7 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] text-[#8a765e]">#{tine.index + 1}</span>
+                <span className="text-[10px] font-mono font-bold text-[#8a765e]">#{tine.index + 1}</span>
               </div>
             );
           })}
