@@ -19,6 +19,7 @@ export interface MusicBoxSong {
   pins: MusicBoxPin[];
   createdAt?: number;
   isAiGenerated?: boolean;
+  modelUsed?: string;
 }
 
 export interface TineNote {

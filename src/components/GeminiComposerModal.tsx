@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MusicBoxSong, COMB_SCALES_MAP, ROMANTIC_FLAT_22_TINES } from '../types';
+import { MusicBoxSong, CombScaleId, COMB_SCALES_MAP, ROMANTIC_FLAT_22_TINES } from '../types';
 import {
   Sparkles,
   X,
@@ -13,6 +13,8 @@ import {
   PlusCircle,
   Volume2,
   Pencil,
+  Cpu,
+  Layers,
 } from 'lucide-react';
 import { generateProceduralMusic } from '../utils/proceduralComposer';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
@@ -22,37 +24,44 @@ interface GeminiComposerModalProps {
   onClose: () => void;
   onLoadSong: (song: MusicBoxSong) => void;
   hasAiComposer?: boolean;
+  initialCombScaleId?: CombScaleId;
 }
 
 const INSPIRATION_PROMPTS = [
   {
     title: 'Starlight Lullaby',
     style: 'lullaby',
+    combScaleId: 'romantic-flat' as CombScaleId,
     prompt: 'A gentle, peaceful lullaby for a starry night with sparkling high treble chimes and warm low root notes.',
   },
   {
     title: 'Ghibli Nostalgic Wind',
     style: 'nostalgic',
+    combScaleId: 'romantic-flat' as CombScaleId,
     prompt: 'A bittersweet, nostalgic waltz in the spirit of Studio Ghibli music box pieces like Castle in the Sky and Spirited Away.',
   },
   {
     title: 'Winter Hearth Dream',
     style: 'relaxing',
+    combScaleId: 'flat-major-18' as CombScaleId,
     prompt: 'A calming music box melody depicting snow softly falling outside while resting beside a cozy fireplace.',
   },
   {
     title: 'Parisian Antique Carousel',
     style: 'waltz',
+    combScaleId: 'sankyo-18' as CombScaleId,
     prompt: 'A charming 3/4 vintage carousel waltz from a 19th century clockwork music box in Montmartre.',
   },
   {
     title: 'Forest Sanctuary',
     style: 'nature',
+    combScaleId: 'chromatic-30' as CombScaleId,
     prompt: 'A serene melody inspired by gentle raindrops dripping from mossy oak branches in a sunlit forest.',
   },
   {
     title: 'Celtic Fairytale',
     style: 'celtic',
+    combScaleId: 'sankyo-18' as CombScaleId,
     prompt: 'An enchanting ancient Celtic folk melody arranged for ringing steel chime pins.',
   },
 ];
@@ -67,16 +76,25 @@ const STYLE_PRESETS = [
   { id: 'custom', label: '✨ Custom Style...', desc: 'Type any custom genre or mood' },
 ];
 
+const COMB_CHOICES: { id: CombScaleId; label: string; tines: number; desc: string }[] = [
+  { id: 'romantic-flat', label: 'Romantic Flat Comb', tines: 22, desc: 'Eb5, Eb6, Ab, Bb, Gb flat accidentals' },
+  { id: 'chromatic-30', label: 'Deluxe Chromatic Comb', tines: 30, desc: 'Full 12-semitone spectrum (C5-F7)' },
+  { id: 'flat-major-18', label: 'Flat Major Comb', tines: 18, desc: 'Eb / Bb / Ab Major rich lullabies' },
+  { id: 'sankyo-18', label: 'Vintage Sankyo 18N', tines: 18, desc: 'Standard C-Major with F# overtones' },
+];
+
 export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   isOpen,
   onClose,
   onLoadSong,
   hasAiComposer = false,
+  initialCombScaleId = 'romantic-flat',
 }) => {
   const [prompt, setPrompt] = useState('');
   const [selectedStylePreset, setSelectedStylePreset] = useState('nostalgic');
   const [customStyleText, setCustomStyleText] = useState('');
   const [totalSteps, setTotalSteps] = useState<number>(64);
+  const [selectedCombScale, setSelectedCombScale] = useState<CombScaleId>(initialCombScaleId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
@@ -88,6 +106,13 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   const previewTimerRef = useRef<number | null>(null);
 
+  // Sync initial comb scale when modal opens
+  useEffect(() => {
+    if (isOpen && initialCombScaleId) {
+      setSelectedCombScale(initialCombScaleId);
+    }
+  }, [isOpen, initialCombScaleId]);
+
   const stopAudioPreview = useCallback(() => {
     if (previewTimerRef.current !== null) {
       clearInterval(previewTimerRef.current);
@@ -97,7 +122,30 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     setPreviewStep(0);
   }, []);
 
-  // Cleanup on unmount or close
+  // Stop audio preview when isOpen becomes false
+  useEffect(() => {
+    if (!isOpen) {
+      stopAudioPreview();
+    }
+  }, [isOpen, stopAudioPreview]);
+
+  // Escape key handler to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        stopAudioPreview();
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, stopAudioPreview]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -111,6 +159,9 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
   const handleClose = () => {
     stopAudioPreview();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     onClose();
   };
 
@@ -124,9 +175,10 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   };
 
   // Generate or Regenerate music
-  const handleGenerate = async (customPrompt?: string, customStyle?: string) => {
+  const handleGenerate = async (customPrompt?: string, customStyle?: string, combOverride?: CombScaleId) => {
     const textToUse = customPrompt !== undefined ? customPrompt : prompt;
     const styleToUse = getEffectiveStyle(customStyle);
+    const combToUse = combOverride || selectedCombScale;
 
     if (!textToUse.trim()) {
       setError('Please enter a melody idea or select an inspiration theme.');
@@ -154,6 +206,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           prompt: textToUse,
           style: styleToUse,
           totalSteps: totalSteps,
+          combScaleId: combToUse,
         }),
       });
 
@@ -166,10 +219,11 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           description: data.composerNote || `${data.mood} melody composed with Gemini 3.7 Flash.`,
           tempoBpm: data.tempoBpm || 88,
           totalSteps: data.totalSteps || totalSteps,
-          combScaleId: data.combScaleId || 'romantic-flat',
+          combScaleId: data.combScaleId || combToUse,
           pins: data.pins || [],
           createdAt: Date.now(),
           isAiGenerated: true,
+          modelUsed: data.modelUsed || 'gemini-3.7-flash',
         };
         setGeneratedSong(newSong);
         return;
@@ -179,8 +233,8 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
-      // Graceful algorithmic fallback (e.g. static host or network surge)
-      const data = generateProceduralMusic(textToUse, styleToUse, totalSteps);
+      // Graceful algorithmic fallback (e.g. offline, rate limit, or network error)
+      const data = generateProceduralMusic(textToUse, styleToUse, totalSteps, combToUse);
       const newSong: MusicBoxSong = {
         id: `procedural-${Date.now()}`,
         title: data.title || 'Whispering Music Box',
@@ -188,10 +242,11 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         description: data.composerNote || `${data.mood} melody created for your music box.`,
         tempoBpm: data.tempoBpm || 88,
         totalSteps: data.totalSteps || totalSteps,
-        combScaleId: 'sankyo-18',
+        combScaleId: data.combScaleId || combToUse,
         pins: data.pins || [],
         createdAt: Date.now(),
         isAiGenerated: true,
+        modelUsed: data.modelUsed || 'procedural-musicbox-engine',
       };
       setGeneratedSong(newSong);
     } finally {
@@ -212,7 +267,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     setIsPreviewPlaying(true);
 
     const song = generatedSong;
-    const activeScale = COMB_SCALES_MAP[song.combScaleId || 'romantic-flat'];
+    const activeScale = COMB_SCALES_MAP[song.combScaleId || selectedCombScale];
     const tinesList = activeScale ? activeScale.tines : ROMANTIC_FLAT_22_TINES;
     const tempo = song.tempoBpm || 88;
     const stepIntervalMs = 60000 / tempo / 4;
@@ -264,6 +319,54 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     }
   };
 
+  // Render badge for the exact model used
+  const renderModelBadge = (modelUsed?: string) => {
+    if (!modelUsed) return null;
+
+    if (modelUsed === 'gemini-3.7-flash') {
+      return (
+        <span
+          className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#dfcd9f] text-[#342718] border border-[#bfa175] flex items-center gap-1 shadow-2xs"
+          title="Generated with Gemini 3.7 Flash Model"
+        >
+          <Sparkles className="w-3 h-3 text-[#8a6b3e] fill-[#8a6b3e]" />
+          Gemini 3.7 Flash
+        </span>
+      );
+    }
+
+    if (modelUsed === 'gemini-3.1-flash-lite') {
+      return (
+        <span
+          className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#e8decf] text-[#4f3d28] border border-[#c9b99e] flex items-center gap-1 shadow-2xs"
+          title="Generated with Gemini 3.1 Flash-Lite Model"
+        >
+          <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
+          Gemini 3.1 Flash Lite
+        </span>
+      );
+    }
+
+    if (modelUsed.includes('procedural')) {
+      return (
+        <span
+          className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#eedcc5] text-[#7a4f15] border border-[#dfc29f] flex items-center gap-1 shadow-2xs"
+          title="Generated via local procedural physical sequencer (algorithmic fallback)"
+        >
+          <Cpu className="w-3 h-3 text-[#7a4f15]" />
+          Procedural Engine (Offline Fallback)
+        </span>
+      );
+    }
+
+    return (
+      <span className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#eee5d5] text-[#5e4c36] border border-[#d9cdbe] flex items-center gap-1">
+        <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
+        {modelUsed}
+      </span>
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2d2419]/65 backdrop-blur-sm animate-in fade-in">
       <div className="relative w-full max-w-2xl rounded-2xl bg-[#fdfcf9] border-2 border-[#bfa175] p-5 sm:p-7 shadow-[0_20px_50px_rgba(45,36,25,0.35)] text-[#2d2419] overflow-hidden max-h-[92vh] flex flex-col">
@@ -278,17 +381,17 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
-                Gemini 3.7 AI Music Box Composer
+                Gemini AI Music Box Composer
               </h2>
               <p className="text-xs text-[#75644e] font-serif-sub italic">
-                Compose custom mechanical cylinder arrangements with custom musical styles or themes.
+                Compose custom mechanical cylinder arrangements arranged for tuned steel comb scales.
               </p>
             </div>
           </div>
           <button
             onClick={handleClose}
             className="p-1.5 rounded-lg text-[#8a765e] hover:text-[#2d2419] hover:bg-[#f0e6d6] transition cursor-pointer"
-            title="Close composer"
+            title="Close composer (Esc)"
           >
             <X className="w-5 h-5" />
           </button>
@@ -311,10 +414,13 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 <button
                   key={idx}
                   onClick={() => {
+                    // Update form state for visual feedback
                     setPrompt(item.prompt);
                     setSelectedStylePreset(item.style);
+                    setSelectedCombScale(item.combScaleId);
                     setCustomStyleText('');
-                    handleGenerate(item.prompt, item.style);
+                    // Dispatch immediately with explicit parameter overrides to avoid waiting for async React state batching
+                    handleGenerate(item.prompt, item.style, item.combScaleId);
                   }}
                   className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
                 >
@@ -352,16 +458,42 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             <textarea
               id="gemini-prompt-input"
               rows={3}
+              maxLength={500}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="e.g. A delicate music box lullaby for a sleeping child, with soft descending chords and celestial high bell notes..."
               className="w-full rounded-xl bg-[#f8f5ee] border border-[#ded3be] focus:border-[#bfa175] focus:ring-1 focus:ring-[#bfa175] p-3 text-sm text-[#2d2419] placeholder-[#a4937d] outline-none transition shadow-2xs"
             />
+            <div className="flex justify-end mt-1">
+              <span className="text-[10px] font-mono text-[#8a765e]">
+                {prompt.length}/500 chars
+              </span>
+            </div>
           </div>
 
-          {/* Options: Style Selection & Custom Style Input */}
+          {/* Options: Comb Scale, Style Selection & Cylinder Length */}
           <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Comb Scale Selector */}
+              <div>
+                <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5 flex items-center gap-1">
+                  <Layers className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Comb Scale Tuning</span>
+                </label>
+                <select
+                  value={selectedCombScale}
+                  onChange={(e) => setSelectedCombScale(e.target.value as CombScaleId)}
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-2.5 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                >
+                  {COMB_CHOICES.map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label} ({choice.tines}T)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Musical Style */}
               <div>
                 <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">
                   Musical Style & Mood
@@ -369,7 +501,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 <select
                   value={selectedStylePreset}
                   onChange={(e) => setSelectedStylePreset(e.target.value)}
-                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-2.5 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
                 >
                   {STYLE_PRESETS.map((preset) => (
                     <option key={preset.id} value={preset.id}>
@@ -379,18 +511,19 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 </select>
               </div>
 
+              {/* Cylinder Rotation Length */}
               <div>
                 <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5">
-                  Cylinder Rotation Length
+                  Cylinder Length
                 </label>
                 <select
                   value={totalSteps}
                   onChange={(e) => setTotalSteps(Number(e.target.value))}
-                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-3 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-2.5 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
                 >
-                  <option value={64}>64 Steps (Standard 4-Measure Loop)</option>
-                  <option value={96}>96 Steps (Extended 6-Measure Loop)</option>
-                  <option value={128}>128 Steps (Full 8-Measure Piece)</option>
+                  <option value={64}>64 Steps (4-Measure Loop)</option>
+                  <option value={96}>96 Steps (6-Measure Loop)</option>
+                  <option value={128}>128 Steps (8-Measure Full)</option>
                 </select>
               </div>
             </div>
@@ -426,6 +559,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 </label>
                 <input
                   type="text"
+                  maxLength={60}
                   value={customStyleText}
                   onChange={(e) => setCustomStyleText(e.target.value)}
                   placeholder="e.g. Baroque Minuet, Chopin Nocturne, Cyberpunk, French Café Chanson, Video Game RPG..."
@@ -445,19 +579,27 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             </div>
           )}
 
-          {/* Generated Result Card with In-Modal Audio Preview */}
+          {/* Generated Result Card with In-Modal Audio Preview & Model Badge */}
           {generatedSong && (
             <div className="p-4 rounded-xl bg-[#f4eee4] border-2 border-[#d8caa8] space-y-3 animate-in fade-in shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-serif font-bold text-[#433422] flex items-center gap-1.5">
-                  <Music className="w-4 h-4 text-[#8a6b3e]" />
-                  {generatedSong.title}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-semibold">
-                    {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))}m)
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-serif font-bold text-[#433422] flex items-center gap-1.5">
+                    <Music className="w-4 h-4 text-[#8a6b3e]" />
+                    {generatedSong.title}
                   </span>
                 </div>
+                {/* Model badge displaying which model composed this */}
+                {renderModelBadge(generatedSong.modelUsed)}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
+                <span className="px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-semibold">
+                  {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))}m)
+                </span>
+                <span className="px-2 py-0.5 rounded bg-[#e5dcce] text-[#5e4c36] font-semibold">
+                  {COMB_SCALES_MAP[generatedSong.combScaleId || 'romantic-flat']?.name || generatedSong.combScaleId}
+                </span>
               </div>
 
               <p className="text-xs text-[#5e4c36] font-serif-sub italic bg-[#fbf9f4] p-2.5 rounded-lg border border-[#e5dcce]">
@@ -575,7 +717,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Composing with Gemini 3.7...</span>
+                    <span>Composing with Gemini...</span>
                   </>
                 ) : (
                   <>

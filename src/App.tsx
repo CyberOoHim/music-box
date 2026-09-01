@@ -721,13 +721,17 @@ export default function App() {
       persistCustomSongs(newSongList);
       return newSongList;
     });
+    if (song.combScaleId) {
+      setCombScaleId(song.combScaleId);
+    }
     setCurrentSong(song);
     setTempoBpm(song.tempoBpm || 88);
     setCurrentStep(0);
     currentStepRef.current = 0;
     subStepRef.current = 0;
     setActiveTab('movement');
-    showToast(`Loaded "${song.title}" into cylinder`, 'success');
+    const modelTag = song.modelUsed ? ` • ${song.modelUsed}` : '';
+    showToast(`Loaded "${song.title}"${modelTag} into cylinder`, 'success');
   }, [persistCustomSongs, showToast]);
 
   // Delete custom song
@@ -1318,13 +1322,14 @@ export default function App() {
         </button>
       </footer>
 
-      {/* Gemini 3.7 AI Composer Modal - only mounted if API is enabled */}
+      {/* Gemini AI Composer Modal - only mounted if API is enabled */}
       {hasAiComposer && (
         <GeminiComposerModal
           isOpen={isGeminiModalOpen}
           onClose={() => setIsGeminiModalOpen(false)}
           onLoadSong={handleLoadNewSong}
           hasAiComposer={hasAiComposer}
+          initialCombScaleId={combScaleId}
         />
       )}
 

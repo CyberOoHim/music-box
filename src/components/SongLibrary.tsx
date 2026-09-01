@@ -180,9 +180,20 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                       {totalSteps} steps • {measures}m
                     </span>
                     {song.isAiGenerated && (
-                      <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                      <span
+                        className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold"
+                        title={`Generated with: ${song.modelUsed || 'Gemini AI'}`}
+                      >
                         <Sparkles className="w-2.5 h-2.5" />
-                        Gemini
+                        {song.modelUsed
+                          ? song.modelUsed.includes('3.7')
+                            ? 'Gemini 3.7'
+                            : song.modelUsed.includes('3.1')
+                            ? 'Gemini 3.1'
+                            : song.modelUsed.includes('procedural')
+                            ? 'Procedural'
+                            : 'AI'
+                          : 'Gemini'}
                       </span>
                     )}
                     {isCustom && !song.isAiGenerated && (

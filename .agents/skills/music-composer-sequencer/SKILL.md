@@ -105,12 +105,13 @@ Agents MUST produce JSON compliant with the `MusicBoxSong` schema:
    - `step`: Integer in range `[0, totalSteps - 1]`.
    - `tineIndex`: Integer in range `[0, tinesCount - 1]`. (**MANDATORY**)
    - `note`: Standard pitch string matching scientific pitch notation (e.g., `"Db5"`, `"Eb6"`, `"C5"`).
+5. `modelUsed`: Optional string identifying the model or engine that created the arrangement.
 
 ---
 
 ## 5. Reference Implementation: Moonlight Sonata (128-Step Arrangement)
 
-Below is an example of an original piano passage correctly transposed (+36 semitones) and mapped to `chromatic-30`:
+Below is an authentic 4-measure excerpt correctly transposed (+36 semitones) and mapped to `chromatic-30` with proper bass downbeats, arpeggiated triplets, and melody chimes (38 pins):
 
 ```json
 {
@@ -128,17 +129,38 @@ Below is an example of an original piano passage correctly transposed (+36 semit
     { "step": 2, "tineIndex": 16, "note": "E6" },
     { "step": 4, "tineIndex": 8, "note": "Ab5" },
     { "step": 5, "tineIndex": 13, "note": "Db6" },
-    { "step": 6, "note": "E6", "tineIndex": 16 },
+    { "step": 6, "tineIndex": 16, "note": "E6" },
     { "step": 8, "tineIndex": 8, "note": "Ab5" },
     { "step": 9, "tineIndex": 13, "note": "Db6" },
     { "step": 10, "tineIndex": 16, "note": "E6" },
     { "step": 12, "tineIndex": 8, "note": "Ab5" },
     { "step": 13, "tineIndex": 13, "note": "Db6" },
     { "step": 14, "tineIndex": 16, "note": "E6" },
-    { "step": 16, "tineIndex": 11, "note": "B5" },
+    { "step": 16, "tineIndex": 11, "note": "B4" },
     { "step": 16, "tineIndex": 8, "note": "Ab5" },
-    { "step": 17, "tineIndex": 11, "note": "B5" },
-    { "step": 18, "tineIndex": 16, "note": "E6" }
+    { "step": 17, "tineIndex": 13, "note": "Db6" },
+    { "step": 18, "tineIndex": 16, "note": "E6" },
+    { "step": 20, "tineIndex": 8, "note": "Ab5" },
+    { "step": 21, "tineIndex": 13, "note": "Db6" },
+    { "step": 22, "tineIndex": 16, "note": "E6" },
+    { "step": 24, "tineIndex": 8, "note": "Ab5" },
+    { "step": 25, "tineIndex": 13, "note": "Db6" },
+    { "step": 26, "tineIndex": 16, "note": "E6" },
+    { "step": 28, "tineIndex": 8, "note": "Ab5" },
+    { "step": 29, "tineIndex": 13, "note": "Db6" },
+    { "step": 30, "tineIndex": 16, "note": "E6" },
+    { "step": 32, "tineIndex": 9, "note": "A5" },
+    { "step": 32, "tineIndex": 14, "note": "D6" },
+    { "step": 33, "tineIndex": 17, "note": "F6" },
+    { "step": 36, "tineIndex": 9, "note": "A5" },
+    { "step": 37, "tineIndex": 14, "note": "D6" },
+    { "step": 38, "tineIndex": 17, "note": "F6" },
+    { "step": 48, "tineIndex": 8, "note": "Ab5" },
+    { "step": 48, "tineIndex": 16, "note": "E6" },
+    { "step": 49, "tineIndex": 20, "note": "Ab6" },
+    { "step": 60, "tineIndex": 16, "note": "E6" },
+    { "step": 61, "tineIndex": 20, "note": "Ab6" },
+    { "step": 62, "tineIndex": 24, "note": "C7" }
   ]
 }
 ```
