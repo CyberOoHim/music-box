@@ -36,6 +36,8 @@ import {
   Leaf,
   CheckCircle2,
   AlertCircle,
+  Play,
+  Pause,
 } from 'lucide-react';
 
 type TabView = 'movement' | 'editor' | 'nature' | 'library';
@@ -1100,8 +1102,8 @@ export default function App() {
             )}
           </div>
 
-          {/* Quick Tempo & Rewind Slider */}
-          <div className="flex items-center space-x-4 w-full sm:w-auto justify-between sm:justify-end">
+          {/* Quick Tempo, Play/Pause & Rewind Controls */}
+          <div className="flex items-center space-x-2.5 sm:space-x-3.5 w-full sm:w-auto justify-between sm:justify-end">
             <div className="flex flex-col items-end space-y-1">
               <div className="flex items-center space-x-2 text-xs">
                 <span className="text-[#84735c]">Tempo:</span>
@@ -1118,11 +1120,25 @@ export default function App() {
               />
             </div>
 
+            {/* Quick Play/Pause Control Button */}
+            <button
+              id="top-banner-play-btn"
+              onClick={handleTogglePlay}
+              title={isPlaying ? 'Engage Brake (Pause)' : 'Release Brake (Play)'}
+              className={`p-2.5 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer ${
+                isPlaying
+                  ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_10px_rgba(240,196,101,0.5)]'
+                  : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419]'
+              }`}
+            >
+              {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            </button>
+
             <button
               id="rewind-step-btn"
               onClick={handleRewind}
               title="Rewind to beginning"
-              className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419] transition shadow-xs"
+              className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419] transition shadow-xs cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -1241,6 +1257,7 @@ export default function App() {
               onChangeCombScale={handleChangeCombScale}
               onPluckTine={handlePluckTine}
               onSubscribeStep={handleSubscribeStep}
+              onTogglePlay={handleTogglePlay}
             />
 
             {/* Winding Controls Component */}
@@ -1276,6 +1293,7 @@ export default function App() {
               onClearAll={handleClearPins}
               onShiftPins={handleShiftPins}
               onPluckTine={handlePluckTine}
+              onTogglePlay={handleTogglePlay}
             />
 
             {/* Winding & Play controls also accessible under Editor */}

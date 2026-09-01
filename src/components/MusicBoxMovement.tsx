@@ -11,7 +11,10 @@ import {
   Keyboard,
   Wind,
   Disc,
+  Play,
+  Pause,
 } from 'lucide-react';
+import { musicBoxAudio } from '../audio/musicBoxAudio';
 
 const KEYBOARD_SHORTCUTS = [
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
@@ -35,6 +38,7 @@ interface MusicBoxMovementProps {
   onPluckTine: (tineIndex: number) => void;
   onTogglePin?: (step: number, tineIndex: number) => void;
   onSubscribeStep?: (cb: (step: number) => void) => () => void;
+  onTogglePlay?: () => void;
 }
 
 export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
@@ -52,6 +56,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   onChangeCombScale,
   onPluckTine,
   onSubscribeStep,
+  onTogglePlay,
 }) => {
   const [hoveredTine, setHoveredTine] = useState<number | null>(null);
   const [smoothStep, setSmoothStep] = useState<number>(currentStep);
@@ -242,8 +247,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-[#c99f52]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#a67c3b]/15 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top Header: Model Badge, Real Tone Count & Live Movement Status */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3 text-xs sm:text-sm text-[#caa87c]">
+        {/* Top Header: Model Badge, Real Tone Count, Quick Play Control & Live Movement Status */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 text-xs sm:text-sm text-[#caa87c]">
           <div className="flex items-center space-x-2">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#f0c465] shadow-sm shadow-[#f0c465]/70 animate-pulse" />
             <span className="font-serif tracking-wider uppercase text-[#faebd4] font-bold">
@@ -254,7 +259,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             </span>
           </div>
 
-          <div className="flex items-center space-x-3 text-xs font-serif text-[#a68d72]">
+          <div className="flex items-center space-x-2 sm:space-x-2.5 text-xs font-serif text-[#a68d72]">
             <div className="flex items-center space-x-1">
               <Disc className="w-3.5 h-3.5 text-[#f0c465]" />
               <span>Step:</span>
@@ -262,10 +267,52 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 {Math.round(smoothStep) + 1} / {totalSteps}
               </span>
             </div>
-            <div className="hidden sm:flex items-center space-x-1">
+            <div className="hidden md:flex items-center space-x-1">
               <Wind className="w-3.5 h-3.5 text-[#d6be8e]" />
-              <span>Speed Governor Active</span>
+              <span>Governor Active</span>
             </div>
+
+            {/* Quick Mechanical Play / Pause Control Button */}
+            {onTogglePlay && (
+              <button
+                id="movement-quick-play-btn"
+                onClick={() => {
+                  musicBoxAudio.playWindingClick();
+                  onTogglePlay();
+                }}
+                title={
+                  isPlaying
+                    ? 'Engage mechanical brake (Stop / Pause)'
+                    : playMode === 'spring' && springTension <= 0.005
+                    ? 'Auto-wind & release mechanical brake (Play)'
+                    : 'Release mechanical brake (Play)'
+                }
+                className={`px-2.5 py-1 rounded-lg border text-xs font-serif font-bold flex items-center space-x-1.5 transition-all duration-150 cursor-pointer select-none active:scale-95 shadow-xs ${
+                  isPlaying
+                    ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_12px_rgba(240,196,101,0.6)]'
+                    : 'bg-gradient-to-b from-[#2a1d12] via-[#20150b] to-[#140c06] hover:bg-[#382614] text-[#faebd4] border-[#8a6838] hover:border-[#dfc282]'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                    isPlaying
+                      ? 'bg-[#10b981] animate-pulse shadow-[0_0_5px_#34d399]'
+                      : 'bg-[#d6be8e]'
+                  }`}
+                />
+                {isPlaying ? (
+                  <>
+                    <Pause className="w-3 h-3 fill-current" />
+                    <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-bold">Pause</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-current text-[#f0c465]" />
+                    <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-bold text-[#faebd4]">Play</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 

@@ -6,7 +6,7 @@ import {
   COMB_SCALES_MAP,
   ROMANTIC_FLAT_22_TINES,
 } from '../types';
-import { Trash2, ArrowLeft, ArrowRight, Music, Sliders, Sparkles } from 'lucide-react';
+import { Trash2, ArrowLeft, ArrowRight, Music, Sliders, Sparkles, Play, Pause } from 'lucide-react';
 
 interface CylinderRollEditorProps {
   pins: MusicBoxPin[];
@@ -21,6 +21,7 @@ interface CylinderRollEditorProps {
   onShiftPins: (deltaSteps: number) => void;
   onPluckTine: (tineIndex: number) => void;
   onSubscribeStep?: (cb: (step: number) => void) => () => void;
+  onTogglePlay?: () => void;
 }
 
 export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(({
@@ -36,6 +37,7 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
   onShiftPins,
   onPluckTine,
   onSubscribeStep,
+  onTogglePlay,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cursorRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +148,30 @@ export const CylinderRollEditor: React.FC<CylinderRollEditorProps> = React.memo(
           )}
 
           <div className="flex items-center space-x-1.5">
+            {onTogglePlay && (
+              <button
+                id="editor-quick-play-btn"
+                onClick={onTogglePlay}
+                title={isPlaying ? 'Engage Brake (Pause)' : 'Release Brake (Play)'}
+                className={`px-2.5 py-1 rounded-lg text-xs font-serif font-bold flex items-center space-x-1.5 border transition shadow-2xs cursor-pointer ${
+                  isPlaying
+                    ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_8px_rgba(240,196,101,0.5)]'
+                    : 'bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] hover:text-[#2d2419] border-[#ded3be]'
+                }`}
+              >
+                {isPlaying ? (
+                  <>
+                    <Pause className="w-3.5 h-3.5 fill-current" />
+                    <span>Pause</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current text-[#8a6b3e]" />
+                    <span>Play</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
               id="shift-left-btn"
               onClick={() => onShiftPins(-1)}
