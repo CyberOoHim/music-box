@@ -1,7 +1,7 @@
 ---
 name: music-composer-sequencer
 description: Analyzes, arranges, and transcribes musical pieces into multi-track step matrices, mechanical music box pin charts, and valid Mechanical Music Box JSON scores.
-version: 1.1.0
+version: 1.2.0
 author: Agent Skills Library
 tags:
   - music-theory
@@ -27,7 +27,7 @@ Unlike standard full-range pianos ($A_0$ to $C_8$), mechanical music boxes utili
 Agents MUST map notes to a specific `combScaleId` and assign an exact `tineIndex` (0 to `tinesCount - 1`) for every pin.
 
 #### A. Deluxe Chromatic Comb (`combScaleId: "chromatic-30"`) — 30 Tines
-Complete 12-tone semitone spectrum spanning 2.5 octaves ($C_5$ to $F_7$). Best for pieces with complex accidentals and chromatic runs.
+Complete 12-tone semitone spectrum spanning 2.5 octaves ($C_5$ to $F_7$). **Mandatory for pieces with $C\sharp$ / $D\flat$ minor tonalities (e.g. Beethoven's Moonlight Sonata)** to ensure low $D\flat_5$ bass roots are playable.
 
 | Index | Note | Freq (Hz) | Index | Note | Freq (Hz) | Index | Note | Freq (Hz) |
 | :---: | :--- | :--- | :---: | :--- | :--- | :---: | :--- | :--- |
@@ -43,8 +43,7 @@ Complete 12-tone semitone spectrum spanning 2.5 octaves ($C_5$ to $F_7$). Best f
 | **9** | `A5` | 880.00 | **19** | `G6` | 1567.98 | **29** | `F7` | 2793.83 |
 
 #### B. Romantic Flat Scale Comb (`combScaleId: "romantic-flat"`) — 22 Tines
-Specially engineered with dedicated flat accidental tines ($E\flat, A\flat, B\flat, D\flat, G\flat$). Default comb for Romantic masterpieces (Für Elise, Clair de Lune).
-
+Specially engineered with dedicated flat accidental tines ($E\flat, A\flat, B\flat, D\flat, G\flat$). Default comb for Romantic masterpieces (Für Elise, Clair de Lune, Chopin Nocturnes).
 - **Tines (0–21):** `0: C5`, `1: D5`, `2: Eb5`, `3: E5`, `4: F5`, `5: Gb5`, `6: G5`, `7: Ab5`, `8: A5`, `9: Bb5`, `10: B5`, `11: C6`, `12: Db6`, `13: D6`, `14: Eb6`, `15: E6`, `16: F6`, `17: Gb6`, `18: G6`, `19: Ab6`, `20: A6`, `21: Bb6`
 
 #### C. Flat Major & Lullaby Comb (`combScaleId: "flat-major-18"`) — 18 Tines
@@ -59,19 +58,33 @@ Standard 18-note classical mechanical comb in C-Major with $F\sharp$ overtones.
 
 ## 3. Operational Workflow & Composition Rules
 
-### Step 1: Octave Transposition (Register Adaptation)
-* **Standard Piano/Vocal registers** (Octaves 1, 2, and 3) **DO NOT EXIST** on music box combs.
-* **Rule:** Transpose all incoming scores up by **+2 octaves (+24 semitones)** or **+3 octaves (+36 semitones)** so that the lowest bass note lands on $B\flat_4$ or $C_5$.
+### Step 1: Mode Selection
+- **Mode A: Classical Masterpiece Motif Transcription (`mode: "transcription"`)**:
+  - Focuses on 100% faithful reproduction of melody, authentic chord progressions, and signature rolling arpeggios as written in the original score.
+  - Pin Budget: **48 to 140 pins** for rich, continuous multi-measure accompaniments.
+  - Recommended Generation Temperature: `0.35` (deterministic).
+- **Mode B: Creative Original Arrangement (`mode: "creative"`)**:
+  - Composes new, original mechanical music box melodies and lyrical atmospheric textures.
+  - Pin Budget: **24 to 56 pins**.
+  - Recommended Generation Temperature: `0.80`.
 
-### Step 2: Physical Mechanism Modeling
-* **Simultaneous Polyphony Limit:** Strike at most **1 to 3 tines simultaneously** at any single step (e.g., 1 bass root note + 1–2 melody chimes).
-* **Tine Restrike Cooldown:** When repeating the *exact same tine*, ensure a rest of **at least 2 steps** ($\ge 2$ steps) to prevent mechanical buzzing or tine jamming.
-* **Loop Continuity:** The cylinder revolves continuously. Ensure step `totalSteps - 1` resolves or loops smoothly back into step `0`.
+### Step 2: Octave Transposition (Register Adaptation)
+- **Rule:** Transpose standard piano registers up by **+2 octaves (+24 semitones)** or **+3 octaves (+36 semitones)** so the lowest bass note lands on $B\flat_4$, $C_5$, or $D\flat_5$.
+- For pieces in $C\sharp$ minor / $D\flat$ minor (e.g. Moonlight Sonata), always select `chromatic-30` so $D\flat_5$ (Tine 1) is available for root bass downbeats.
 
-### Step 3: Grid Quantization & Measure Division
-Standard measure divisions:
-* **4/4 or 2/2 Time:** 16 steps per measure (64 steps = 4 measures; 128 steps = 8 measures).
-* **3/4 Time (Waltz):** 12 steps per measure (48 steps = 4 measures; 96 steps = 8 measures).
+### Step 3: Physical Mechanism Modeling
+- **Simultaneous Polyphony Limit:** Strike at most **1 to 3 tines simultaneously** at any single step (e.g., 1 bass root note + 1–2 melody/arpeggio chimes).
+- **Tine Restrike Cooldown:** When repeating the *exact same tine*, ensure a rest of **at least 2 steps** ($\ge 2$ steps) to prevent mechanical buzzing or tine jamming.
+- **Loop Continuity:** The cylinder revolves continuously. Ensure step `totalSteps - 1` resolves or loops smoothly back into step `0`.
+
+### Step 4: Grid Quantization & Triplet Division
+- **Simple Duple (4/4 or 2/2 Time):** 16 steps per measure (64 steps = 4 measures; 128 steps = 8 measures).
+- **Compound / Triplet Meter (e.g., Moonlight Sonata triplets):**
+  - **96-Step Cylinder (8 measures of 12 steps):** Triplet eighth notes land cleanly on integer step indices:
+    $\text{Beat 1: } 0, 1, 2 \mid \text{Beat 2: } 3, 4, 5 \mid \text{Beat 3: } 6, 7, 8 \mid \text{Beat 4: } 9, 10, 11$.
+  - **128-Step Cylinder (8 measures of 16 steps):** Triplet eighth notes map to:
+    $\text{Beat 1: } 0, 1, 2 \mid \text{Beat 2: } 4, 5, 6 \mid \text{Beat 3: } 8, 9, 10 \mid \text{Beat 4: } 12, 13, 14$.
+- **Waltz (3/4 Time):** 12 steps per measure (48 steps = 4 measures; 96 steps = 8 measures).
 
 ---
 
@@ -85,7 +98,7 @@ Agents MUST produce JSON compliant with the `MusicBoxSong` schema:
   "title": "Song Title",
   "category": "classic",
   "description": "Brief description of the melody and arrangement.",
-  "tempoBpm": 76,
+  "tempoBpm": 68,
   "totalSteps": 128,
   "combScaleId": "chromatic-30",
   "pins": [
@@ -97,28 +110,17 @@ Agents MUST produce JSON compliant with the `MusicBoxSong` schema:
 }
 ```
 
-### Key Field Validation Checklist
-1. `tempoBpm`: Integer (typically 60–130 BPM).
-2. `totalSteps`: Integer (typically 32, 64, 96, 128, or 256).
-3. `combScaleId`: One of `"chromatic-30"`, `"romantic-flat"`, `"flat-major-18"`, or `"sankyo-18"`.
-4. `pins`: Array of objects, each containing:
-   - `step`: Integer in range `[0, totalSteps - 1]`.
-   - `tineIndex`: Integer in range `[0, tinesCount - 1]`. (**MANDATORY**)
-   - `note`: Standard pitch string matching scientific pitch notation (e.g., `"Db5"`, `"Eb6"`, `"C5"`).
-5. `modelUsed`: Optional string identifying the model or engine that created the arrangement.
-
 ---
 
-## 5. Reference Implementation: Moonlight Sonata (128-Step Arrangement)
+## 5. Reference Implementations
 
-Below is an authentic 4-measure excerpt correctly transposed (+36 semitones) and mapped to `chromatic-30` with proper bass downbeats, arpeggiated triplets, and melody chimes (38 pins):
-
+### Reference 1: Moonlight Sonata (Beethoven - C# minor on `chromatic-30`)
 ```json
 {
   "id": "moonlight-sonata",
   "title": "Moonlight Sonata (1st Movement)",
   "category": "classic",
-  "description": "Ludwig van Beethoven - Adagio sostenuto arranged for 30-note chromatic music box.",
+  "description": "Ludwig van Beethoven - Adagio sostenuto arranged for 30-note chromatic music box with rolling triplet accompaniment.",
   "tempoBpm": 68,
   "totalSteps": 128,
   "combScaleId": "chromatic-30",
@@ -136,7 +138,7 @@ Below is an authentic 4-measure excerpt correctly transposed (+36 semitones) and
     { "step": 12, "tineIndex": 8, "note": "Ab5" },
     { "step": 13, "tineIndex": 13, "note": "Db6" },
     { "step": 14, "tineIndex": 16, "note": "E6" },
-    { "step": 16, "tineIndex": 11, "note": "B4" },
+    { "step": 16, "tineIndex": 0, "note": "C5" },
     { "step": 16, "tineIndex": 8, "note": "Ab5" },
     { "step": 17, "tineIndex": 13, "note": "Db6" },
     { "step": 18, "tineIndex": 16, "note": "E6" },
@@ -161,6 +163,34 @@ Below is an authentic 4-measure excerpt correctly transposed (+36 semitones) and
     { "step": 60, "tineIndex": 16, "note": "E6" },
     { "step": 61, "tineIndex": 20, "note": "Ab6" },
     { "step": 62, "tineIndex": 24, "note": "C7" }
+  ]
+}
+```
+
+### Reference 2: Für Elise (Beethoven - A minor on `romantic-flat`)
+```json
+{
+  "id": "fur-elise",
+  "title": "Für Elise (WoO 59)",
+  "category": "classic",
+  "description": "Ludwig van Beethoven - Bagatelle in A minor with authentic E6-Eb6 chromatic motifs and Am arpeggiation.",
+  "tempoBpm": 108,
+  "totalSteps": 128,
+  "combScaleId": "romantic-flat",
+  "pins": [
+    { "step": 0, "tineIndex": 15, "note": "E6" },
+    { "step": 2, "tineIndex": 14, "note": "Eb6" },
+    { "step": 4, "tineIndex": 15, "note": "E6" },
+    { "step": 6, "tineIndex": 14, "note": "Eb6" },
+    { "step": 8, "tineIndex": 15, "note": "E6" },
+    { "step": 10, "tineIndex": 10, "note": "B5" },
+    { "step": 12, "tineIndex": 13, "note": "D6" },
+    { "step": 14, "tineIndex": 11, "note": "C6" },
+    { "step": 16, "tineIndex": 0, "note": "C5" },
+    { "step": 16, "tineIndex": 8, "note": "A5" },
+    { "step": 20, "tineIndex": 3, "note": "E5" },
+    { "step": 24, "tineIndex": 8, "note": "A5" },
+    { "step": 28, "tineIndex": 10, "note": "B5" }
   ]
 }
 ```

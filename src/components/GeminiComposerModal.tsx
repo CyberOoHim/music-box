@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
+  BookOpen,
 } from 'lucide-react';
 import { generateProceduralMusic } from '../utils/proceduralComposer';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
@@ -32,6 +33,69 @@ interface GeminiComposerModalProps {
   requiresPasscode?: boolean;
   initialCombScaleId?: CombScaleId;
 }
+
+const CLASSICAL_MOTIF_PRESETS = [
+  {
+    title: 'Moonlight Sonata (1st Mov)',
+    composer: 'Beethoven',
+    tag: 'C# minor • Chromatic 30N',
+    combScaleId: 'chromatic-30' as CombScaleId,
+    totalSteps: 128,
+    style: 'classical',
+    desc: 'Adagio sostenuto in C# minor with continuous rolling triplet arpeggios, Db5 bass downbeats, and singing melody.',
+    prompt: 'Ludwig van Beethoven - Moonlight Sonata (Piano Sonata No. 14 in C# minor, Op. 27 No. 2, 1st Movement: Adagio sostenuto). Transcribe the iconic opening measures with continuous rolling triplet arpeggios (Db5-Ab5-Db6-E6), C# minor bass root downbeats, and singing G#6 melody chimes.',
+  },
+  {
+    title: 'Für Elise (WoO 59)',
+    composer: 'Beethoven',
+    tag: 'A minor • Flat 22N',
+    combScaleId: 'romantic-flat' as CombScaleId,
+    totalSteps: 128,
+    style: 'classical',
+    desc: 'Immortal E6-Eb6 chromatic semitone motif, A-minor arpeggio downbeats, and complete 8-measure cadence.',
+    prompt: 'Ludwig van Beethoven - Für Elise (Bagatelle in A minor, WoO 59). Transcribe the immortal E6-Eb6 chromatic semitone motif, A-minor arpeggio downbeats, and complete 8-measure cadence.',
+  },
+  {
+    title: 'Clair de Lune',
+    composer: 'Debussy',
+    tag: 'Db Major • Flat 22N',
+    combScaleId: 'romantic-flat' as CombScaleId,
+    totalSteps: 96,
+    style: 'classical',
+    desc: 'Impressionist masterpiece in D-flat Major with shimmering flat scale harmonies and high bell counterpoint.',
+    prompt: 'Claude Debussy - Clair de Lune (Suite Bergamasque) in D-flat Major. Transcribe the shimmering Impressionistic opening flat scale harmonies and lyrical high bell counterpoint.',
+  },
+  {
+    title: 'Canon in D',
+    composer: 'Pachelbel',
+    tag: 'D Major • Flat 22N / 18N',
+    combScaleId: 'romantic-flat' as CombScaleId,
+    totalSteps: 96,
+    style: 'classical',
+    desc: 'Cascading polyphonic arpeggios and high chime variations over the classic 8-chord ground bass sequence.',
+    prompt: 'Johann Pachelbel - Canon in D Major. Transcribe the iconic ground bass sequence with cascading polyphonic arpeggios and high chime variations.',
+  },
+  {
+    title: 'Nocturne in Eb (Op. 9 No. 2)',
+    composer: 'Chopin',
+    tag: 'Eb Major • Flat 22N',
+    combScaleId: 'romantic-flat' as CombScaleId,
+    totalSteps: 64,
+    style: 'classical',
+    desc: 'Romantic piano jewel bathed in lyrical flat major bells and tender ornamentation.',
+    prompt: 'Frédéric Chopin - Nocturne in E-flat Major (Op. 9 No. 2). Transcribe the tender romantic flat major ornamentation and lyrical bel canto melody.',
+  },
+  {
+    title: 'Gymnopédie No. 1',
+    composer: 'Satie',
+    tag: 'G Major • Flat 22N',
+    combScaleId: 'romantic-flat' as CombScaleId,
+    totalSteps: 64,
+    style: 'classical',
+    desc: 'Hypnotic, minimalist 3/4 waltz bathed in tranquil stillness and flat overtones.',
+    prompt: 'Erik Satie - Gymnopédie No. 1. Transcribe the tranquil, minimalist 3/4 waltz with alternating G and D bass chords and melancholic melody.',
+  },
+];
 
 const INSPIRATION_PROMPTS = [
   {
@@ -106,12 +170,13 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   requiresPasscode = false,
   initialCombScaleId = 'romantic-flat',
 }) => {
+  const [composerMode, setComposerMode] = useState<'transcription' | 'creative'>('transcription');
   const [prompt, setPrompt] = useState('');
   const [selectedEngine, setSelectedEngine] = useState<ComposerEngineId>('auto');
-  const [selectedStylePreset, setSelectedStylePreset] = useState('nostalgic');
+  const [selectedStylePreset, setSelectedStylePreset] = useState('classical');
   const [customStyleText, setCustomStyleText] = useState('');
-  const [totalSteps, setTotalSteps] = useState<number>(64);
-  const [selectedCombScale, setSelectedCombScale] = useState<CombScaleId>(initialCombScaleId);
+  const [totalSteps, setTotalSteps] = useState<number>(128);
+  const [selectedCombScale, setSelectedCombScale] = useState<CombScaleId>('chromatic-30');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
@@ -228,12 +293,16 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     customPrompt?: string,
     customStyle?: string,
     combOverride?: CombScaleId,
-    engineOverride?: ComposerEngineId
+    engineOverride?: ComposerEngineId,
+    modeOverride?: 'transcription' | 'creative',
+    stepsOverride?: number
   ) => {
     const textToUse = customPrompt !== undefined ? customPrompt : prompt;
     const styleToUse = getEffectiveStyle(customStyle);
     const combToUse = combOverride || selectedCombScale;
     const engineToUse = engineOverride || selectedEngine;
+    const modeToUse = modeOverride || composerMode;
+    const stepsToUse = stepsOverride !== undefined ? stepsOverride : totalSteps;
 
     if (!textToUse.trim()) {
       setError('Please enter a melody idea or select an inspiration theme.');
@@ -261,14 +330,14 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     // If procedural engine is explicitly selected, generate algorithmically on client immediately
     if (engineToUse === 'procedural') {
       try {
-        const data = generateProceduralMusic(textToUse, styleToUse, totalSteps, combToUse);
+        const data = generateProceduralMusic(textToUse, styleToUse, stepsToUse, combToUse, modeToUse);
         const newSong: MusicBoxSong = {
           id: `procedural-${Date.now()}`,
           title: data.title || 'Whispering Music Box',
           category: 'ai',
           description: data.composerNote || `${data.mood} melody created for your music box.`,
           tempoBpm: data.tempoBpm || 88,
-          totalSteps: data.totalSteps || totalSteps,
+          totalSteps: data.totalSteps || stepsToUse,
           combScaleId: data.combScaleId || combToUse,
           pins: data.pins || [],
           createdAt: Date.now(),
@@ -293,9 +362,10 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         body: JSON.stringify({
           prompt: textToUse,
           style: styleToUse,
-          totalSteps: totalSteps,
+          totalSteps: stepsToUse,
           combScaleId: combToUse,
           model: engineToUse,
+          mode: modeToUse,
           passcode: passcode.trim(),
         }),
       });
@@ -308,7 +378,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           category: 'ai',
           description: data.composerNote || `${data.mood} melody composed with AI.`,
           tempoBpm: data.tempoBpm || 88,
-          totalSteps: data.totalSteps || totalSteps,
+          totalSteps: data.totalSteps || stepsToUse,
           combScaleId: data.combScaleId || combToUse,
           pins: data.pins || [],
           createdAt: Date.now(),
@@ -337,14 +407,14 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         return;
       }
       // Graceful algorithmic fallback (e.g. offline or network drop)
-      const data = generateProceduralMusic(textToUse, styleToUse, totalSteps, combToUse);
+      const data = generateProceduralMusic(textToUse, styleToUse, stepsToUse, combToUse, modeToUse);
       const newSong: MusicBoxSong = {
         id: `procedural-${Date.now()}`,
         title: data.title || 'Whispering Music Box',
         category: 'ai',
         description: data.composerNote || `${data.mood} melody created for your music box.`,
         tempoBpm: data.tempoBpm || 88,
-        totalSteps: data.totalSteps || totalSteps,
+        totalSteps: data.totalSteps || stepsToUse,
         combScaleId: data.combScaleId || combToUse,
         pins: data.pins || [],
         createdAt: Date.now(),
@@ -502,46 +572,123 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto py-4 space-y-5 custom-scrollbar pr-1">
-          {/* Quick Inspiration Themes */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold block">
-                Quick Inspiration Themes
-              </label>
-              <span className="text-[11px] text-[#8a765e] font-serif-sub italic">
-                Click any theme to load & compose instantly
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {INSPIRATION_PROMPTS.map((item, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    // Update form state for visual feedback
-                    setPrompt(item.prompt);
-                    setSelectedStylePreset(item.style);
-                    setSelectedCombScale(item.combScaleId);
-                    setCustomStyleText('');
-                    // Dispatch immediately with explicit parameter overrides to avoid waiting for async React state batching
-                    handleGenerate(item.prompt, item.style, item.combScaleId, selectedEngine);
-                  }}
-                  className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-serif font-bold text-[#433422] group-hover:text-[#8a6b3e]">
-                      {item.title}
-                    </span>
-                    <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] font-semibold">
-                      {item.style}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#75644e] font-serif-sub mt-1 line-clamp-2 italic">
-                    {item.prompt}
-                  </p>
-                </button>
-              ))}
-            </div>
+          {/* Mode Switcher: Classical Motif Transcription vs Creative Improvisation */}
+          <div className="flex items-center p-1 rounded-xl bg-[#ede4d4] border border-[#d8caa8]">
+            <button
+              type="button"
+              onClick={() => {
+                setComposerMode('transcription');
+                setSelectedStylePreset('classical');
+              }}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-serif font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                composerMode === 'transcription'
+                  ? 'bg-[#433422] text-[#fbf8f2] shadow-xs'
+                  : 'text-[#6f5e49] hover:text-[#433422]'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>🎼 Faithful Classical Motif Transcription</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setComposerMode('creative')}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-serif font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                composerMode === 'creative'
+                  ? 'bg-[#433422] text-[#fbf8f2] shadow-xs'
+                  : 'text-[#6f5e49] hover:text-[#433422]'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" />
+              <span>✨ Creative Original Melody</span>
+            </button>
           </div>
+
+          {/* Quick Presets Grid (Classical Transcriptions vs Creative Inspiration) */}
+          {composerMode === 'transcription' ? (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold block flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Classical Masterpiece Motifs & Scores</span>
+                </label>
+                <span className="text-[11px] text-[#8a765e] font-serif-sub italic">
+                  One-click load & transcribe under comb constraints
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {CLASSICAL_MOTIF_PRESETS.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setPrompt(item.prompt);
+                      setSelectedStylePreset(item.style);
+                      setSelectedCombScale(item.combScaleId);
+                      setTotalSteps(item.totalSteps);
+                      setCustomStyleText('');
+                      handleGenerate(item.prompt, item.style, item.combScaleId, selectedEngine, 'transcription', item.totalSteps);
+                    }}
+                    className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-serif font-bold text-[#433422] group-hover:text-[#8a6b3e] block">
+                          {item.title}
+                        </span>
+                        <span className="text-[10px] text-[#75644e] font-serif-sub italic">
+                          {item.composer}
+                        </span>
+                      </div>
+                      <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#dfcd9f] text-[#342718] border border-[#bfa175] font-semibold">
+                        {item.tag}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#75644e] font-serif-sub mt-1.5 line-clamp-2 italic">
+                      {item.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-serif uppercase tracking-wider text-[#8a6b3e] font-bold block flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Quick Inspiration Themes</span>
+                </label>
+                <span className="text-[11px] text-[#8a765e] font-serif-sub italic">
+                  Click any theme to load & compose instantly
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {INSPIRATION_PROMPTS.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setPrompt(item.prompt);
+                      setSelectedStylePreset(item.style);
+                      setSelectedCombScale(item.combScaleId);
+                      setCustomStyleText('');
+                      handleGenerate(item.prompt, item.style, item.combScaleId, selectedEngine, 'creative');
+                    }}
+                    className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-serif font-bold text-[#433422] group-hover:text-[#8a6b3e]">
+                        {item.title}
+                      </span>
+                      <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] font-semibold">
+                        {item.style}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#75644e] font-serif-sub mt-1 line-clamp-2 italic">
+                      {item.prompt}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Custom Prompt Input */}
           <div>
@@ -935,28 +1082,36 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>
                       {selectedEngine === 'procedural'
-                        ? 'Sequencing Procedurally...'
+                        ? composerMode === 'transcription'
+                          ? 'Transcribing Motif...'
+                          : 'Sequencing Procedurally...'
                         : selectedEngine === 'gemini-3.1-flash-lite'
-                        ? 'Composing with Gemini 3.1...'
-                        : selectedEngine === 'gemini-3.7-flash'
-                        ? 'Composing with Gemini 3.7...'
-                        : 'Composing with Gemini AI...'}
+                        ? composerMode === 'transcription'
+                          ? 'Transcribing with Gemini 3.1...'
+                          : 'Composing with Gemini 3.1...'
+                        : composerMode === 'transcription'
+                        ? 'Transcribing with Gemini...'
+                        : 'Composing with Gemini...'}
                     </span>
                   </>
                 ) : (
                   <>
-                    {selectedEngine === 'procedural' ? (
+                    {composerMode === 'transcription' ? (
+                      <BookOpen className="w-4 h-4" />
+                    ) : selectedEngine === 'procedural' ? (
                       <Cpu className="w-4 h-4" />
                     ) : (
                       <Wand2 className="w-4 h-4" />
                     )}
                     <span>
-                      {selectedEngine === 'procedural'
+                      {composerMode === 'transcription'
+                        ? 'Transcribe Motif (Faithful Score)'
+                        : selectedEngine === 'procedural'
                         ? 'Compose (Procedural Engine)'
                         : selectedEngine === 'gemini-3.1-flash-lite'
                         ? 'Compose (Gemini 3.1 Flash Lite)'
                         : selectedEngine === 'gemini-3.7-flash'
-                        ? 'Compose (Gemini)'
+                        ? 'Compose (Gemini 3.7)'
                         : 'Compose with Gemini'}
                     </span>
                   </>

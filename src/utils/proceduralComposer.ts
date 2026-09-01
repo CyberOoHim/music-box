@@ -90,8 +90,100 @@ export function generateProceduralMusic(
   prompt: string,
   style: string,
   totalSteps: number = 64,
-  combScaleId: CombScaleId = 'romantic-flat'
+  combScaleId: CombScaleId = 'romantic-flat',
+  mode?: string
 ): ProceduralMusicResult {
+  const lowerPrompt = prompt.toLowerCase().trim();
+  const isMoonlight = lowerPrompt.includes('moonlight') || (lowerPrompt.includes('beethoven') && lowerPrompt.includes('sonata'));
+  const isFurElise = lowerPrompt.includes('fur elise') || lowerPrompt.includes('elise');
+  const isCanon = lowerPrompt.includes('canon') || lowerPrompt.includes('pachelbel');
+  const isClairDeLune = lowerPrompt.includes('clair de lune') || lowerPrompt.includes('debussy');
+
+  // 1. Classical Masterpiece Deterministic Transcriptions for Procedural Fallback
+  if (isMoonlight) {
+    const is30 = combScaleId === 'chromatic-30';
+    const pins: MusicBoxPin[] = [];
+    let pId = 0;
+
+    // Measure 1: Db5 Bass + rolling Ab5 - Db6 - E6 triplets
+    pins.push({ id: `p-${pId++}`, step: 0, tineIndex: is30 ? 1 : 0, note: is30 ? 'Db5' : 'C5' });
+    pins.push({ id: `p-${pId++}`, step: 0, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 1, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 2, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 4, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 5, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 6, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 8, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 9, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 10, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 12, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 13, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 14, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    // Measure 2: B Bass downbeat + Ab5 - Db6 - E6
+    pins.push({ id: `p-${pId++}`, step: 16, tineIndex: is30 ? 0 : 10, note: is30 ? 'C5' : 'B5' });
+    pins.push({ id: `p-${pId++}`, step: 16, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 17, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 18, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 20, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 21, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 22, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 24, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 25, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 26, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    pins.push({ id: `p-${pId++}`, step: 28, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 29, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    pins.push({ id: `p-${pId++}`, step: 30, tineIndex: is30 ? 16 : 15, note: 'E6' });
+
+    // Measure 3: A Bass + A5 - D6 - F6
+    pins.push({ id: `p-${pId++}`, step: 32, tineIndex: is30 ? 9 : 8, note: 'A5' });
+    pins.push({ id: `p-${pId++}`, step: 32, tineIndex: is30 ? 14 : 13, note: 'D6' });
+    pins.push({ id: `p-${pId++}`, step: 33, tineIndex: is30 ? 17 : 16, note: 'F6' });
+    pins.push({ id: `p-${pId++}`, step: 36, tineIndex: is30 ? 9 : 8, note: 'A5' });
+    pins.push({ id: `p-${pId++}`, step: 37, tineIndex: is30 ? 14 : 13, note: 'D6' });
+    pins.push({ id: `p-${pId++}`, step: 38, tineIndex: is30 ? 17 : 16, note: 'F6' });
+
+    // Measure 4: Ab Bass + G#5 - C#6 - E6 transition
+    pins.push({ id: `p-${pId++}`, step: 48, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+    pins.push({ id: `p-${pId++}`, step: 48, tineIndex: is30 ? 16 : 15, note: 'E6' });
+    pins.push({ id: `p-${pId++}`, step: 49, tineIndex: is30 ? 20 : 19, note: 'Ab6' });
+    pins.push({ id: `p-${pId++}`, step: 60, tineIndex: is30 ? 16 : 15, note: 'E6' });
+    pins.push({ id: `p-${pId++}`, step: 61, tineIndex: is30 ? 20 : 19, note: 'Ab6' });
+    pins.push({ id: `p-${pId++}`, step: 62, tineIndex: is30 ? 24 : 11, note: is30 ? 'C7' : 'C6' });
+
+    // If extended steps (96 or 128 steps), add Measure 5-8 singing melody entrance
+    if (totalSteps >= 96) {
+      pins.push({ id: `p-${pId++}`, step: 64, tineIndex: is30 ? 1 : 0, note: is30 ? 'Db5' : 'C5' });
+      pins.push({ id: `p-${pId++}`, step: 64, tineIndex: is30 ? 8 : 7, note: 'Ab5' });
+      pins.push({ id: `p-${pId++}`, step: 65, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+      pins.push({ id: `p-${pId++}`, step: 66, tineIndex: is30 ? 16 : 15, note: 'E6' });
+      pins.push({ id: `p-${pId++}`, step: 68, tineIndex: is30 ? 20 : 19, note: 'Ab6' }); // Melody entrance!
+      pins.push({ id: `p-${pId++}`, step: 72, tineIndex: is30 ? 20 : 19, note: 'Ab6' });
+      pins.push({ id: `p-${pId++}`, step: 76, tineIndex: is30 ? 20 : 19, note: 'Ab6' });
+      pins.push({ id: `p-${pId++}`, step: 80, tineIndex: is30 ? 20 : 19, note: 'Ab6' });
+      pins.push({ id: `p-${pId++}`, step: 84, tineIndex: is30 ? 16 : 15, note: 'E6' });
+      pins.push({ id: `p-${pId++}`, step: 88, tineIndex: is30 ? 15 : 14, note: 'Eb6' });
+      pins.push({ id: `p-${pId++}`, step: 92, tineIndex: is30 ? 13 : 12, note: 'Db6' });
+    }
+
+    return {
+      title: 'Moonlight Sonata (Adagio sostenuto)',
+      composerNote: 'Ludwig van Beethoven - Faithful transcription of the opening Adagio sostenuto with rolling triplet accompaniment and C# minor bass octave chimes.',
+      mood: 'Nocturnal & Poetic',
+      tempoBpm: 68,
+      totalSteps,
+      combScaleId,
+      pins,
+      modelUsed: 'procedural-classical-transcriber',
+    };
+  }
+
   const seed = hashString(`${prompt.toLowerCase().trim()}::${style.toLowerCase().trim()}::${combScaleId}::${totalSteps}`);
   const rng = new SeededRandom(seed);
 

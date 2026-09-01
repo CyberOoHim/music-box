@@ -207,6 +207,9 @@ app.post('/api/gemini/compose', async (req, res) => {
   const rawCombScaleId = typeof req.body.combScaleId === 'string' ? req.body.combScaleId : 'romantic-flat';
   const combScaleId: CombScaleId = rawCombScaleId in COMB_TUNINGS ? (rawCombScaleId as CombScaleId) : 'romantic-flat';
 
+  const requestedMode = req.body.mode === 'transcription' ? 'transcription' : 'creative';
+  const isTranscription = requestedMode === 'transcription';
+
   const ai = getGeminiClient();
 
   const selectedComb = COMB_TUNINGS[combScaleId];
@@ -214,26 +217,84 @@ app.post('/api/gemini/compose', async (req, res) => {
   const tuningDescription = selectedComb.tuningText;
   const tineNotes = COMB_NOTE_MAPS[combScaleId] || COMB_NOTE_MAPS['romantic-flat'];
 
-  const systemInstruction = `You are a master horologist and mechanical music box composer who specializes in arranging exquisite, authentic melodies for traditional mechanical music boxes with steel comb tines and a rotating brass pin cylinder drum.
+  const systemInstruction = `You are a master horologist and mechanical music box arranger specializing in creating deterministic, authentic scores for traditional mechanical music boxes with steel comb tines and rotating cylinder drums.
 
 ${tuningDescription}
 
 PHYSICS & HARMONY RULES OF THE MECHANICAL MUSIC BOX:
 1. Steps range from 0 to ${totalSteps - 1} (one complete rotation of the cylinder drum).
-2. Polyphony: A music box can strike 1 to 3 tines simultaneously at a given step (e.g. bass root on lower tines together with a melody note on upper tines), but NEVER strike more than 3 tines at the exact same step.
-3. Rapid repetition limit: Plucking the exact same tine twice in a row requires at least 2 steps delay (e.g. if struck at step 4, it cannot be struck at step 5).
-4. Melody & Bass layering: Create an enchanting, relaxing music box texture. Place gentle bass roots on strong downbeats and a flowing, sparkling melody taking advantage of the specific tuning of this comb. ${selectedComb.specificHarmonyRules}
-5. Ensure the piece loops smoothly and harmonically resolves when the cylinder repeats from step ${totalSteps - 1} back to step 0.`;
+2. Polyphony: A music box can strike 1 to 3 tines simultaneously at a given step (e.g., 1 bass root on lower tines + 1–2 melody/accompaniment chimes). NEVER strike more than 3 tines at the exact same step.
+3. Rapid repetition limit: Plucking the exact same tine twice in a row requires at least 2 steps delay (e.g., if tine 8 is struck at step 0, it cannot be restruck at step 1).
+4. Register Transposition: Standard piano bass octaves do not exist on steel combs. Transpose piano scores up by +2 octaves (+24 semitones) or +3 octaves (+36 semitones) so the lowest bass note lands on Db5, C5, or Bb4.
+5. Triplet Meter Quantization:
+   - On 96-step cylinders (8 measures of 12 steps): Triplet eighth notes land on integer steps 0, 1, 2 | 3, 4, 5 | 6, 7, 8 | 9, 10, 11 within each 12-step measure.
+   - On 64/128-step cylinders (16 steps per measure): Triplet eighth notes land on steps 0, 1, 2 | 4, 5, 6 | 8, 9, 10 | 12, 13, 14 within each 16-step measure.
+6. Smooth Loop Continuity: The cylinder revolves continuously. Ensure step ${totalSteps - 1} resolves harmonically and connects seamlessly back into step 0.
 
-  const userMessage = `Compose an original mechanical music box arrangement for the cylinder based on this idea:
+IN-LINE FEW-SHOT TRANSCRIPTION REFERENCE EXAMPLES:
+
+--- EXAMPLE 1: Ludwig van Beethoven - Moonlight Sonata (Adagio sostenuto in C# minor, transposed +36st on chromatic-30) ---
+Notice: Measure 1-2 has rolling Db5-Ab5-Db6-E6 triplets with Db5 bass downbeat; Measure 3 has B4-Ab5-Db6-E6; Measure 4 has A5-D6-F6; Measure 5 introduces the singing G#6 melody chime:
+[
+  { "step": 0, "tineIndex": 1, "note": "Db5" }, { "step": 0, "tineIndex": 8, "note": "Ab5" },
+  { "step": 1, "tineIndex": 13, "note": "Db6" }, { "step": 2, "tineIndex": 16, "note": "E6" },
+  { "step": 4, "tineIndex": 8, "note": "Ab5" }, { "step": 5, "tineIndex": 13, "note": "Db6" }, { "step": 6, "tineIndex": 16, "note": "E6" },
+  { "step": 8, "tineIndex": 8, "note": "Ab5" }, { "step": 9, "tineIndex": 13, "note": "Db6" }, { "step": 10, "tineIndex": 16, "note": "E6" },
+  { "step": 12, "tineIndex": 8, "note": "Ab5" }, { "step": 13, "tineIndex": 13, "note": "Db6" }, { "step": 14, "tineIndex": 16, "note": "E6" },
+  { "step": 16, "tineIndex": 0, "note": "C5" }, { "step": 16, "tineIndex": 8, "note": "Ab5" },
+  { "step": 17, "tineIndex": 13, "note": "Db6" }, { "step": 18, "tineIndex": 16, "note": "E6" },
+  { "step": 20, "tineIndex": 8, "note": "Ab5" }, { "step": 21, "tineIndex": 13, "note": "Db6" }, { "step": 22, "tineIndex": 16, "note": "E6" },
+  { "step": 24, "tineIndex": 8, "note": "Ab5" }, { "step": 25, "tineIndex": 13, "note": "Db6" }, { "step": 26, "tineIndex": 16, "note": "E6" },
+  { "step": 28, "tineIndex": 8, "note": "Ab5" }, { "step": 29, "tineIndex": 13, "note": "Db6" }, { "step": 30, "tineIndex": 16, "note": "E6" },
+  { "step": 32, "tineIndex": 9, "note": "A5" }, { "step": 32, "tineIndex": 14, "note": "D6" }, { "step": 33, "tineIndex": 17, "note": "F6" },
+  { "step": 36, "tineIndex": 9, "note": "A5" }, { "step": 37, "tineIndex": 14, "note": "D6" }, { "step": 38, "tineIndex": 17, "note": "F6" },
+  { "step": 48, "tineIndex": 8, "note": "Ab5" }, { "step": 48, "tineIndex": 16, "note": "E6" }, { "step": 49, "tineIndex": 20, "note": "Ab6" },
+  { "step": 60, "tineIndex": 16, "note": "E6" }, { "step": 61, "tineIndex": 20, "note": "Ab6" }, { "step": 62, "tineIndex": 24, "note": "C7" }
+]
+
+--- EXAMPLE 2: Ludwig van Beethoven - Für Elise (Bagatelle in A minor on romantic-flat) ---
+Notice: Measure 1-2 has signature E6-Eb6-E6-Eb6 chromatic motifs and Am arpeggiation:
+[
+  { "step": 0, "tineIndex": 15, "note": "E6" }, { "step": 2, "tineIndex": 14, "note": "Eb6" },
+  { "step": 4, "tineIndex": 15, "note": "E6" }, { "step": 6, "tineIndex": 14, "note": "Eb6" },
+  { "step": 8, "tineIndex": 15, "note": "E6" }, { "step": 10, "tineIndex": 10, "note": "B5" },
+  { "step": 12, "tineIndex": 13, "note": "D6" }, { "step": 14, "tineIndex": 11, "note": "C6" },
+  { "step": 16, "tineIndex": 0, "note": "C5" }, { "step": 16, "tineIndex": 8, "note": "A5" },
+  { "step": 20, "tineIndex": 3, "note": "E5" }, { "step": 24, "tineIndex": 8, "note": "A5" }, { "step": 28, "tineIndex": 10, "note": "B5" }
+]`;
+
+  const pinRangeText = isTranscription
+    ? totalSteps >= 96
+      ? 'Provide between 48 and 140 pins for a full, lush score with continuous rolling accompaniment and singing melody.'
+      : 'Provide between 36 and 75 pins for a rich transcription.'
+    : 'Provide between 24 and 56 pins for a rich, sparkling melody.';
+
+  const userMessage = isTranscription
+    ? `Faithfully transcribe and arrange the major motifs, authentic harmony, and signature accompaniment from the classical masterpiece:
 "${sanitizedPrompt}"
 
+Mode: Classical Masterpiece Motif Transcription (Faithful to real score)
 Musical style: ${style}
 Total steps for cylinder rotation: ${totalSteps}
 Comb scale: ${selectedComb.name} (${selectedComb.tinesCount} tines, index 0 to ${tineMax})
 ${tempoPreference ? `Preferred tempo: ~${tempoPreference} BPM` : ''}
 
-Generate a creative title, a short lyrical/poetic note about how the melody evokes the idea, a suitable BPM tempo (between 68 and 130), the mood, and the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to ${tineMax}), note: string (e.g. "C5", "Eb6") }. Provide between 24 and 56 pins for a rich, sparkling melody.`;
+Transcription Requirements:
+1. Accurately transcribe the authentic melody, chord progression, and signature arpeggio patterns as composed.
+2. Transpose the register appropriately so bass roots fit the lowest available tines of this comb (${tineNotes[0]}).
+3. ${selectedComb.specificHarmonyRules}
+4. ${pinRangeText}
+5. Generate the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to ${tineMax}), note: string }.`
+    : `Compose an original mechanical music box arrangement for the cylinder based on this idea:
+"${sanitizedPrompt}"
+
+Mode: Creative Composition
+Musical style: ${style}
+Total steps for cylinder rotation: ${totalSteps}
+Comb scale: ${selectedComb.name} (${selectedComb.tinesCount} tines, index 0 to ${tineMax})
+${tempoPreference ? `Preferred tempo: ~${tempoPreference} BPM` : ''}
+
+Generate a creative title, a short lyrical/poetic note about how the melody evokes the idea, a suitable BPM tempo (between 68 and 130), the mood, and the exact pin coordinates { step: number (0 to ${totalSteps - 1}), tineIndex: number (0 to ${tineMax}), note: string (e.g. "C5", "Eb6") }. ${pinRangeText}`;
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -339,7 +400,7 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
           contents: userMessage,
           config: {
             systemInstruction,
-            temperature: 0.8,
+            temperature: isTranscription ? 0.35 : 0.8,
             responseMimeType: 'application/json',
             responseSchema,
           },
