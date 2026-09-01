@@ -137,20 +137,23 @@ export default function App() {
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
   const [hasAiComposer, setHasAiComposer] = useState<boolean>(false);
+  const [requiresPasscode, setRequiresPasscode] = useState<boolean>(false);
 
-  // Check if Gemini API key is configured on server/environment
+  // Check if Gemini API key is configured on server/environment and if passcode is required
   useEffect(() => {
     let isMounted = true;
     fetch('/api/gemini/status')
-      .then((res) => (res.ok ? res.json() : { enabled: false }))
+      .then((res) => (res.ok ? res.json() : { enabled: false, requiresPasscode: false }))
       .then((data) => {
         if (isMounted) {
           setHasAiComposer(Boolean(data?.enabled));
+          setRequiresPasscode(Boolean(data?.requiresPasscode));
         }
       })
       .catch(() => {
         if (isMounted) {
           setHasAiComposer(false);
+          setRequiresPasscode(false);
         }
       });
     return () => {
@@ -1346,6 +1349,7 @@ export default function App() {
           onClose={() => setIsGeminiModalOpen(false)}
           onLoadSong={handleLoadNewSong}
           hasAiComposer={hasAiComposer}
+          requiresPasscode={requiresPasscode}
           initialCombScaleId={combScaleId}
         />
       )}

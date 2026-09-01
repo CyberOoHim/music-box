@@ -15,6 +15,11 @@ import {
   Pencil,
   Cpu,
   Layers,
+  Lock,
+  Key,
+  Eye,
+  EyeOff,
+  ShieldCheck,
 } from 'lucide-react';
 import { generateProceduralMusic } from '../utils/proceduralComposer';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
@@ -24,6 +29,7 @@ interface GeminiComposerModalProps {
   onClose: () => void;
   onLoadSong: (song: MusicBoxSong) => void;
   hasAiComposer?: boolean;
+  requiresPasscode?: boolean;
   initialCombScaleId?: CombScaleId;
 }
 
@@ -97,6 +103,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   onClose,
   onLoadSong,
   hasAiComposer = false,
+  requiresPasscode = false,
   initialCombScaleId = 'romantic-flat',
 }) => {
   const [prompt, setPrompt] = useState('');
@@ -108,6 +115,38 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
+
+  // Local storage passcode authentication state
+  const [passcode, setPasscode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('musicbox_ai_composer_passcode') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [showPasscode, setShowPasscode] = useState(false);
+
+  const handlePasscodeChange = (newPasscode: string) => {
+    setPasscode(newPasscode);
+    try {
+      if (newPasscode.trim()) {
+        localStorage.setItem('musicbox_ai_composer_passcode', newPasscode.trim());
+      } else {
+        localStorage.removeItem('musicbox_ai_composer_passcode');
+      }
+    } catch (e) {
+      console.warn('Could not save passcode to localStorage', e);
+    }
+  };
+
+  const handleClearPasscode = () => {
+    setPasscode('');
+    try {
+      localStorage.removeItem('musicbox_ai_composer_passcode');
+    } catch (e) {
+      console.warn('Could not clear passcode from localStorage', e);
+    }
+  };
 
   // In-modal preview playback state
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
@@ -201,6 +240,12 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       return;
     }
 
+    // Passcode validation check before invoking LLM API
+    if (engineToUse !== 'procedural' && requiresPasscode && !passcode.trim()) {
+      setError('AI Composer passcode is required to use Gemini models. Please enter the passcode below.');
+      return;
+    }
+
     // Stop active audio preview before generating
     stopAudioPreview();
 
@@ -240,7 +285,10 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     try {
       const response = await fetch('/api/gemini/compose', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Composer-Passcode': passcode.trim(),
+        },
         signal: controller.signal,
         body: JSON.stringify({
           prompt: textToUse,
@@ -248,6 +296,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           totalSteps: totalSteps,
           combScaleId: combToUse,
           model: engineToUse,
+          passcode: passcode.trim(),
         }),
       });
 
@@ -269,12 +318,25 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         setGeneratedSong(newSong);
         return;
       }
+
+      if (response.status === 401 || response.status === 403) {
+        const errJson = await response.json().catch(() => ({ error: 'Authentication failed: Invalid or missing passcode.' }));
+        setError(errJson.error || 'Authentication failed: Invalid passcode. Please check your passcode.');
+        return;
+      }
+
+      if (response.status === 429) {
+        const errJson = await response.json().catch(() => ({ error: 'Rate limit exceeded.' }));
+        setError(errJson.error || 'Too many requests. Please wait a moment before trying again.');
+        return;
+      }
+
       throw new Error('API unavailable, falling back to algorithmic composer');
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         return;
       }
-      // Graceful algorithmic fallback (e.g. offline, rate limit, or network error)
+      // Graceful algorithmic fallback (e.g. offline or network drop)
       const data = generateProceduralMusic(textToUse, styleToUse, totalSteps, combToUse);
       const newSong: MusicBoxSong = {
         id: `procedural-${Date.now()}`,
@@ -509,6 +571,96 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
               <span className="text-[10px] font-mono text-[#8a765e]">
                 {prompt.length}/500 chars
               </span>
+            </div>
+          </div>
+
+          {/* AI Composer Passcode Authentication (Stored in LocalStorage) */}
+          <div className="p-3 sm:p-3.5 rounded-xl bg-[#f7f2e8] border border-[#ded3be] space-y-2 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="composer-passcode-input"
+                className="text-xs font-serif font-bold text-[#433422] flex items-center gap-1.5"
+              >
+                <Lock className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                <span>AI Composer Passcode</span>
+                {requiresPasscode ? (
+                  <span
+                    className={`text-[10px] uppercase font-serif px-1.5 py-0.5 rounded font-semibold border ${
+                      passcode.trim()
+                        ? 'bg-[#e2edd8] text-[#3e6826] border-[#b9d9a4]'
+                        : 'bg-[#fae7e4] text-[#a63c2c] border-[#f0bcb4]'
+                    }`}
+                  >
+                    {passcode.trim() ? 'Passcode Set' : 'Required'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#e8decf] text-[#6e5d48] border border-[#d6caa8]">
+                    Optional
+                  </span>
+                )}
+              </label>
+
+              {passcode.trim().length > 0 && (
+                <div className="flex items-center gap-1 text-[11px] font-serif-sub text-[#4e6b35]">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Stored in LocalStorage</span>
+                </div>
+              )}
+            </div>
+
+            <div className="relative flex items-center">
+              <div className="absolute left-3 text-[#8a6b3e] pointer-events-none">
+                <Key className="w-3.5 h-3.5" />
+              </div>
+              <input
+                id="composer-passcode-input"
+                type={showPasscode ? 'text' : 'password'}
+                value={passcode}
+                onChange={(e) => handlePasscodeChange(e.target.value)}
+                placeholder={
+                  requiresPasscode
+                    ? 'Enter AI composer passcode to unlock Gemini LLM access...'
+                    : 'Enter passcode (if configured on server)...'
+                }
+                className={`w-full rounded-lg bg-[#fdfcf9] border pl-8.5 pr-20 py-2 text-xs text-[#2d2419] placeholder-[#9f8f7c] outline-none transition font-mono shadow-2xs ${
+                  requiresPasscode && !passcode.trim()
+                    ? 'border-[#e0a299] focus:border-[#9c3826] focus:ring-1 focus:ring-[#9c3826]'
+                    : 'border-[#cfbe9e] focus:border-[#bfa175] focus:ring-1 focus:ring-[#bfa175]'
+                }`}
+              />
+              <div className="absolute right-2 flex items-center space-x-1">
+                {passcode.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearPasscode}
+                    className="p-1 rounded text-[#8a765e] hover:text-[#9c3826] hover:bg-[#ebdcc7] transition cursor-pointer"
+                    title="Clear saved passcode from local storage"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPasscode((prev) => !prev)}
+                  className="p-1 rounded text-[#8a765e] hover:text-[#2d2419] hover:bg-[#ebdcc7] transition cursor-pointer"
+                  title={showPasscode ? 'Hide passcode' : 'Show passcode'}
+                >
+                  {showPasscode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-[#75644e] font-serif-sub italic">
+              <span>
+                {requiresPasscode
+                  ? 'Server requires passcode authentication to protect Gemini LLM API access.'
+                  : 'Passcode is automatically remembered in browser local storage for future visits.'}
+              </span>
+              {selectedEngine === 'procedural' && (
+                <span className="text-[#8a6b3e] font-semibold not-italic">
+                  (Procedural engine runs offline without passcode)
+                </span>
+              )}
             </div>
           </div>
 

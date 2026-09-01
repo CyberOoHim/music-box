@@ -42,11 +42,40 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-// Check if Gemini AI composer is enabled (API key configured)
+// Check if Gemini AI composer is enabled (API key configured) and if passcode protection is active
 app.get('/api/gemini/status', (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   const isEnabled = Boolean(apiKey && apiKey.trim().length > 0);
-  res.json({ enabled: isEnabled });
+  const serverPasscode = (process.env.AI_COMPOSER_PASSCODE || process.env.COMPOSER_PASSCODE || '').trim();
+  res.json({
+    enabled: isEnabled,
+    requiresPasscode: serverPasscode.length > 0,
+  });
+});
+
+// Passcode verification endpoint
+app.post('/api/gemini/verify-passcode', (req, res) => {
+  const serverPasscode = (process.env.AI_COMPOSER_PASSCODE || process.env.COMPOSER_PASSCODE || '').trim();
+  if (!serverPasscode) {
+    return res.json({ valid: true, requiresPasscode: false });
+  }
+
+  const clientPasscode = (
+    (typeof req.body?.passcode === 'string' ? req.body.passcode : '') ||
+    (typeof req.headers['x-composer-passcode'] === 'string' ? req.headers['x-composer-passcode'] : '') ||
+    (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : '')
+  ).trim();
+
+  if (clientPasscode && clientPasscode === serverPasscode) {
+    return res.json({ valid: true, requiresPasscode: true });
+  }
+  return res.status(401).json({
+    valid: false,
+    requiresPasscode: true,
+    error: 'Invalid AI Composer passcode.',
+  });
 });
 
 // In-memory sliding window rate limiter: max 20 compose requests per minute per IP
@@ -270,6 +299,25 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
       pins: data.pins,
       modelUsed: 'procedural-musicbox-engine',
     });
+  }
+
+  // Passcode authentication to protect LLM API access
+  const serverPasscode = (process.env.AI_COMPOSER_PASSCODE || process.env.COMPOSER_PASSCODE || '').trim();
+  if (serverPasscode.length > 0) {
+    const clientPasscode = (
+      (typeof req.body?.passcode === 'string' ? req.body.passcode : '') ||
+      (typeof req.headers['x-composer-passcode'] === 'string' ? req.headers['x-composer-passcode'] : '') ||
+      (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : '')
+    ).trim();
+
+    if (!clientPasscode || clientPasscode !== serverPasscode) {
+      return res.status(401).json({
+        error: 'Invalid or missing passcode. Please enter the correct AI Composer passcode to use Gemini LLM.',
+        requiresPasscode: true,
+      });
+    }
   }
 
   // Determine models to try based on user selection
