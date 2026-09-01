@@ -83,6 +83,15 @@ const COMB_CHOICES: { id: CombScaleId; label: string; tines: number; range: stri
   { id: 'flat-major-18', label: 'Flat Major 18N', tines: 18, range: 'Bb4–Eb7', desc: 'Eb / Bb / Ab Major rich lullabies' },
 ];
 
+export type ComposerEngineId = 'auto' | 'gemini-3.7-flash' | 'gemini-3.1-flash-lite' | 'procedural';
+
+const ENGINE_CHOICES: { id: ComposerEngineId; label: string; desc: string }[] = [
+  { id: 'auto', label: 'Auto (Gemini 3.7 Flash)', desc: 'Best AI quality with fast fallback' },
+  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', desc: 'Complex harmonies & melodic reasoning' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', desc: 'Fast & lightweight AI arrangement' },
+  { id: 'procedural', label: 'Procedural Engine (Offline)', desc: 'Instant algorithmic physical sequencer' },
+];
+
 export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   isOpen,
   onClose,
@@ -91,6 +100,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   initialCombScaleId = 'romantic-flat',
 }) => {
   const [prompt, setPrompt] = useState('');
+  const [selectedEngine, setSelectedEngine] = useState<ComposerEngineId>('auto');
   const [selectedStylePreset, setSelectedStylePreset] = useState('nostalgic');
   const [customStyleText, setCustomStyleText] = useState('');
   const [totalSteps, setTotalSteps] = useState<number>(64);
@@ -175,10 +185,16 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   };
 
   // Generate or Regenerate music
-  const handleGenerate = async (customPrompt?: string, customStyle?: string, combOverride?: CombScaleId) => {
+  const handleGenerate = async (
+    customPrompt?: string,
+    customStyle?: string,
+    combOverride?: CombScaleId,
+    engineOverride?: ComposerEngineId
+  ) => {
     const textToUse = customPrompt !== undefined ? customPrompt : prompt;
     const styleToUse = getEffectiveStyle(customStyle);
     const combToUse = combOverride || selectedCombScale;
+    const engineToUse = engineOverride || selectedEngine;
 
     if (!textToUse.trim()) {
       setError('Please enter a melody idea or select an inspiration theme.');
@@ -197,6 +213,30 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     setIsLoading(true);
     setError(null);
 
+    // If procedural engine is explicitly selected, generate algorithmically on client immediately
+    if (engineToUse === 'procedural') {
+      try {
+        const data = generateProceduralMusic(textToUse, styleToUse, totalSteps, combToUse);
+        const newSong: MusicBoxSong = {
+          id: `procedural-${Date.now()}`,
+          title: data.title || 'Whispering Music Box',
+          category: 'ai',
+          description: data.composerNote || `${data.mood} melody created for your music box.`,
+          tempoBpm: data.tempoBpm || 88,
+          totalSteps: data.totalSteps || totalSteps,
+          combScaleId: data.combScaleId || combToUse,
+          pins: data.pins || [],
+          createdAt: Date.now(),
+          isAiGenerated: true,
+          modelUsed: 'procedural-musicbox-engine',
+        };
+        setGeneratedSong(newSong);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const response = await fetch('/api/gemini/compose', {
         method: 'POST',
@@ -207,6 +247,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           style: styleToUse,
           totalSteps: totalSteps,
           combScaleId: combToUse,
+          model: engineToUse,
         }),
       });
 
@@ -214,16 +255,16 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         const data = await response.json();
         const newSong: MusicBoxSong = {
           id: `gemini-${Date.now()}`,
-          title: data.title || 'Gemini 3.7 Music Box Melody',
+          title: data.title || 'Gemini Music Box Melody',
           category: 'ai',
-          description: data.composerNote || `${data.mood} melody composed with Gemini 3.7 Flash.`,
+          description: data.composerNote || `${data.mood} melody composed with AI.`,
           tempoBpm: data.tempoBpm || 88,
           totalSteps: data.totalSteps || totalSteps,
           combScaleId: data.combScaleId || combToUse,
           pins: data.pins || [],
           createdAt: Date.now(),
           isAiGenerated: true,
-          modelUsed: data.modelUsed || 'gemini-3.7-flash',
+          modelUsed: data.modelUsed || (engineToUse === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : 'gemini-3.7-flash'),
         };
         setGeneratedSong(newSong);
         return;
@@ -420,7 +461,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                     setSelectedCombScale(item.combScaleId);
                     setCustomStyleText('');
                     // Dispatch immediately with explicit parameter overrides to avoid waiting for async React state batching
-                    handleGenerate(item.prompt, item.style, item.combScaleId);
+                    handleGenerate(item.prompt, item.style, item.combScaleId, selectedEngine);
                   }}
                   className="p-2.5 rounded-xl bg-[#f8f5ee] hover:bg-[#f3ece0] border border-[#ded3be] hover:border-[#bfa175] text-left transition group shadow-2xs cursor-pointer"
                 >
@@ -471,9 +512,28 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
             </div>
           </div>
 
-          {/* Options: Comb Scale, Style Selection & Cylinder Length */}
+          {/* Options: Engine/Model, Comb Scale, Style Selection & Cylinder Length */}
           <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* Composition Engine / Model Selector */}
+              <div>
+                <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5 flex items-center gap-1">
+                  <Cpu className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Engine / Model</span>
+                </label>
+                <select
+                  value={selectedEngine}
+                  onChange={(e) => setSelectedEngine(e.target.value as ComposerEngineId)}
+                  className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-2.5 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
+                >
+                  {ENGINE_CHOICES.map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Comb Scale Selector */}
               <div>
                 <label className="text-xs text-[#75644e] font-serif font-semibold block mb-1.5 flex items-center gap-1">
@@ -717,12 +777,32 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Composing with Gemini...</span>
+                    <span>
+                      {selectedEngine === 'procedural'
+                        ? 'Sequencing Procedurally...'
+                        : selectedEngine === 'gemini-3.1-flash-lite'
+                        ? 'Composing with Gemini 3.1...'
+                        : selectedEngine === 'gemini-3.7-flash'
+                        ? 'Composing with Gemini 3.7...'
+                        : 'Composing with Gemini AI...'}
+                    </span>
                   </>
                 ) : (
                   <>
-                    <Wand2 className="w-4 h-4" />
-                    <span>Compose with Gemini</span>
+                    {selectedEngine === 'procedural' ? (
+                      <Cpu className="w-4 h-4" />
+                    ) : (
+                      <Wand2 className="w-4 h-4" />
+                    )}
+                    <span>
+                      {selectedEngine === 'procedural'
+                        ? 'Compose (Procedural Engine)'
+                        : selectedEngine === 'gemini-3.1-flash-lite'
+                        ? 'Compose (Gemini 3.1 Flash Lite)'
+                        : selectedEngine === 'gemini-3.7-flash'
+                        ? 'Compose (Gemini 3.7 Flash)'
+                        : 'Compose with Gemini'}
+                    </span>
                   </>
                 )}
               </button>

@@ -255,8 +255,30 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
     required: ['title', 'composerNote', 'tempoBpm', 'totalSteps', 'pins', 'mood'],
   };
 
-  // Try models in cascade: gemini-3.7-flash (highest quality composition) -> gemini-3.1-flash-lite (fast backup)
-  const modelsToTry = ['gemini-3.7-flash', 'gemini-3.1-flash-lite'];
+  const requestedModel = typeof req.body.model === 'string' ? req.body.model : 'auto';
+
+  // If procedural engine requested directly, generate algorithmically and return immediately
+  if (requestedModel === 'procedural') {
+    const data = generateProceduralMusic(sanitizedPrompt, style, totalSteps, combScaleId);
+    return res.json({
+      title: data.title,
+      composerNote: data.composerNote,
+      mood: data.mood,
+      tempoBpm: data.tempoBpm,
+      totalSteps: data.totalSteps,
+      combScaleId: data.combScaleId,
+      pins: data.pins,
+      modelUsed: 'procedural-musicbox-engine',
+    });
+  }
+
+  // Determine models to try based on user selection
+  const modelsToTry =
+    requestedModel === 'gemini-3.7-flash'
+      ? ['gemini-3.7-flash']
+      : requestedModel === 'gemini-3.1-flash-lite'
+      ? ['gemini-3.1-flash-lite']
+      : ['gemini-3.7-flash', 'gemini-3.1-flash-lite'];
 
   if (ai) {
     for (const model of modelsToTry) {
