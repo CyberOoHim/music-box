@@ -839,6 +839,12 @@ export default function App() {
 
   // Delete custom song
   const handleDeleteCustomSong = useCallback((songId: string) => {
+    const isPreset = DEFAULT_SONGS.some((s) => s.id === songId);
+    if (isPreset) {
+      showToast('Preset songs cannot be deleted', 'warn');
+      return;
+    }
+
     setSongs((prevSongs) => {
       const newSongList = prevSongs.filter((s) => s.id !== songId);
       persistCustomSongs(newSongList);
@@ -854,7 +860,7 @@ export default function App() {
 
       return newSongList;
     });
-    showToast('Deleted melody from library', 'info');
+    showToast('Deleted melody from repertoire', 'info');
   }, [persistCustomSongs, showToast]);
 
   // Batch import songs

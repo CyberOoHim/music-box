@@ -63,9 +63,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Filter custom and AI songs
+  // Filter custom, imported, and AI songs (all songs not in built-in default presets)
+  const defaultIds = new Set(DEFAULT_SONGS.map((s) => s.id));
   const customOrAiSongs = allSongs.filter(
-    (s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai'
+    (s) => !defaultIds.has(s.id) || s.category === 'custom' || s.isAiGenerated || s.category === 'ai'
   );
 
   // 1. Export Handlers

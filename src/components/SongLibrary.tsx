@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MusicBoxSong, COMB_SCALES_MAP, formatModelDisplayName } from '../types';
+import { DEFAULT_SONGS } from '../data/defaultSongs';
 import {
   Music,
   Sparkles,
@@ -11,6 +12,8 @@ import {
   Play,
   Sliders,
 } from 'lucide-react';
+
+const DEFAULT_PRESET_IDS = new Set(DEFAULT_SONGS.map((s) => s.id));
 
 interface SongLibraryProps {
   songs: MusicBoxSong[];
@@ -42,11 +45,15 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     const matchesSearch =
       s.title.toLowerCase().includes(search.toLowerCase()) ||
       (s.description && s.description.toLowerCase().includes(search.toLowerCase()));
+    const isPreset = DEFAULT_PRESET_IDS.has(s.id);
+    const isAi = s.isAiGenerated || s.category === 'ai' || !!s.modelUsed;
+    const isCustom = !isPreset && !isAi;
+
     const matchesCategory =
       selectedCategory === 'all' ||
       s.category === selectedCategory ||
-      (selectedCategory === 'ai' && (s.isAiGenerated || s.category === 'ai' || !!s.modelUsed)) ||
-      (selectedCategory === 'custom' && (s.category === 'custom' || s.id.startsWith('custom-') || s.id.startsWith('imported-')));
+      (selectedCategory === 'ai' && isAi) ||
+      (selectedCategory === 'custom' && (isCustom || s.category === 'custom'));
     return matchesSearch && matchesCategory;
   });
 
@@ -64,7 +71,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
-  const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai' || !!s.modelUsed).length;
+  const nonPresetCount = songs.filter((s) => !DEFAULT_PRESET_IDS.has(s.id) || s.category === 'custom' || s.isAiGenerated || s.category === 'ai' || !!s.modelUsed).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_4px_24px_rgba(67,52,34,0.06)] text-[#2d2419] space-y-4">
@@ -101,7 +108,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
               className="px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] border border-[#ded3be] text-xs font-serif flex items-center space-x-1.5 transition shadow-2xs font-semibold cursor-pointer"
             >
               <FolderArchive className="w-3.5 h-3.5 text-[#8a765e]" />
-              <span>Backup & Import ({customOrAiCount})</span>
+              <span>Backup & Import ({nonPresetCount})</span>
             </button>
           )}
         </div>
@@ -151,8 +158,9 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
         {filteredSongs.map((song) => {
           const isSelected = song.id === currentSongId;
-          const isCustom = song.category === 'custom' || song.id.startsWith('custom-') || song.id.startsWith('imported-');
+          const isPreset = DEFAULT_PRESET_IDS.has(song.id);
           const isAi = song.isAiGenerated || song.category === 'ai' || !!song.modelUsed;
+          const isCustom = !isPreset && !isAi;
           const combInfo = COMB_SCALES_MAP[song.combScaleId || 'romantic-flat'];
           const totalSteps = song.totalSteps || 64;
           const measures = Math.max(1, Math.round(totalSteps / 16));
@@ -185,7 +193,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                         <span>{modelDisplayName}</span>
                       </span>
                     )}
-                    {isCustom && !isAi && (
+                    {isCustom && (
                       <span className="shrink-0 text-[10px] font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
                         Custom
                       </span>
@@ -251,8 +259,9 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     <Download className="w-3.5 h-3.5" />
                   </button>
 
-                  {(isCustom || isAi) && onDeleteCustomSong && (
+                  {!isPreset && onDeleteCustomSong && (
                     <button
+                      id={`delete-song-${song.id}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onDeleteCustomSong(song.id);
