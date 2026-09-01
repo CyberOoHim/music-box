@@ -37,7 +37,7 @@ interface MusicBoxMovementProps {
   onSubscribeStep?: (cb: (step: number) => void) => () => void;
 }
 
-export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
+export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   currentStep,
   totalSteps,
   pins,
@@ -81,42 +81,68 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     setSmoothStep(currentStep);
   }, [currentStep]);
 
-  // High-performance Air-Friction Governor & Gear Train Animation Loop
+  // High-performance Air-Friction Governor & Gear Train Animation Loop (sleeps when idle to save power)
   useEffect(() => {
-    let animId: number;
+    const isCranking = playMode === 'crank' && crankRpm > 0.5;
+    const shouldSpin = isPlaying || isCranking;
+
+    if (!shouldSpin) {
+      return;
+    }
+
+    let animId: number | null = null;
     let lastTime = performance.now();
 
     const updateGovernor = (time: number) => {
+      if (document.hidden) {
+        animId = null;
+        return;
+      }
+
       const deltaSec = Math.min(0.1, (time - lastTime) / 1000);
       lastTime = time;
 
-      const isCranking = playMode === 'crank' && crankRpm > 0.5;
-      const shouldSpin = isPlaying || isCranking;
+      let speed = 0;
+      if (playMode === 'crank' && crankRpm > 0.5) {
+        speed = (crankRpm / 60) * Math.PI * 4.5;
+      } else {
+        const speedFactor = playMode === 'spring' ? Math.max(0.4, springTension) : 1.0;
+        speed = (tempoBpm / 90) * speedFactor * Math.PI * 3.8;
+      }
 
-      if (shouldSpin) {
-        let speed = 0;
-        if (isCranking) {
-          speed = (crankRpm / 60) * Math.PI * 4.5;
-        } else {
-          const speedFactor = playMode === 'spring' ? Math.max(0.4, springTension) : 1.0;
-          speed = (tempoBpm / 90) * speedFactor * Math.PI * 3.8;
-        }
+      governorAngleRef.current += speed * deltaSec;
 
-        governorAngleRef.current += speed * deltaSec;
-
-        if (governorFanRef.current) {
-          governorFanRef.current.style.transform = `rotate(${governorAngleRef.current}rad)`;
-        }
-        if (nylonGearRef.current) {
-          nylonGearRef.current.style.transform = `rotate(${-governorAngleRef.current * 0.32}rad)`;
-        }
+      if (governorFanRef.current) {
+        governorFanRef.current.style.transform = `rotate(${governorAngleRef.current}rad)`;
+      }
+      if (nylonGearRef.current) {
+        nylonGearRef.current.style.transform = `rotate(${-governorAngleRef.current * 0.32}rad)`;
       }
 
       animId = requestAnimationFrame(updateGovernor);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId) {
+          cancelAnimationFrame(animId);
+          animId = null;
+        }
+      } else if (!animId) {
+        lastTime = performance.now();
+        animId = requestAnimationFrame(updateGovernor);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     animId = requestAnimationFrame(updateGovernor);
-    return () => cancelAnimationFrame(animId);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (animId) {
+        cancelAnimationFrame(animId);
+      }
+    };
   }, [isPlaying, playMode, crankRpm, tempoBpm, springTension]);
 
   // Physical computer keyboard shortcuts handler to pluck tines
@@ -905,4 +931,4 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       </div>
     </div>
   );
-};
+});

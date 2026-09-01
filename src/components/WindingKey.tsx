@@ -31,7 +31,7 @@ interface WindingKeyProps {
   onChangeTempoBpm?: (bpm: number) => void;
 }
 
-export const WindingKey: React.FC<WindingKeyProps> = ({
+export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
   playMode,
   onChangePlayMode,
   springTension,
@@ -832,4 +832,4 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
       </div>
     </div>
   );
-};
+});
