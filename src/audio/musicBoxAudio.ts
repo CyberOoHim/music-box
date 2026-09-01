@@ -72,8 +72,8 @@ class MusicBoxAudioEngine {
   public isInitialized = false;
 
   public async init(): Promise<void> {
-    if (this.isInitialized && this.ctx) {
-      if (this.ctx.state === 'suspended') {
+    if (this.isInitialized && this.ctx && this.ctx.state !== 'closed') {
+      if (this.ctx.state !== 'running') {
         try {
           await this.ctx.resume();
         } catch {
@@ -94,11 +94,18 @@ class MusicBoxAudioEngine {
           (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.ctx = new AudioContextClass();
 
-        if (this.ctx.state === 'suspended') {
+        // Monitor state changes (e.g. interruption / resume by OS or browser)
+        this.ctx.onstatechange = () => {
+          if (this.ctx?.state === 'running') {
+            this.ensureNatureAmbianceRunning();
+          }
+        };
+
+        if (this.ctx.state !== 'running') {
           try {
             await this.ctx.resume();
           } catch {
-            // will resume on gesture
+            // will resume on user gesture or visibility change
           }
         }
 
@@ -206,27 +213,57 @@ class MusicBoxAudioEngine {
         this.isInitialized = true;
       } catch (err) {
         console.error('Failed to initialize Web Audio Engine:', err);
+        this.initPromise = null;
       }
     })();
 
     return this.initPromise;
   }
 
+  public isAudioSuspendedOrInterrupted(): boolean {
+    return !this.ctx || this.ctx.state !== 'running';
+  }
+
+  // Play a tiny 1-sample silent buffer to unlock the hardware audio pipeline on iOS/Android
+  public unlockAudioSession(): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    try {
+      const buffer = this.ctx.createBuffer(1, 1, 22050);
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.ctx.destination);
+      source.start(0);
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      // ignore
+    }
+  }
+
   public async resumeIfNeeded(): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.isInitialized || !this.ctx || this.ctx.state === 'closed') {
+      this.isInitialized = false;
+      this.initPromise = null;
       await this.init();
     }
     if (this.idleSleepTimer) {
       clearTimeout(this.idleSleepTimer);
       this.idleSleepTimer = null;
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state !== 'running') {
       try {
         await this.ctx.resume();
       } catch {
         // ignore
       }
     }
+    this.unlockAudioSession();
+    this.ensureNatureAmbianceRunning();
   }
 
   public resetIdleSleepTimer(): void {
@@ -234,13 +271,6 @@ class MusicBoxAudioEngine {
       clearTimeout(this.idleSleepTimer);
       this.idleSleepTimer = null;
     }
-    // Automatically suspend AudioContext when idle on mobile / iPad to save battery
-    this.idleSleepTimer = window.setTimeout(() => {
-      const isNaturePlaying = Object.values(this.currentNatureSettings).some((v) => v > 0.01);
-      if (!isNaturePlaying && !this.isMechanicalHumActive && this.ctx && this.ctx.state === 'running') {
-        this.ctx.suspend().catch(() => {});
-      }
-    }, 8500);
   }
 
   // Create subtle analog saturation curve for vintage warmth
@@ -721,14 +751,20 @@ class MusicBoxAudioEngine {
 
   // Current AudioContext timestamp
   public getAudioTime(): number {
-    return this.ctx ? this.ctx.currentTime : performance.now() / 1000;
+    if (this.ctx && this.ctx.state === 'running') {
+      return this.ctx.currentTime;
+    }
+    return performance.now() / 1000;
   }
 
   // Play an authentic steel tine sound with physics tailored directly to the active acoustic chamber
   public playTine(tineIndex: number, velocity = 1.0, when?: number, customTines?: TineNote[]): void {
-    if (!this.ctx || !this.musicGain) return;
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
+    if (!this.ctx || !this.musicGain) {
+      this.resumeIfNeeded().catch(() => {});
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.resumeIfNeeded().catch(() => {});
     }
 
     const tinesList = customTines && customTines.length > 0 ? customTines : ROMANTIC_FLAT_22_TINES;
@@ -754,9 +790,12 @@ class MusicBoxAudioEngine {
     relativeIndex = 10,
     totalTines = 22
   ): void {
-    if (!this.ctx || !this.musicGain) return;
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
+    if (!this.ctx || !this.musicGain) {
+      this.resumeIfNeeded().catch(() => {});
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.resumeIfNeeded().catch(() => {});
     }
 
     try {
@@ -1851,9 +1890,12 @@ class MusicBoxAudioEngine {
 
   // Mechanical winding ratchet click sound
   public playWindingClick(): void {
-    if (!this.ctx || !this.masterGain) return;
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
+    if (!this.ctx || !this.masterGain) {
+      this.resumeIfNeeded().catch(() => {});
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.resumeIfNeeded().catch(() => {});
     }
     try {
       const now = this.ctx.currentTime;
@@ -1890,7 +1932,6 @@ class MusicBoxAudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.03);
-      this.resetIdleSleepTimer();
     } catch {
       // safe fallback if audio node allocation fails
     }
@@ -1899,27 +1940,48 @@ class MusicBoxAudioEngine {
   // Setup gentle mechanical gear / governor whirring hum
   private setupGearHum(): void {
     if (!this.ctx || !this.masterGain) return;
+    try {
+      if (this.gearOsc) {
+        try {
+          this.gearOsc.stop();
+          this.gearOsc.disconnect();
+        } catch {
+          // ignore
+        }
+        this.gearOsc = null;
+      }
 
-    this.gearGain = this.ctx.createGain();
-    this.gearGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      this.gearGain = this.ctx.createGain();
+      this.gearGain.gain.setValueAtTime(0, this.ctx.currentTime);
 
-    this.gearOsc = this.ctx.createOscillator();
-    this.gearOsc.type = 'sine';
-    this.gearOsc.frequency.setValueAtTime(78, this.ctx.currentTime);
+      this.gearOsc = this.ctx.createOscillator();
+      this.gearOsc.type = 'sine';
+      this.gearOsc.frequency.setValueAtTime(78, this.ctx.currentTime);
 
-    const gearFilter = this.ctx.createBiquadFilter();
-    gearFilter.type = 'lowpass';
-    gearFilter.frequency.setValueAtTime(220, this.ctx.currentTime);
+      const gearFilter = this.ctx.createBiquadFilter();
+      gearFilter.type = 'lowpass';
+      gearFilter.frequency.setValueAtTime(220, this.ctx.currentTime);
 
-    this.gearOsc.connect(gearFilter);
-    gearFilter.connect(this.gearGain);
-    this.gearGain.connect(this.masterGain);
-    this.gearOsc.start();
+      this.gearOsc.connect(gearFilter);
+      gearFilter.connect(this.gearGain);
+      this.gearGain.connect(this.masterGain);
+      this.gearOsc.onended = () => {
+        this.gearOsc = null;
+      };
+      this.gearOsc.start();
+    } catch {
+      // safe fallback
+    }
   }
 
   public setMechanicalHum(active: boolean, speed = 1.0, immediate = false): void {
     this.isMechanicalHumActive = active;
-    if (!this.ctx || !this.gearGain || !this.gearOsc) return;
+    if (!this.ctx || !this.gearGain || !this.gearOsc) {
+      if (active && this.ctx && this.ctx.state === 'running') {
+        this.setupGearHum();
+      }
+      if (!this.ctx || !this.gearGain || !this.gearOsc) return;
+    }
     const now = this.ctx.currentTime;
 
     if (active) {
@@ -1927,20 +1989,34 @@ class MusicBoxAudioEngine {
         clearTimeout(this.idleSleepTimer);
         this.idleSleepTimer = null;
       }
-      this.gearOsc.frequency.setTargetAtTime(70 * Math.max(0.5, speed), now, 0.1);
-      this.gearGain.gain.setTargetAtTime(0.028, now, 0.15);
+      if (this.ctx.state !== 'running') {
+        this.resumeIfNeeded().catch(() => {});
+      }
+      try {
+        this.gearOsc.frequency.setTargetAtTime(70 * Math.max(0.5, speed), now, 0.1);
+        this.gearGain.gain.setTargetAtTime(0.028, now, 0.15);
+      } catch {
+        // safe fallback
+      }
     } else {
       if (immediate) {
         try {
           this.gearGain.gain.cancelScheduledValues(now);
           this.gearGain.gain.setValueAtTime(0.00001, now);
         } catch {
-          this.gearGain.gain.setTargetAtTime(0.00001, now, 0.05);
+          try {
+            this.gearGain.gain.setTargetAtTime(0.00001, now, 0.05);
+          } catch {
+            // safe fallback
+          }
         }
       } else {
-        this.gearGain.gain.setTargetAtTime(0.00001, now, 0.2);
+        try {
+          this.gearGain.gain.setTargetAtTime(0.00001, now, 0.2);
+        } catch {
+          // safe fallback
+        }
       }
-      this.resetIdleSleepTimer();
     }
   }
 
@@ -2031,58 +2107,71 @@ class MusicBoxAudioEngine {
   private startRainGenerator(): void {
     if (!this.ctx || !this.rainGain || this.rainSource) return;
 
-    const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
-    const source = this.ctx.createBufferSource();
-    source.buffer = noiseBuffer;
-    source.loop = true;
+    try {
+      const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
+      const source = this.ctx.createBufferSource();
+      source.buffer = noiseBuffer;
+      source.loop = true;
 
-    this.rainFilter = this.ctx.createBiquadFilter();
-    this.rainFilter.type = 'lowpass';
-    this.rainFilter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+      this.rainFilter = this.ctx.createBiquadFilter();
+      this.rainFilter.type = 'lowpass';
+      this.rainFilter.frequency.setValueAtTime(1400, this.ctx.currentTime);
 
-    const highpass = this.ctx.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.setValueAtTime(180, this.ctx.currentTime);
+      const highpass = this.ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.setValueAtTime(180, this.ctx.currentTime);
 
-    source.connect(this.rainFilter);
-    this.rainFilter.connect(highpass);
-    highpass.connect(this.rainGain);
-    source.start();
-    this.rainSource = source;
-
-    // Occasional raindrop droplet plops
-    this.rainDropInterval = window.setInterval(() => {
-      if (!this.ctx || !this.rainGain || this.currentNatureSettings.rain <= 0.05) return;
-      if (Math.random() < 0.45) {
-        const now = this.ctx.currentTime;
-        const dropOsc = this.ctx.createOscillator();
-        const dropGain = this.ctx.createGain();
-        dropOsc.type = 'sine';
-
-        const f = 1600 + Math.random() * 1200;
-        dropOsc.frequency.setValueAtTime(f, now);
-        dropOsc.frequency.exponentialRampToValueAtTime(f * 0.6, now + 0.04);
-
-        dropGain.gain.setValueAtTime(0.0001, now);
-        dropGain.gain.linearRampToValueAtTime(0.04 * this.currentNatureSettings.rain, now + 0.002);
-        dropGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.045);
-
-        dropOsc.connect(dropGain);
-        dropGain.connect(this.rainGain);
-
-        dropOsc.onended = () => {
-          try {
-            dropOsc.disconnect();
-            dropGain.disconnect();
-          } catch {
-            // ignore
+      source.connect(this.rainFilter);
+      this.rainFilter.connect(highpass);
+      highpass.connect(this.rainGain);
+      source.onended = () => {
+        if (this.rainSource === source) {
+          this.rainSource = null;
+          if (this.currentNatureSettings.rain > 0.01 && this.ctx?.state === 'running') {
+            this.startRainGenerator();
           }
-        };
+        }
+      };
+      source.start();
+      this.rainSource = source;
 
-        dropOsc.start(now);
-        dropOsc.stop(now + 0.05);
+      if (!this.rainDropInterval) {
+        this.rainDropInterval = window.setInterval(() => {
+          if (!this.ctx || !this.rainGain || this.currentNatureSettings.rain <= 0.05 || this.ctx.state !== 'running') return;
+          if (Math.random() < 0.45) {
+            const now = this.ctx.currentTime;
+            const dropOsc = this.ctx.createOscillator();
+            const dropGain = this.ctx.createGain();
+            dropOsc.type = 'sine';
+
+            const f = 1600 + Math.random() * 1200;
+            dropOsc.frequency.setValueAtTime(f, now);
+            dropOsc.frequency.exponentialRampToValueAtTime(f * 0.6, now + 0.04);
+
+            dropGain.gain.setValueAtTime(0.0001, now);
+            dropGain.gain.linearRampToValueAtTime(0.04 * this.currentNatureSettings.rain, now + 0.002);
+            dropGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.045);
+
+            dropOsc.connect(dropGain);
+            dropGain.connect(this.rainGain);
+
+            dropOsc.onended = () => {
+              try {
+                dropOsc.disconnect();
+                dropGain.disconnect();
+              } catch {
+                // ignore
+              }
+            };
+
+            dropOsc.start(now);
+            dropOsc.stop(now + 0.05);
+          }
+        }, 280);
       }
-    }, 280);
+    } catch {
+      // safe fallback
+    }
   }
 
   private stopRainGenerator(): void {
@@ -2100,7 +2189,11 @@ class MusicBoxAudioEngine {
       this.rainSource = null;
     }
     if (this.rainGain && this.ctx) {
-      this.rainGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      try {
+        this.rainGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -2108,51 +2201,64 @@ class MusicBoxAudioEngine {
   private startFireGenerator(): void {
     if (!this.ctx || !this.fireGain || this.fireSource) return;
 
-    const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
-    const source = this.ctx.createBufferSource();
-    source.buffer = noiseBuffer;
-    source.loop = true;
+    try {
+      const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
+      const source = this.ctx.createBufferSource();
+      source.buffer = noiseBuffer;
+      source.loop = true;
 
-    const lowpass = this.ctx.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(380, this.ctx.currentTime);
+      const lowpass = this.ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.setValueAtTime(380, this.ctx.currentTime);
 
-    source.connect(lowpass);
-    lowpass.connect(this.fireGain);
-    source.start();
-    this.fireSource = source;
-
-    // Natural wood ember pops and crackles
-    this.fireCrackleInterval = window.setInterval(() => {
-      if (!this.ctx || !this.fireGain || this.currentNatureSettings.fire <= 0.05) return;
-      if (Math.random() < 0.48) {
-        const now = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const crackleGain = this.ctx.createGain();
-        osc.type = Math.random() > 0.5 ? 'triangle' : 'sawtooth';
-        osc.frequency.setValueAtTime(1200 + Math.random() * 2600, now);
-
-        const popVol = (0.04 + Math.random() * 0.05) * this.currentNatureSettings.fire;
-        crackleGain.gain.setValueAtTime(0.0001, now);
-        crackleGain.gain.linearRampToValueAtTime(popVol, now + 0.001);
-        crackleGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.018);
-
-        osc.connect(crackleGain);
-        crackleGain.connect(this.fireGain);
-
-        osc.onended = () => {
-          try {
-            osc.disconnect();
-            crackleGain.disconnect();
-          } catch {
-            // ignore
+      source.connect(lowpass);
+      lowpass.connect(this.fireGain);
+      source.onended = () => {
+        if (this.fireSource === source) {
+          this.fireSource = null;
+          if (this.currentNatureSettings.fire > 0.01 && this.ctx?.state === 'running') {
+            this.startFireGenerator();
           }
-        };
+        }
+      };
+      source.start();
+      this.fireSource = source;
 
-        osc.start(now);
-        osc.stop(now + 0.025);
+      if (!this.fireCrackleInterval) {
+        this.fireCrackleInterval = window.setInterval(() => {
+          if (!this.ctx || !this.fireGain || this.currentNatureSettings.fire <= 0.05 || this.ctx.state !== 'running') return;
+          if (Math.random() < 0.48) {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const crackleGain = this.ctx.createGain();
+            osc.type = Math.random() > 0.5 ? 'triangle' : 'sawtooth';
+            osc.frequency.setValueAtTime(1200 + Math.random() * 2600, now);
+
+            const popVol = (0.04 + Math.random() * 0.05) * this.currentNatureSettings.fire;
+            crackleGain.gain.setValueAtTime(0.0001, now);
+            crackleGain.gain.linearRampToValueAtTime(popVol, now + 0.001);
+            crackleGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.018);
+
+            osc.connect(crackleGain);
+            crackleGain.connect(this.fireGain);
+
+            osc.onended = () => {
+              try {
+                osc.disconnect();
+                crackleGain.disconnect();
+              } catch {
+                // ignore
+              }
+            };
+
+            osc.start(now);
+            osc.stop(now + 0.025);
+          }
+        }, 320);
       }
-    }, 320);
+    } catch {
+      // safe fallback
+    }
   }
 
   private stopFireGenerator(): void {
@@ -2170,7 +2276,11 @@ class MusicBoxAudioEngine {
       this.fireSource = null;
     }
     if (this.fireGain && this.ctx) {
-      this.fireGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      try {
+        this.fireGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -2178,56 +2288,69 @@ class MusicBoxAudioEngine {
   private startForestGenerator(): void {
     if (!this.ctx || !this.forestGain || this.forestSource) return;
 
-    const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 5);
-    const source = this.ctx.createBufferSource();
-    source.buffer = noiseBuffer;
-    source.loop = true;
+    try {
+      const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 5);
+      const source = this.ctx.createBufferSource();
+      source.buffer = noiseBuffer;
+      source.loop = true;
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(650, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.6, this.ctx.currentTime);
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(650, this.ctx.currentTime);
+      filter.Q.setValueAtTime(1.6, this.ctx.currentTime);
 
-    source.connect(filter);
-    filter.connect(this.forestGain);
-    source.start();
-    this.forestSource = source;
-
-    // Distant sweet birdsong whistles
-    this.forestBirdInterval = window.setInterval(() => {
-      if (!this.ctx || !this.forestGain || this.currentNatureSettings.forest <= 0.05) return;
-      if (Math.random() < 0.4) {
-        const now = this.ctx.currentTime;
-        const birdOsc = this.ctx.createOscillator();
-        const bGain = this.ctx.createGain();
-        birdOsc.type = 'sine';
-
-        const baseF = 2200 + Math.random() * 900;
-        birdOsc.frequency.setValueAtTime(baseF, now);
-        birdOsc.frequency.exponentialRampToValueAtTime(baseF * 1.35, now + 0.07);
-        birdOsc.frequency.exponentialRampToValueAtTime(baseF * 0.95, now + 0.16);
-
-        const birdVol = 0.035 * this.currentNatureSettings.forest;
-        bGain.gain.setValueAtTime(0.0001, now);
-        bGain.gain.linearRampToValueAtTime(birdVol, now + 0.015);
-        bGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.18);
-
-        birdOsc.connect(bGain);
-        bGain.connect(this.forestGain);
-
-        birdOsc.onended = () => {
-          try {
-            birdOsc.disconnect();
-            bGain.disconnect();
-          } catch {
-            // ignore
+      source.connect(filter);
+      filter.connect(this.forestGain);
+      source.onended = () => {
+        if (this.forestSource === source) {
+          this.forestSource = null;
+          if (this.currentNatureSettings.forest > 0.01 && this.ctx?.state === 'running') {
+            this.startForestGenerator();
           }
-        };
+        }
+      };
+      source.start();
+      this.forestSource = source;
 
-        birdOsc.start(now);
-        birdOsc.stop(now + 0.2);
+      if (!this.forestBirdInterval) {
+        this.forestBirdInterval = window.setInterval(() => {
+          if (!this.ctx || !this.forestGain || this.currentNatureSettings.forest <= 0.05 || this.ctx.state !== 'running') return;
+          if (Math.random() < 0.4) {
+            const now = this.ctx.currentTime;
+            const birdOsc = this.ctx.createOscillator();
+            const bGain = this.ctx.createGain();
+            birdOsc.type = 'sine';
+
+            const baseF = 2200 + Math.random() * 900;
+            birdOsc.frequency.setValueAtTime(baseF, now);
+            birdOsc.frequency.exponentialRampToValueAtTime(baseF * 1.35, now + 0.07);
+            birdOsc.frequency.exponentialRampToValueAtTime(baseF * 0.95, now + 0.16);
+
+            const birdVol = 0.035 * this.currentNatureSettings.forest;
+            bGain.gain.setValueAtTime(0.0001, now);
+            bGain.gain.linearRampToValueAtTime(birdVol, now + 0.015);
+            bGain.gain.exponentialRampToValueAtTime(0.00001, now + 0.18);
+
+            birdOsc.connect(bGain);
+            bGain.connect(this.forestGain);
+
+            birdOsc.onended = () => {
+              try {
+                birdOsc.disconnect();
+                bGain.disconnect();
+              } catch {
+                // ignore
+              }
+            };
+
+            birdOsc.start(now);
+            birdOsc.stop(now + 0.2);
+          }
+        }, 1400);
       }
-    }, 1400);
+    } catch {
+      // safe fallback
+    }
   }
 
   private stopForestGenerator(): void {
@@ -2245,7 +2368,11 @@ class MusicBoxAudioEngine {
       this.forestSource = null;
     }
     if (this.forestGain && this.ctx) {
-      this.forestGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      try {
+        this.forestGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -2255,7 +2382,7 @@ class MusicBoxAudioEngine {
     const chimePitches = [1174.66, 1318.51, 1567.98, 1760.0, 2093.0, 2349.32, 2637.02];
 
     this.windChimeInterval = window.setInterval(() => {
-      if (!this.ctx || !this.windChimeGain || this.currentNatureSettings.windChime <= 0.05) return;
+      if (!this.ctx || !this.windChimeGain || this.currentNatureSettings.windChime <= 0.05 || this.ctx.state !== 'running') return;
       if (Math.random() < 0.42) {
         const now = this.ctx.currentTime;
         const pitch = chimePitches[Math.floor(Math.random() * chimePitches.length)];
@@ -2320,7 +2447,11 @@ class MusicBoxAudioEngine {
       this.windChimeInterval = null;
     }
     if (this.windChimeGain && this.ctx) {
-      this.windChimeGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      try {
+        this.windChimeGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -2328,26 +2459,38 @@ class MusicBoxAudioEngine {
   private startStreamGenerator(): void {
     if (!this.ctx || !this.streamGain || this.streamSource) return;
 
-    const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
-    const source = this.ctx.createBufferSource();
-    source.buffer = noiseBuffer;
-    source.loop = true;
+    try {
+      const noiseBuffer = this.getOrCreateNoiseBuffer(this.ctx, 4);
+      const source = this.ctx.createBufferSource();
+      source.buffer = noiseBuffer;
+      source.loop = true;
 
-    const filter1 = this.ctx.createBiquadFilter();
-    filter1.type = 'bandpass';
-    filter1.frequency.setValueAtTime(850, this.ctx.currentTime);
-    filter1.Q.setValueAtTime(2.2, this.ctx.currentTime);
+      const filter1 = this.ctx.createBiquadFilter();
+      filter1.type = 'bandpass';
+      filter1.frequency.setValueAtTime(850, this.ctx.currentTime);
+      filter1.Q.setValueAtTime(2.2, this.ctx.currentTime);
 
-    const filter2 = this.ctx.createBiquadFilter();
-    filter2.type = 'peaking';
-    filter2.frequency.setValueAtTime(1400, this.ctx.currentTime);
-    filter2.gain.setValueAtTime(5, this.ctx.currentTime);
+      const filter2 = this.ctx.createBiquadFilter();
+      filter2.type = 'peaking';
+      filter2.frequency.setValueAtTime(1400, this.ctx.currentTime);
+      filter2.gain.setValueAtTime(5, this.ctx.currentTime);
 
-    source.connect(filter1);
-    filter1.connect(filter2);
-    filter2.connect(this.streamGain);
-    source.start();
-    this.streamSource = source;
+      source.connect(filter1);
+      filter1.connect(filter2);
+      filter2.connect(this.streamGain);
+      source.onended = () => {
+        if (this.streamSource === source) {
+          this.streamSource = null;
+          if (this.currentNatureSettings.stream > 0.01 && this.ctx?.state === 'running') {
+            this.startStreamGenerator();
+          }
+        }
+      };
+      source.start();
+      this.streamSource = source;
+    } catch {
+      // safe fallback
+    }
   }
 
   private stopStreamGenerator(): void {
@@ -2361,7 +2504,71 @@ class MusicBoxAudioEngine {
       this.streamSource = null;
     }
     if (this.streamGain && this.ctx) {
-      this.streamGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      try {
+        this.streamGain.gain.setValueAtTime(0, this.ctx.currentTime);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Ensure active nature ambiance layers are actively generating sounds (e.g. after tab switch / resume)
+  public ensureNatureAmbianceRunning(): void {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const settings = this.currentNatureSettings;
+
+    if (settings.rain > 0.01) {
+      if (!this.rainSource) {
+        this.startRainGenerator();
+      }
+      if (this.rainGain) {
+        try {
+          this.rainGain.gain.setValueAtTime(settings.rain * 0.65, this.ctx.currentTime);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (settings.fire > 0.01) {
+      if (!this.fireSource) {
+        this.startFireGenerator();
+      }
+      if (this.fireGain) {
+        try {
+          this.fireGain.gain.setValueAtTime(settings.fire * 0.6, this.ctx.currentTime);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (settings.forest > 0.01) {
+      if (!this.forestSource) {
+        this.startForestGenerator();
+      }
+      if (this.forestGain) {
+        try {
+          this.forestGain.gain.setValueAtTime(settings.forest * 0.55, this.ctx.currentTime);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (settings.windChime > 0.01) {
+      if (!this.windChimeInterval) {
+        this.startWindChimeGenerator();
+      }
+    }
+    if (settings.stream > 0.01) {
+      if (!this.streamSource) {
+        this.startStreamGenerator();
+      }
+      if (this.streamGain) {
+        try {
+          this.streamGain.gain.setValueAtTime(settings.stream * 0.55, this.ctx.currentTime);
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 
@@ -2379,8 +2586,8 @@ class MusicBoxAudioEngine {
       settings.stream > 0.01;
 
     if (hasAnyNature) {
-      if (this.ctx.state === 'suspended') {
-        this.ctx.resume().catch(() => {});
+      if (this.ctx.state !== 'running') {
+        this.resumeIfNeeded().catch(() => {});
       }
       if (this.idleSleepTimer) {
         clearTimeout(this.idleSleepTimer);
@@ -2436,10 +2643,6 @@ class MusicBoxAudioEngine {
       }
     } else {
       this.stopStreamGenerator();
-    }
-
-    if (!hasAnyNature) {
-      this.resetIdleSleepTimer();
     }
   }
 

@@ -328,20 +328,63 @@ export default function App() {
     }
   }, [triggerTinesVibration]);
 
-  // Tab visibility handling: pause non-essential audio and loop when tab is backgrounded
+  // Robust Audio & Lifecycle management across page and app switches
   useEffect(() => {
+    const handleAppResume = async () => {
+      // Reset timestamp tracker to avoid burst jumps after coming back from background
+      lastStepTimeRef.current = performance.now();
+
+      // Ensure AudioContext is fully resumed & unlocked
+      await ensureAudioInitialized();
+
+      // Restore mechanical hum if playback was active
+      if (isPlayingRef.current) {
+        musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+      }
+
+      // Ensure nature ambiance nodes are active if volume > 0
+      musicBoxAudio.ensureNatureAmbianceRunning();
+    };
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
         musicBoxAudio.setMechanicalHum(false);
-      } else if (isPlayingRef.current) {
-        musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+      } else {
+        handleAppResume();
       }
     };
+
+    const handleWindowFocus = () => {
+      handleAppResume();
+    };
+
+    const handlePageShow = () => {
+      handleAppResume();
+    };
+
+    // User interaction fallback: immediately unlock/resume audio on first user touch/click/press anywhere
+    const handleGlobalInteraction = () => {
+      if (musicBoxAudio.isAudioSuspendedOrInterrupted()) {
+        ensureAudioInitialized();
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('pointerdown', handleGlobalInteraction, { capture: true, passive: true });
+    window.addEventListener('touchstart', handleGlobalInteraction, { capture: true, passive: true });
+    window.addEventListener('keydown', handleGlobalInteraction, { capture: true, passive: true });
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('pointerdown', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('touchstart', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('keydown', handleGlobalInteraction, { capture: true });
     };
-  }, []);
+  }, [ensureAudioInitialized]);
 
   // Main playback loop
   useEffect(() => {
@@ -370,6 +413,14 @@ export default function App() {
         lastTickTime = timestamp - (tickElapsed % tickInterval);
 
         const elapsed = timestamp - lastStepTimeRef.current;
+
+        // If backgrounded for an extended period, cleanly re-sync step clock to current frame
+        if (elapsed > 1200) {
+          lastStepTimeRef.current = timestamp;
+          stepTimerRef.current = requestAnimationFrame(loop);
+          return;
+        }
+
         let speedFactor = 1.0;
 
         // Realistic spring unwinding physics
