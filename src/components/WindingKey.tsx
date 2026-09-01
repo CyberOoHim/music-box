@@ -5,8 +5,6 @@ import {
   Zap,
   Disc,
   Gauge,
-  Play,
-  Pause,
   RotateCcw,
   Sparkles,
   Wind,
@@ -14,6 +12,8 @@ import {
   Plus,
   Minus,
   Sliders,
+  CheckCircle2,
+  Lock,
 } from 'lucide-react';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
 
@@ -105,7 +105,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     isLoopRunningRef.current = true;
     lastPhysicsTimeRef.current = performance.now();
     let lastRenderTime = performance.now();
-    const frameInterval = 1000 / 24; // 24 FPS cap for maximum battery and thermal efficiency
+    const frameInterval = 1000 / 24;
 
     const physicsLoop = (timestamp: number) => {
       if (playMode !== 'crank' || document.hidden) {
@@ -225,7 +225,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
 
     let delta = currentAngle - lastPointerAngleRef.current;
     if (delta > Math.PI) delta -= Math.PI * 2;
-    if (delta < -Math.PI) delta += Math.PI * 2;
+    if (delta < -Math.PI) delta -= Math.PI * 2;
 
     const dtSec = Math.max(0.008, (now - lastPointerTimeRef.current) / 1000);
     lastPointerAngleRef.current = currentAngle;
@@ -291,7 +291,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     }
   };
 
-  // Quick Full Wind for Spring mode (Sets exactly 3 rounds / 100% tension)
+  // Quick Full Wind for Spring mode
   const handleQuickFullWind = () => {
     musicBoxAudio.playWindingClick();
     if (onSetSpringTension) {
@@ -311,35 +311,34 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
     }
   };
 
+  // Mechanical switch click handler with tactile audio
+  const handleMechanicalSwitchToggle = () => {
+    musicBoxAudio.playWindingClick();
+    onTogglePlay();
+  };
+
   const estimatedBpm = Math.round(crankRpmValueRef.current * 1.35);
   const currentRoundsWound = springTension * 3.0;
   const isFullTension = springTension >= 0.999;
   const isUnwound = springTension <= 0.005;
 
   return (
-    <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_6px_30px_rgba(67,52,34,0.08)] flex flex-col gap-5 text-[#2d2419]">
-      {/* Mode Selector Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#ece4d6]">
-        <div className="space-y-0.5">
-          <span className="text-xs uppercase font-serif tracking-wider text-[#8a6b3e] font-bold flex items-center gap-1.5">
-            <Disc className="w-3.5 h-3.5" />
-            <span>Mechanical Drive & Winding Controller</span>
+    <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_6px_30px_rgba(67,52,34,0.08)] flex flex-col gap-4 text-[#2d2419]">
+      {/* Top Header: Drive Mode Pills Selector */}
+      <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#ece4d6]">
+        <div className="flex items-center space-x-2">
+          <Disc className="w-4 h-4 text-[#8a6b3e]" />
+          <span className="text-xs uppercase font-serif tracking-wider text-[#433422] font-bold">
+            Drive Mode:
           </span>
-          <p className="text-xs text-[#786650] font-serif-sub">
-            {playMode === 'crank'
-              ? 'Hand Crank • Viscous flywheel damping, aerodynamic speed governor & continuous plucking'
-              : playMode === 'spring'
-              ? 'Wind-Up Spring Motor • 3-Round Capacity with realistic torque decay'
-              : 'Continuous Electric Drive • Steady automated tempo playback'}
-          </p>
         </div>
 
-        {/* 3 Drive Mode Buttons */}
+        {/* 3 Drive Mode Selector Pills */}
         <div className="inline-flex rounded-xl bg-[#eee7da] p-1 border border-[#ded3be] shadow-xs">
           <button
             id="mode-spring-btn"
             onClick={() => onChangePlayMode('spring')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'spring'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
                 : 'text-[#6f5e49] hover:text-[#2d2419]'
@@ -354,7 +353,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
           <button
             id="mode-crank-btn"
             onClick={() => onChangePlayMode('crank')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'crank'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
                 : 'text-[#6f5e49] hover:text-[#2d2419]'
@@ -369,7 +368,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
           <button
             id="mode-continuous-btn"
             onClick={() => onChangePlayMode('continuous')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
+            className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'continuous'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
                 : 'text-[#6f5e49] hover:text-[#2d2419]'
@@ -383,29 +382,12 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
         </div>
       </div>
 
-      {/* UNIFIED SIDE-BY-SIDE CONSOLE: BUTTERFLY KEY & PLAY BUTTON CLOSE TOGETHER */}
+      {/* UNIFIED SIDE-BY-SIDE CONSOLE: BUTTERFLY KEY & MECHANICAL LEVER SWITCH CLOSE TOGETHER */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
-        {/* LEFT COLUMN: LARGE BUTTERFLY WINDING KEY / CRANK ROTOR */}
+        {/* LEFT COLUMN: LARGE BUTTERFLY WINDING KEY + DESCRIPTION TEXT MOVED UNDERNEATH IT */}
         <div className="md:col-span-6 flex flex-col items-center justify-between p-4 sm:p-5 bg-[#f8f5ee] rounded-2xl border border-[#e5dcce]">
-          <div className="text-center mb-2">
-            <span className="text-xs font-serif font-bold text-[#433422] uppercase tracking-wider block">
-              {playMode === 'crank'
-                ? 'Antique Brass Hand Crank'
-                : playMode === 'spring'
-                ? 'BUTTERFLY WINDING KEY'
-                : 'Drive Spindle'}
-            </span>
-            <span className="text-[11px] text-[#8a7962] font-serif-sub italic">
-              {playMode === 'crank'
-                ? 'Drag knob clockwise to turn • Smooth air-governed speed'
-                : playMode === 'spring'
-                ? 'Drag key clockwise to wind 3 full rounds'
-                : 'Automated electric motor active'}
-            </span>
-          </div>
-
-          {/* Rotary Dial Dial / Butterfly Key Container */}
-          <div className="relative w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center my-1">
+          {/* Rotary Dial / Butterfly Key Container */}
+          <div className="relative w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center my-0.5">
             {/* Outer Circular Track with Graduation Marks */}
             <div className="absolute inset-0 rounded-full border-2 border-dashed border-[#d8caa8]/80 pointer-events-none" />
 
@@ -546,7 +528,7 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
 
           {/* Dynamic RPM & Cranking Speed Indicator (Crank Mode) */}
           {playMode === 'crank' && (
-            <div className="mt-2 flex flex-col items-center gap-1 text-xs w-full">
+            <div className="my-1.5 flex flex-col items-center gap-1 text-xs w-full">
               <div className="flex items-center justify-between w-full px-2 text-[#8a7962]">
                 <div className="flex items-center space-x-1">
                   <Gauge className="w-3.5 h-3.5 text-[#8a6b3e]" />
@@ -570,9 +552,9 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
             </div>
           )}
 
-          {/* Dynamic 3-Round Winding Indicator (Spring Mode) */}
+          {/* Dynamic 3-Round Winding Status (Spring Mode) */}
           {playMode === 'spring' && (
-            <div className="mt-2 flex flex-col items-center gap-1 text-xs w-full px-1">
+            <div className="my-1.5 flex flex-col items-center gap-1 text-xs w-full px-1">
               <div className="flex items-center justify-between w-full text-[#8a7962]">
                 <span className="font-serif font-bold text-xs text-[#433422] flex items-center gap-1">
                   <RotateCw className={`w-3.5 h-3.5 text-[#8a6b3e] ${isDragging ? 'animate-spin' : ''}`} />
@@ -584,61 +566,123 @@ export const WindingKey: React.FC<WindingKeyProps> = ({
               </div>
             </div>
           )}
+
+          {/* TEXT MOVED UNDER THE WINDING KEY (PER USER REQUEST) */}
+          <div className="w-full text-center pt-2 border-t border-[#ece4d6] space-y-0.5">
+            <span className="text-[11px] sm:text-xs uppercase font-serif tracking-wider text-[#8a6b3e] font-bold block">
+              {playMode === 'crank'
+                ? 'MECHANICAL DRIVE & HAND CRANK'
+                : playMode === 'spring'
+                ? 'MECHANICAL DRIVE & WINDING CONTROLLER'
+                : 'CONTINUOUS ELECTRIC DRIVE CONTROLLER'}
+            </span>
+            <p className="text-[11px] text-[#786650] font-serif-sub italic">
+              {playMode === 'crank'
+                ? 'Hand Crank • Viscous flywheel damping, aerodynamic speed governor & continuous plucking'
+                : playMode === 'spring'
+                ? 'Wind-Up Spring Motor • 3-Round Capacity with realistic torque decay'
+                : 'Continuous Electric Drive • Steady automated tempo playback'}
+            </p>
+          </div>
         </div>
 
-        {/* RIGHT COLUMN: CLOSE-PROXIMITY PLAY BUTTON, SPRING STATUS & SPEED CONTROLS */}
+        {/* RIGHT COLUMN: REDESIGNED MECHANICAL LOOK SWITCH / LEVER + SPRING STATUS + SPEED */}
         <div className="md:col-span-6 flex flex-col justify-between p-4 sm:p-5 bg-[#f8f5ee] rounded-2xl border border-[#e5dcce] space-y-3.5">
-          {/* 1. LARGE PROMINENT PLAY / PAUSE BUTTON (CLOSE TOGETHER WITH THE KEY) */}
-          <div className="space-y-1">
-            <button
-              id="main-play-btn"
-              onClick={onTogglePlay}
-              disabled={playMode === 'spring' && springTension <= 0.005}
-              className={`w-full py-3.5 px-5 rounded-xl font-serif text-sm font-bold tracking-wide flex items-center justify-center space-x-2.5 shadow-sm transition-all border cursor-pointer ${
-                isPlaying
-                  ? 'bg-[#f4efe4] border-[#d8caa8] text-[#433422] hover:bg-[#eae1d0]'
-                  : playMode === 'spring' && springTension <= 0.005
-                  ? 'bg-[#eee7da] border-[#ded3be] text-[#a4937d] cursor-not-allowed'
-                  : 'bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] border-[#ae8b54]/40 shadow-sm'
-              }`}
-            >
-              {isPlaying ? (
-                <>
-                  <Pause className="w-4 h-4 fill-current" />
-                  <span>Pause Movement</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current ml-0.5" />
-                  <span>
-                    {playMode === 'spring' && springTension <= 0.005
-                      ? 'Wind Butterfly Key First'
-                      : 'Play Music Box'}
-                  </span>
-                </>
-              )}
-            </button>
+          {/* 1. REDESIGNED MECHANICAL LOOK SWITCH / CRANK LEVER */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] sm:text-[11px] uppercase font-serif font-bold tracking-wider text-[#7a5c2e] flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-[#bfa175]" />
+                <span>Mechanical Governor Release Lever</span>
+              </span>
+              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e]">
+                {isPlaying ? 'RELEASED (RUN)' : 'LOCKED (STOP)'}
+              </span>
+            </div>
 
-            {playMode === 'spring' && (
-              <div className="text-[11px] font-serif-sub text-center pt-0.5">
-                {isFullTension ? (
-                  <span className="text-[#8a6020] font-bold">
-                    ✓ Full 3-Round Tension • Ready to Play
+            {/* Authentic Brass Mechanical Slider Switch Housing */}
+            <div
+              id="mechanical-lever-switch"
+              onClick={handleMechanicalSwitchToggle}
+              className={`group relative w-full h-16 sm:h-18 rounded-xl p-1.5 transition-all select-none cursor-pointer border-2 shadow-[0_4px_16px_rgba(45,33,20,0.25)] flex items-center justify-between overflow-hidden ${
+                isPlaying
+                  ? 'bg-gradient-to-r from-[#241a0e] via-[#3a2a16] to-[#1a1208] border-[#dfc282] ring-2 ring-[#e6c986]/40'
+                  : playMode === 'spring' && springTension <= 0.005
+                  ? 'bg-gradient-to-r from-[#2b2218] to-[#1c140d] border-[#6b543c] opacity-80'
+                  : 'bg-gradient-to-r from-[#2a1e12] via-[#362717] to-[#1e150d] border-[#8a6838] hover:border-[#bfa175]'
+              }`}
+              title={
+                playMode === 'spring' && springTension <= 0.005
+                  ? 'Wind spring first to release mechanical brake'
+                  : isPlaying
+                  ? 'Click to engage mechanical brake (Stop)'
+                  : 'Click to release mechanical brake (Play)'
+              }
+            >
+              {/* Recessed Machine Track Groove */}
+              <div className="absolute inset-x-3 inset-y-3 rounded-lg bg-[#140e08] border border-[#523c24]/90 shadow-inner flex items-center justify-between px-4">
+                {/* Left (STOP / LOCKED) Engraving */}
+                <div className="flex items-center space-x-1.5 z-0">
+                  <Lock className={`w-3.5 h-3.5 ${!isPlaying ? 'text-[#e68470]' : 'text-[#6b5846]'}`} />
+                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${!isPlaying ? 'text-[#faebd4]' : 'text-[#6b5846]'}`}>
+                    Stop (Brake)
                   </span>
-                ) : isUnwound ? (
-                  <span className="text-[#a64b38] font-semibold">
-                    Spring Unwound • Wind 3 Rounds or Quick Wind below
+                </div>
+
+                {/* Right (PLAY / RELEASED) Engraving */}
+                <div className="flex items-center space-x-1.5 z-0">
+                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${isPlaying ? 'text-[#f0c465]' : 'text-[#6b5846]'}`}>
+                    Play (Release)
                   </span>
-                ) : (
-                  <span className="text-[#6f5e49]">
-                    Wound {currentRoundsWound.toFixed(1)} of 3.0 full rounds
-                  </span>
-                )}
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${isPlaying ? 'text-[#f0c465]' : 'text-[#6b5846]'}`} />
+                </div>
               </div>
-            )}
+
+              {/* Physical Sliding Brass Lever Knob */}
+              <div
+                className={`relative z-10 w-[48%] h-full rounded-lg bg-gradient-to-b from-[#f3e198] via-[#dfbf6d] to-[#96722d] border-2 border-[#fff2b8] shadow-[0_4px_12px_rgba(0,0,0,0.7)] flex items-center justify-center transition-transform duration-200 ease-out ${
+                  isPlaying ? 'translate-x-[104%]' : 'translate-x-0'
+                }`}
+              >
+                {/* Knurled Brass Handle Ridges */}
+                <div className="flex items-center space-x-1 px-2 py-1">
+                  <div className="w-1 h-5 rounded-full bg-[#523912] opacity-60" />
+                  <div className="w-1 h-7 rounded-full bg-[#ffffff] opacity-80" />
+                  <div className="w-1 h-7 rounded-full bg-[#523912] opacity-70" />
+                  <div className="w-1 h-5 rounded-full bg-[#ffffff] opacity-70" />
+                </div>
+
+                {/* Center Pivot Jewel / Status Indicator Dot */}
+                <div className={`w-3 h-3 rounded-full border-2 border-[#ffffff] shadow-sm ml-1.5 ${
+                  isPlaying
+                    ? 'bg-[#10b981] animate-pulse shadow-[0_0_8px_#34d399]'
+                    : playMode === 'spring' && springTension <= 0.005
+                    ? 'bg-[#dc2626]'
+                    : 'bg-[#a68656]'
+                }`} />
+              </div>
+            </div>
+
+            {/* State explanation caption */}
+            <div className="text-[11px] font-serif-sub text-center pt-0.5">
+              {playMode === 'spring' && springTension <= 0.005 ? (
+                <span className="text-[#a64b38] font-semibold">
+                  Spring unwound • Drag Butterfly Key or click Quick Wind below
+                </span>
+              ) : isPlaying ? (
+                <span className="text-[#3c6b22] font-semibold flex items-center justify-center gap-1">
+                  <Wind className="w-3 h-3 text-[#3c6b22]" />
+                  <span>Governor brake released • Cylinder rotating</span>
+                </span>
+              ) : (
+                <span className="text-[#75634d] italic">
+                  Mechanical brake engaged • Slide lever right to play
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* 2. SPRING TENSION BAR & QUICK WIND ACTIONS (In Spring Mode) */}
+          {/* 2. SPRING TENSION BAR & QUICK ACTIONS (In Spring Mode) */}
           {playMode === 'spring' && (
             <div className="space-y-2 pt-1 border-t border-[#ece4d6]">
               <div className="relative w-full h-3.5 rounded-full bg-[#e8dfcf] border border-[#d8caa8] overflow-hidden flex">
