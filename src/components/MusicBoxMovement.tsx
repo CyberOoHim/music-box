@@ -180,7 +180,9 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
       isAutoRotatingRef.current = next;
       return next;
     });
+    targetCameraAngleRef.current.theta += 0.45;
     needsRenderRef.current = true;
+    lastRenderTimestampRef.current = 0;
   }, []);
 
   const rebuildPinMeshes = useCallback((pinsList: MusicBoxPin[], stepsCount: number) => {
@@ -1108,14 +1110,22 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
       reqIdRef.current = requestAnimationFrame(animate);
 
-      const fps = 24;
-      const frameInterval = 1000 / fps;
-      const elapsed = timestamp - lastRenderTimestampRef.current;
+      // Smooth delta time calculation for animation
+      if (!lastRenderTimestampRef.current) {
+        lastRenderTimestampRef.current = timestamp;
+      }
+      const deltaMs = Math.min(100, Math.max(1, timestamp - lastRenderTimestampRef.current));
+      lastRenderTimestampRef.current = timestamp;
+      const deltaSec = deltaMs / 1000;
 
-      if (elapsed < frameInterval) return;
-      lastRenderTimestampRef.current = timestamp - (elapsed % frameInterval);
+      // 1. Continuous turntable auto-rotation
+      if (isAutoRotatingRef.current && !isDraggingRef.current) {
+        // Continuous turntable rotation (~32 degrees per second)
+        const rotSpeed = 0.56;
+        targetCameraAngleRef.current.theta += rotSpeed * deltaSec;
+      }
 
-      // 1. Camera interpolation
+      // 2. Camera interpolation
       const dTheta = targetCameraAngleRef.current.theta - currentCameraAngleRef.current.theta;
       const dPhi = targetCameraAngleRef.current.phi - currentCameraAngleRef.current.phi;
       const dDist = targetCameraAngleRef.current.distance - currentCameraAngleRef.current.distance;
@@ -1128,27 +1138,16 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
 
       if (isCameraInterpolating) {
         if (Math.abs(dTheta) < 0.0005) currentCameraAngleRef.current.theta = targetCameraAngleRef.current.theta;
-        else currentCameraAngleRef.current.theta += dTheta * 0.22;
+        else currentCameraAngleRef.current.theta += dTheta * 0.18;
 
         if (Math.abs(dPhi) < 0.0005) currentCameraAngleRef.current.phi = targetCameraAngleRef.current.phi;
-        else currentCameraAngleRef.current.phi += dPhi * 0.22;
+        else currentCameraAngleRef.current.phi += dPhi * 0.18;
 
         if (Math.abs(dDist) < 0.008) currentCameraAngleRef.current.distance = targetCameraAngleRef.current.distance;
-        else currentCameraAngleRef.current.distance += dDist * 0.22;
+        else currentCameraAngleRef.current.distance += dDist * 0.18;
 
         if (dLookAt < 0.008) currentLookAtRef.current.copy(targetLookAtRef.current);
-        else currentLookAtRef.current.lerp(targetLookAtRef.current, 0.22);
-      }
-
-      if (isAutoRotatingRef.current && !isDraggingRef.current) {
-        // Continuous turntable 3D rotation at smooth ~25 deg/sec
-        const rotDelta = 0.018;
-        targetCameraAngleRef.current.theta += rotDelta;
-        currentCameraAngleRef.current.theta += rotDelta;
-        if (targetCameraAngleRef.current.theta > Math.PI * 2) {
-          targetCameraAngleRef.current.theta -= Math.PI * 2;
-          currentCameraAngleRef.current.theta -= Math.PI * 2;
-        }
+        else currentLookAtRef.current.lerp(targetLookAtRef.current, 0.18);
       }
 
       const isCranking = playModeRef.current === 'crank' && crankRpmRef.current > 0.5;
