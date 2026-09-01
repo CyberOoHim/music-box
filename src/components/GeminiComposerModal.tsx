@@ -866,7 +866,8 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
               <button
                 type="button"
                 onClick={handleNewComposition}
-                className="px-3.5 py-2 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] hover:text-[#2d2419] font-serif font-semibold text-xs flex items-center space-x-1.5 border border-[#ded3be] transition cursor-pointer shadow-2xs"
+                disabled={isLoading}
+                className="px-3.5 py-2 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] hover:text-[#2d2419] font-serif font-semibold text-xs flex items-center space-x-1.5 border border-[#ded3be] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
                 title="Clear current composition and start fresh with new prompt"
               >
                 <PlusCircle className="w-3.5 h-3.5 text-[#8a6b3e]" />
@@ -876,7 +877,8 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
               <button
                 type="button"
                 onClick={handleClearPrompt}
-                className="px-3 py-1.5 rounded-lg text-[#8a765e] hover:text-[#433422] hover:bg-[#f0e6d6] font-serif text-xs transition cursor-pointer"
+                disabled={isLoading}
+                className="px-3.5 py-2 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#5e4c36] hover:text-[#2d2419] font-serif font-semibold text-xs flex items-center space-x-1.5 border border-[#ded3be] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
               >
                 Reset inputs
               </button>
@@ -909,14 +911,16 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                 </button>
 
                 {/* Load Into Cylinder Button */}
-                <button
-                  type="button"
-                  onClick={handleApplySong}
-                  className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Load Into Music Box</span>
-                </button>
+                {!isLoading && (
+                  <button
+                    type="button"
+                    onClick={handleApplySong}
+                    className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Load Into Music Box</span>
+                  </button>
+                )}
               </>
             ) : (
               /* Initial Compose Button */
@@ -952,7 +956,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                         : selectedEngine === 'gemini-3.1-flash-lite'
                         ? 'Compose (Gemini 3.1 Flash Lite)'
                         : selectedEngine === 'gemini-3.7-flash'
-                        ? 'Compose (Gemini 3.7 Flash)'
+                        ? 'Compose (Gemini)'
                         : 'Compose with Gemini'}
                     </span>
                   </>
