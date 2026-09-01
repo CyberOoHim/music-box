@@ -10,6 +10,7 @@ import {
   CombScaleId,
   COMB_SCALES_MAP,
   ROMANTIC_FLAT_22_TINES,
+  formatModelDisplayName,
 } from './types';
 import { DEFAULT_SONGS } from './data/defaultSongs';
 import { musicBoxAudio } from './audio/musicBoxAudio';
@@ -1060,24 +1061,30 @@ export default function App() {
         <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_4px_24px_rgba(67,52,34,0.06)]">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#f4efe4] text-[#8a6b3e] border border-[#d8caa8]">
-                {currentSong.category.toUpperCase()}
-              </span>
-              {currentSong.isAiGenerated && (
-                <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#efe8f4] text-[#734f8a] border border-[#cfbedb] flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  Gemini AI
+              {/* Category tag (omitted if AI to avoid redundancy with Model badge) */}
+              {!(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
+                <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#f4efe4] text-[#8a6b3e] border border-[#d8caa8]">
+                  {currentSong.category.toUpperCase()}
+                </span>
+              )}
+              {/* Gemini / AI Model Badge */}
+              {(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
+                <span className="text-xs font-serif px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                  <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
+                  {formatModelDisplayName(currentSong.modelUsed, true)}
                 </span>
               )}
               {/* Comb Scale Badge */}
-              <span className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1">
+              <span
+                className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1"
+                title={`Comb Profile: ${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat'} (${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)`}
+              >
                 <Sliders className="w-3 h-3 text-[#bfa175]" />
-                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} (
-                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines • {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || ''})
+                {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} ({COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || 'C5–Bb6'})
               </span>
               {/* Step / Measure Badge */}
               <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
-                {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))} Measures)
+                {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))}m)
               </span>
             </div>
             <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">

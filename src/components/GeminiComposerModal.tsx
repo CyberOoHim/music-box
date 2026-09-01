@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MusicBoxSong, CombScaleId, COMB_SCALES_MAP, ROMANTIC_FLAT_22_TINES } from '../types';
+import { MusicBoxSong, CombScaleId, COMB_SCALES_MAP, ROMANTIC_FLAT_22_TINES, formatModelDisplayName } from '../types';
 import {
   Sparkles,
   X,
@@ -362,7 +362,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     return (
       <span className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#eee5d5] text-[#5e4c36] border border-[#d9cdbe] flex items-center gap-1">
         <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
-        {modelUsed}
+        {formatModelDisplayName(modelUsed, true)}
       </span>
     );
   };
@@ -598,7 +598,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                   {generatedSong.tempoBpm} BPM • {generatedSong.pins.length} Pins • {generatedSong.totalSteps} Steps ({Math.max(1, Math.round(generatedSong.totalSteps / 16))}m)
                 </span>
                 <span className="px-2 py-0.5 rounded bg-[#e5dcce] text-[#5e4c36] font-semibold">
-                  {COMB_SCALES_MAP[generatedSong.combScaleId || 'romantic-flat']?.name || generatedSong.combScaleId}
+                  {COMB_SCALES_MAP[generatedSong.combScaleId || 'romantic-flat']?.shortLabel || 'Romantic Flat 22N'} ({COMB_SCALES_MAP[generatedSong.combScaleId || 'romantic-flat']?.rangeLabel || 'C5–Bb6'})
                 </span>
               </div>
 

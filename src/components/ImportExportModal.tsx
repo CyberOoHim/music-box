@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { MusicBoxSong, UserSettings, MusicBoxExportBundle } from '../types';
+import { MusicBoxSong, UserSettings, MusicBoxExportBundle, COMB_SCALES_MAP, formatModelDisplayName } from '../types';
 import { DEFAULT_SONGS } from '../data/defaultSongs';
 import {
   X,
@@ -139,9 +139,12 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
               description: s.description || 'Imported music box cylinder',
               tempoBpm: s.tempoBpm || 88,
               totalSteps: s.totalSteps || 64,
+              combScaleId: s.combScaleId || 'romantic-flat',
+              customTines: s.customTines,
               pins: s.pins,
               createdAt: s.createdAt || Date.now(),
-              isAiGenerated: !!s.isAiGenerated || s.category === 'ai',
+              isAiGenerated: !!s.isAiGenerated || s.category === 'ai' || !!s.modelUsed,
+              modelUsed: s.modelUsed,
             });
           }
         });
@@ -160,9 +163,12 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
               description: s.description || 'Imported music box cylinder',
               tempoBpm: s.tempoBpm || 88,
               totalSteps: s.totalSteps || 64,
+              combScaleId: s.combScaleId || 'romantic-flat',
+              customTines: s.customTines,
               pins: s.pins,
               createdAt: s.createdAt || Date.now(),
-              isAiGenerated: !!s.isAiGenerated || s.category === 'ai',
+              isAiGenerated: !!s.isAiGenerated || s.category === 'ai' || !!s.modelUsed,
+              modelUsed: s.modelUsed,
             });
           }
         });
@@ -176,9 +182,12 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
           description: parsed.description || 'Imported music box cylinder',
           tempoBpm: parsed.tempoBpm || 88,
           totalSteps: parsed.totalSteps || 64,
+          combScaleId: parsed.combScaleId || 'romantic-flat',
+          customTines: parsed.customTines,
           pins: parsed.pins,
           createdAt: parsed.createdAt || Date.now(),
-          isAiGenerated: !!parsed.isAiGenerated || parsed.category === 'ai',
+          isAiGenerated: !!parsed.isAiGenerated || parsed.category === 'ai' || !!parsed.modelUsed,
+          modelUsed: parsed.modelUsed,
         });
       } else {
         throw new Error('Unrecognized JSON format. Must contain a "title" and an array of "pins".');
@@ -494,23 +503,33 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
 
                   {/* List preview of songs to import */}
                   <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                    {parsedPreview.songs.map((s, idx) => (
-                      <div
-                        key={idx}
-                        className="p-2 rounded-lg bg-[#fcfbf8] border border-[#e2d6c1] flex items-center justify-between text-xs"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <Music className="w-3.5 h-3.5 text-[#8a6b3e]" />
-                          <span className="font-serif font-semibold text-[#3d2e1c]">{s.title}</span>
-                          {s.isAiGenerated && (
-                            <span className="text-[9px] px-1 rounded bg-[#ebd7ba] text-[#7a4f15]">AI</span>
-                          )}
+                    {parsedPreview.songs.map((s, idx) => {
+                      const isAi = s.isAiGenerated || s.category === 'ai' || !!s.modelUsed;
+                      const combInfo = COMB_SCALES_MAP[s.combScaleId || 'romantic-flat'];
+                      const modelDisplayName = formatModelDisplayName(s.modelUsed, isAi);
+                      return (
+                        <div
+                          key={idx}
+                          className="p-2 rounded-lg bg-[#fcfbf8] border border-[#e2d6c1] flex items-center justify-between text-xs gap-2"
+                        >
+                          <div className="flex items-center space-x-1.5 flex-wrap">
+                            <Music className="w-3.5 h-3.5 text-[#8a6b3e] shrink-0" />
+                            <span className="font-serif font-semibold text-[#3d2e1c]">{s.title}</span>
+                            {isAi && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] font-serif font-semibold">
+                                {modelDisplayName}
+                              </span>
+                            )}
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#eee5d5] text-[#5e482b] font-sans font-medium">
+                              {combInfo?.shortLabel || 'Romantic Flat 22N'}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[11px] text-[#8a765e] shrink-0">
+                            {s.pins.length} pins • {s.tempoBpm} BPM • {s.totalSteps || 64} steps ({Math.max(1, Math.round((s.totalSteps || 64) / 16))}m)
+                          </span>
                         </div>
-                        <span className="font-mono text-[11px] text-[#8a765e]">
-                          {s.pins.length} pins • {s.tempoBpm} BPM • {s.totalSteps || 64} steps ({Math.max(1, Math.round((s.totalSteps || 64) / 16))}m)
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Import Action Buttons */}

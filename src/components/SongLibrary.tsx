@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
-import { MusicBoxSong } from '../types';
+import { MusicBoxSong, COMB_SCALES_MAP, formatModelDisplayName } from '../types';
 import {
   Music,
   Sparkles,
   Download,
-  Upload,
   Trash2,
   Search,
   Check,
   FolderArchive,
-  RotateCcw,
   Play,
+  Sliders,
 } from 'lucide-react';
 
 interface SongLibraryProps {
@@ -46,7 +45,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     const matchesCategory =
       selectedCategory === 'all' ||
       s.category === selectedCategory ||
-      (selectedCategory === 'ai' && (s.isAiGenerated || s.category === 'ai')) ||
+      (selectedCategory === 'ai' && (s.isAiGenerated || s.category === 'ai' || !!s.modelUsed)) ||
       (selectedCategory === 'custom' && (s.category === 'custom' || s.id.startsWith('custom-') || s.id.startsWith('imported-')));
     return matchesSearch && matchesCategory;
   });
@@ -65,7 +64,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
-  const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai').length;
+  const customOrAiCount = songs.filter((s) => s.category === 'custom' || s.isAiGenerated || s.category === 'ai' || !!s.modelUsed).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-6 shadow-[0_4px_24px_rgba(67,52,34,0.06)] text-[#2d2419] space-y-4">
@@ -77,7 +76,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <span>Music Box Repertoire & Cylinders</span>
           </h3>
           <p className="text-xs text-[#75644e] font-serif-sub italic">
-            Select authentic 18-note arrangements, custom melodies, or manage your exported/imported score collection.
+            Browse classical arrangements, AI compositions & custom scores, or manage your music box library.
           </p>
         </div>
 
@@ -130,7 +129,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             { id: 'anime', label: 'Anime & Ghibli' },
             { id: 'lullaby', label: 'Lullaby' },
             { id: 'nature', label: 'Relaxing' },
-            ...(hasAiComposer || songs.some((s) => s.isAiGenerated || s.category === 'ai')
+            ...(hasAiComposer || songs.some((s) => s.isAiGenerated || s.category === 'ai' || !!s.modelUsed)
               ? [{ id: 'ai', label: 'Gemini AI' }]
               : []),
             { id: 'custom', label: 'Custom' },
@@ -155,9 +154,11 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         {filteredSongs.map((song) => {
           const isSelected = song.id === currentSongId;
           const isCustom = song.category === 'custom' || song.id.startsWith('custom-') || song.id.startsWith('imported-');
+          const isAi = song.isAiGenerated || song.category === 'ai' || !!song.modelUsed;
+          const combInfo = COMB_SCALES_MAP[song.combScaleId || 'romantic-flat'];
           const totalSteps = song.totalSteps || 64;
           const measures = Math.max(1, Math.round(totalSteps / 16));
-          const measureLabel = measures === 1 ? '1 measure' : `${measures} measures`;
+          const modelDisplayName = formatModelDisplayName(song.modelUsed, isAi);
 
           return (
             <div
@@ -170,49 +171,59 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                   : 'bg-[#f8f5ee] hover:bg-[#f4efe4] border-[#ded3be] hover:border-[#bfa175]/60'
               }`}
             >
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-1">
+              <div className="space-y-2">
+                {/* Card Title & Model/Custom Status Badge */}
+                <div className="flex items-start justify-between gap-2">
                   <span className={`text-sm font-serif font-bold leading-tight ${isSelected ? 'text-[#433422]' : 'text-[#433422] group-hover:text-[#8a6b3e]'}`}>
                     {song.title}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
-                    <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#eee5d5] text-[#6d5538] border border-[#d9cdbe] font-medium" title={`${totalSteps} total rotation steps across ${measureLabel}`}>
-                      {totalSteps} steps • {measures}m
-                    </span>
-                    {song.isAiGenerated && (
+                    {isAi && (
                       <span
-                        className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold"
-                        title={`Generated with: ${song.modelUsed || 'Gemini AI'}`}
+                        className="shrink-0 text-[10px] font-serif px-1.5 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold"
+                        title={`Generated with: ${modelDisplayName}`}
                       >
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {song.modelUsed
-                          ? song.modelUsed.includes('3.7')
-                            ? 'Gemini 3.7'
-                            : song.modelUsed.includes('3.1')
-                            ? 'Gemini 3.1'
-                            : song.modelUsed.includes('procedural')
-                            ? 'Procedural'
-                            : 'AI'
-                          : 'Gemini'}
+                        <Sparkles className="w-2.5 h-2.5 text-[#8a6b3e]" />
+                        <span>{modelDisplayName}</span>
                       </span>
                     )}
-                    {isCustom && !song.isAiGenerated && (
-                      <span className="shrink-0 text-[10px] uppercase font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
+                    {isCustom && !isAi && (
+                      <span className="shrink-0 text-[10px] font-serif px-1.5 py-0.5 rounded bg-[#e8e0d1] text-[#5e4c36] border border-[#d2c5b0] font-semibold">
                         Custom
                       </span>
                     )}
                   </div>
                 </div>
 
+                {/* Comb Type & Step Count Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <span
+                    className="shrink-0 font-sans px-1.5 py-0.5 rounded bg-[#eee5d5] text-[#5e482b] border border-[#d9cdbe] font-medium flex items-center gap-1"
+                    title={`Comb Profile: ${combInfo?.name || 'Romantic Flat'} (${combInfo?.tinesCount || 22} Tines • ${combInfo?.rangeLabel || ''})`}
+                  >
+                    <Sliders className="w-2.5 h-2.5 text-[#8a6b3e]" />
+                    <span>{combInfo?.shortLabel || 'Romantic Flat 22N'}</span>
+                  </span>
+
+                  <span
+                    className="shrink-0 font-mono px-1.5 py-0.5 rounded bg-[#f2ecdf] text-[#705c43] border border-[#ded3be] font-medium"
+                    title={`${totalSteps} total rotation steps across ${measures} measures`}
+                  >
+                    {totalSteps} steps ({measures}m)
+                  </span>
+                </div>
+
+                {/* Description */}
                 {song.description && (
-                  <p className="text-xs text-[#75644e] font-serif-sub line-clamp-2 mt-1 italic">
+                  <p className="text-xs text-[#75644e] font-serif-sub line-clamp-2 italic">
                     {song.description}
                   </p>
                 )}
               </div>
 
+              {/* Card Footer: Tempo, Pin Count & Actions */}
               <div className="mt-3 pt-2.5 border-t border-[#e5dcce] flex items-center justify-between text-[11px] text-[#8a765e]">
-                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[#8a765e]">
+                <div className="flex items-center space-x-1.5 font-mono text-[#8a765e]">
                   <span>{song.tempoBpm} BPM</span>
                   <span>•</span>
                   <span>{song.pins.length} pins</span>
@@ -226,7 +237,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                         e.stopPropagation();
                         onPlaySong(song);
                       }}
-                      title={`Play "${song.title}" in Mechanical Movement`}
+                      title="Play melody in Mechanical Movement"
                       className="px-2 py-1 rounded-lg bg-[#433422] hover:bg-[#2d2419] text-[#fbf8f2] shadow-2xs hover:scale-105 transition flex items-center gap-1 font-serif text-[11px] font-semibold cursor-pointer"
                     >
                       <Play className="w-3 h-3 fill-current" />
@@ -242,7 +253,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     <Download className="w-3.5 h-3.5" />
                   </button>
 
-                  {(isCustom || song.isAiGenerated) && onDeleteCustomSong && (
+                  {(isCustom || isAi) && onDeleteCustomSong && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

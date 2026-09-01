@@ -483,3 +483,21 @@ export interface MusicBoxExportBundle {
   songs: MusicBoxSong[];
   settings?: Partial<UserSettings>;
 }
+
+export function formatModelDisplayName(model?: string, isAi?: boolean): string {
+  if (!model && !isAi) return '';
+  if (!model) return 'Gemini AI';
+  if (model === 'gemini-3.7-flash') return 'Gemini 3.7 Flash';
+  if (model === 'gemini-3.1-flash-lite') return 'Gemini 3.1 Flash Lite';
+  if (model === 'gemini-2.5-flash') return 'Gemini 2.5 Flash';
+  if (model === 'gemini-1.5-pro') return 'Gemini 1.5 Pro';
+  if (model.includes('procedural')) return 'Procedural Engine';
+  if (model.startsWith('gemini-')) {
+    return model
+      .replace(/^gemini-/, 'Gemini ')
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return model;
+}
