@@ -1258,6 +1258,10 @@ export default function App() {
               onPluckTine={handlePluckTine}
               onSubscribeStep={handleSubscribeStep}
               onTogglePlay={handleTogglePlay}
+              onWindSpring={handleWindSpring}
+              onSetSpringTension={handleSetSpringTension}
+              onChangePlayMode={handleSwitchPlayMode}
+              onManualCrankAdvance={handleManualCrankAdvance}
             />
 
             {/* Winding Controls Component */}

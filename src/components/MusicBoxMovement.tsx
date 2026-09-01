@@ -13,6 +13,10 @@ import {
   Disc,
   Play,
   Pause,
+  Gauge,
+  RotateCw,
+  Zap,
+  Sparkles,
 } from 'lucide-react';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
 
@@ -39,6 +43,10 @@ interface MusicBoxMovementProps {
   onTogglePin?: (step: number, tineIndex: number) => void;
   onSubscribeStep?: (cb: (step: number) => void) => () => void;
   onTogglePlay?: () => void;
+  onWindSpring?: (addedTension: number) => void;
+  onSetSpringTension?: (tension: number) => void;
+  onChangePlayMode?: (mode: PlayMode) => void;
+  onManualCrankAdvance?: (deltaAngle: number, currentRpm: number) => void;
 }
 
 export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
@@ -57,12 +65,127 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   onPluckTine,
   onSubscribeStep,
   onTogglePlay,
+  onWindSpring,
+  onSetSpringTension,
+  onChangePlayMode,
+  onManualCrankAdvance,
 }) => {
   const [hoveredTine, setHoveredTine] = useState<number | null>(null);
   const [smoothStep, setSmoothStep] = useState<number>(currentStep);
   const governorFanRef = useRef<SVGGElement | null>(null);
   const nylonGearRef = useRef<SVGGElement | null>(null);
   const governorAngleRef = useRef<number>(0);
+
+  // Miniature Rotary Jog Dial State & Handlers
+  const miniJogRef = useRef<HTMLDivElement | null>(null);
+  const [isJogDragging, setIsJogDragging] = useState(false);
+  const isJogDraggingRef = useRef(false);
+  const lastJogAngleRef = useRef(0);
+  const lastJogTimeRef = useRef(0);
+  const jogCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const jogRatchetAccumRef = useRef(0);
+  const [jogRotationAngle, setJogRotationAngle] = useState(0);
+  const totalJogDeltaRef = useRef(0);
+
+  const handleJogPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!miniJogRef.current) return;
+    const rect = miniJogRef.current.getBoundingClientRect();
+    jogCenterRef.current = {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+    lastJogAngleRef.current = Math.atan2(
+      e.clientY - jogCenterRef.current.y,
+      e.clientX - jogCenterRef.current.x
+    );
+    lastJogTimeRef.current = performance.now();
+    totalJogDeltaRef.current = 0;
+    setIsJogDragging(true);
+    isJogDraggingRef.current = true;
+
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleJogPointerMove = (e: React.PointerEvent) => {
+    if (!isJogDraggingRef.current) return;
+    const now = performance.now();
+    const currentAngle = Math.atan2(
+      e.clientY - jogCenterRef.current.y,
+      e.clientX - jogCenterRef.current.x
+    );
+
+    let delta = currentAngle - lastJogAngleRef.current;
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta -= Math.PI * 2;
+
+    const dtSec = Math.max(0.008, (now - lastJogTimeRef.current) / 1000);
+    lastJogAngleRef.current = currentAngle;
+    lastJogTimeRef.current = now;
+    totalJogDeltaRef.current += Math.abs(delta);
+
+    if (delta !== 0) {
+      setJogRotationAngle((prev) => prev + delta);
+    }
+
+    if (playMode === 'spring') {
+      if (delta > 0) {
+        const addedTension = delta / (3 * 2 * Math.PI);
+        onWindSpring?.(addedTension);
+
+        jogRatchetAccumRef.current += delta;
+        const RATCHET_STEP_RAD = (2 * Math.PI) / 16;
+        if (jogRatchetAccumRef.current >= RATCHET_STEP_RAD) {
+          musicBoxAudio.playWindingClick();
+          jogRatchetAccumRef.current %= RATCHET_STEP_RAD;
+        }
+      } else if (delta < -0.05) {
+        jogRatchetAccumRef.current += Math.abs(delta);
+        if (jogRatchetAccumRef.current > 0.35) {
+          musicBoxAudio.playWindingClick();
+          jogRatchetAccumRef.current = 0;
+        }
+      }
+    } else if (playMode === 'crank') {
+      if (delta > 0) {
+        const instantVel = delta / dtSec;
+        const currentRpm = Math.min(120, Math.round((instantVel * 60) / (2 * Math.PI)));
+        onManualCrankAdvance?.(delta, currentRpm);
+      }
+    }
+  };
+
+  const handleJogPointerUp = (e: React.PointerEvent) => {
+    const wasTapped = totalJogDeltaRef.current < 0.12;
+    setIsJogDragging(false);
+    isJogDraggingRef.current = false;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    if (wasTapped) {
+      if (playMode === 'spring') {
+        musicBoxAudio.playWindingClick();
+        onWindSpring?.(0.334);
+      } else if (playMode === 'crank') {
+        onManualCrankAdvance?.(0.2, 30);
+      }
+    }
+  };
+
+  const handleCyclePlayMode = () => {
+    if (!onChangePlayMode) return;
+    musicBoxAudio.playWindingClick();
+    const modeCycle: PlayMode[] = ['spring', 'crank', 'continuous'];
+    const nextIndex = (modeCycle.indexOf(playMode) + 1) % modeCycle.length;
+    onChangePlayMode(modeCycle[nextIndex]);
+  };
 
   // Active tines list based on comb scale or custom notes
   const tinesList: TineNote[] = useMemo(() => {
@@ -267,10 +390,118 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 {Math.round(smoothStep) + 1} / {totalSteps}
               </span>
             </div>
-            <div className="hidden md:flex items-center space-x-1">
-              <Wind className="w-3.5 h-3.5 text-[#d6be8e]" />
-              <span>Governor Active</span>
+
+            {/* Live Governed Tempo Badge */}
+            <div
+              className="hidden sm:flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-[#2b1e13] border border-[#523c24] text-[#caa87c] text-[11px]"
+              title={`Governed Tempo: ${tempoBpm} BPM (Regulated by the air-friction speed governor)`}
+            >
+              <Gauge className="w-3 h-3 text-[#f0c465]" />
+              <span className="font-serif text-[#a68d72]">Tempo:</span>
+              <span className="font-mono text-[#faebd4] font-bold">
+                {playMode === 'crank' && crankRpm > 0 ? `≈ ${Math.round(crankRpm * 1.35)}` : tempoBpm} BPM
+              </span>
             </div>
+
+            {/* Quick Mechanical Drive Mode & Winding Jog Dial */}
+            {(onWindSpring || onChangePlayMode) && (
+              <div
+                className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-[#241a0e] border border-[#523c24] text-xs shadow-xs"
+                title={
+                  playMode === 'spring'
+                    ? `Spring Tension: ${Math.round(springTension * 100)}% (${(springTension * 3).toFixed(1)} / 3.0 Rounds)\n• Click knob to wind +33% (1 round)\n• Drag/spin dial to wind manually\n• Click mode icon to switch drive mode`
+                    : playMode === 'crank'
+                    ? 'Hand Crank Jog Dial:\n• Drag or spin clockwise to manually play the melody\n• Click mode icon to switch drive mode'
+                    : 'Continuous Electric Drive Active\n• Click mode icon to switch drive mode'
+                }
+              >
+                {/* Mode Selector Toggle */}
+                {onChangePlayMode && (
+                  <button
+                    id="header-drive-mode-btn"
+                    onClick={handleCyclePlayMode}
+                    title={`Current Mode: ${
+                      playMode === 'spring'
+                        ? 'Wind-Up Spring (Click to switch to Hand Crank)'
+                        : playMode === 'crank'
+                        ? 'Hand Crank (Click to switch to Continuous)'
+                        : 'Continuous Electric (Click to switch to Spring)'
+                    }`}
+                    className="p-1 rounded bg-[#19110a] hover:bg-[#382614] text-[#faebd4] border border-[#4a341e] transition cursor-pointer flex items-center justify-center"
+                  >
+                    {playMode === 'spring' ? (
+                      <RotateCw className="w-3 h-3 text-[#f0c465]" />
+                    ) : playMode === 'crank' ? (
+                      <Disc className="w-3 h-3 text-[#f0c465]" />
+                    ) : (
+                      <Zap className="w-3 h-3 text-[#f0c465]" />
+                    )}
+                  </button>
+                )}
+
+                {/* Tactile Rotary Jog Dial */}
+                <div
+                  ref={miniJogRef}
+                  onPointerDown={handleJogPointerDown}
+                  onPointerMove={handleJogPointerMove}
+                  onPointerUp={handleJogPointerUp}
+                  onPointerCancel={handleJogPointerUp}
+                  className={`relative w-5.5 h-5.5 rounded-full bg-gradient-to-tr from-[#3a2818] via-[#5c4226] to-[#26190e] border-2 border-[#bfa175] hover:border-[#ffeaa7] shadow-inner flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform ${
+                    isJogDragging ? 'scale-110 ring-2 ring-[#f0c465]/50' : ''
+                  }`}
+                >
+                  {/* Tension Gauge Arc in Spring Mode */}
+                  {playMode === 'spring' && (
+                    <svg className="absolute -inset-0.5 w-6.5 h-6.5 -rotate-90 pointer-events-none" viewBox="0 0 32 32">
+                      <circle cx="16" cy="16" r="14" fill="none" stroke="#3d2a17" strokeWidth="2.5" />
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="14"
+                        fill="none"
+                        stroke={springTension > 0.33 ? '#f0c465' : '#e68470'}
+                        strokeWidth="2.5"
+                        strokeDasharray="87.96"
+                        strokeDashoffset={87.96 * (1 - springTension)}
+                        strokeLinecap="round"
+                        className="transition-all duration-75"
+                      />
+                    </svg>
+                  )}
+
+                  {/* Brass Crossbar Notch */}
+                  <div
+                    className="w-3.5 h-1 rounded-full bg-gradient-to-r from-[#9e7b36] via-[#fae7b5] to-[#9e7b36] pointer-events-none shadow-2xs"
+                    style={{ transform: `rotate(${jogRotationAngle}rad)` }}
+                  />
+                </div>
+
+                {/* Tension % or Jog Status */}
+                <div
+                  className="flex items-center space-x-1 cursor-pointer select-none"
+                  onClick={() => {
+                    if (playMode === 'spring' && onWindSpring) {
+                      musicBoxAudio.playWindingClick();
+                      onWindSpring(0.334);
+                    }
+                  }}
+                >
+                  {playMode === 'spring' ? (
+                    <span className="font-mono text-[10px] text-[#faebd4] font-bold">
+                      {Math.round(springTension * 100)}%
+                    </span>
+                  ) : playMode === 'crank' ? (
+                    <span className="font-mono text-[10px] text-[#faebd4] font-bold">
+                      Jog
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[10px] text-[#faebd4] font-bold">
+                      Auto
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Quick Mechanical Play / Pause Control Button */}
             {onTogglePlay && (
@@ -469,7 +700,18 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             ))}
 
             {/* 2. MAINSPRING HOUSING (LEFT) */}
-            <g transform="translate(95, 92)">
+            <g
+              transform="translate(95, 92)"
+              className="cursor-pointer group select-none"
+              onClick={() => {
+                if (playMode === 'spring' && onWindSpring) {
+                  musicBoxAudio.playWindingClick();
+                  onWindSpring(0.334);
+                } else if (playMode === 'crank') {
+                  onManualCrankAdvance?.(0.3, 35);
+                }
+              }}
+            >
               {/* Spring Drum Wall Shadow */}
               <circle r="62" fill="#2d1f0c" opacity="0.75" />
               {/* Outer Lathe Turned Brass Drum Rim */}
