@@ -174,6 +174,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
     }
   }, []);
 
+  const handleToggleAutoRotate = useCallback(() => {
+    setIsAutoRotating((prev) => {
+      const next = !prev;
+      isAutoRotatingRef.current = next;
+      return next;
+    });
+    needsRenderRef.current = true;
+  }, []);
+
   const rebuildPinMeshes = useCallback((pinsList: MusicBoxPin[], stepsCount: number) => {
     const pinGroup = pinMeshesGroupRef.current;
     if (!pinGroup) return;
@@ -1131,9 +1140,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
         else currentLookAtRef.current.lerp(targetLookAtRef.current, 0.22);
       }
 
-      if (isAutoRotatingRef.current) {
-        targetCameraAngleRef.current.theta += 0.003;
-        currentCameraAngleRef.current.theta += 0.003;
+      if (isAutoRotatingRef.current && !isDraggingRef.current) {
+        // Continuous turntable 3D rotation at smooth ~25 deg/sec
+        const rotDelta = 0.018;
+        targetCameraAngleRef.current.theta += rotDelta;
+        currentCameraAngleRef.current.theta += rotDelta;
+        if (targetCameraAngleRef.current.theta > Math.PI * 2) {
+          targetCameraAngleRef.current.theta -= Math.PI * 2;
+          currentCameraAngleRef.current.theta -= Math.PI * 2;
+        }
       }
 
       const isCranking = playModeRef.current === 'crank' && crankRpmRef.current > 0.5;
@@ -1489,10 +1504,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = ({
             {/* Retained Turntable Auto-Rotate Button outside viewport */}
             <button
               id="toggle-autorotate-btn"
-              onClick={() => {
-                setIsAutoRotating((prev) => !prev);
-                needsRenderRef.current = true;
-              }}
+              onClick={handleToggleAutoRotate}
               className={`px-2.5 py-1 rounded-lg text-xs font-serif shrink-0 transition-all flex items-center space-x-1.5 ${
                 isAutoRotating
                   ? 'bg-[#a37943] text-[#fffdf7] font-bold shadow-xs'
