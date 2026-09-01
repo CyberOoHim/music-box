@@ -446,23 +446,33 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   onPointerMove={handleJogPointerMove}
                   onPointerUp={handleJogPointerUp}
                   onPointerCancel={handleJogPointerUp}
-                  className={`relative w-5.5 h-5.5 rounded-full bg-gradient-to-tr from-[#3a2818] via-[#5c4226] to-[#26190e] border-2 border-[#bfa175] hover:border-[#ffeaa7] shadow-inner flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform ${
-                    isJogDragging ? 'scale-110 ring-2 ring-[#f0c465]/50' : ''
+                  className={`relative w-6 h-6 rounded-full bg-gradient-to-tr from-[#3a2818] via-[#5c4226] to-[#26190e] border border-[#bfa175]/60 hover:border-[#ffeaa7] shadow-inner flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform shrink-0 ${
+                    isJogDragging ? 'scale-105 ring-2 ring-[#f0c465]/50' : ''
                   }`}
                 >
                   {/* Tension Gauge Arc in Spring Mode */}
                   {playMode === 'spring' && (
-                    <svg className="absolute -inset-0.5 w-6.5 h-6.5 -rotate-90 pointer-events-none" viewBox="0 0 32 32">
-                      <circle cx="16" cy="16" r="14" fill="none" stroke="#3d2a17" strokeWidth="2.5" />
+                    <svg
+                      className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
+                      viewBox="0 0 32 32"
+                    >
                       <circle
                         cx="16"
                         cy="16"
-                        r="14"
+                        r="13"
+                        fill="none"
+                        stroke="#3d2a17"
+                        strokeWidth="2.5"
+                      />
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r="13"
                         fill="none"
                         stroke={springTension > 0.33 ? '#f0c465' : '#e68470'}
                         strokeWidth="2.5"
-                        strokeDasharray="87.96"
-                        strokeDashoffset={87.96 * (1 - springTension)}
+                        strokeDasharray="81.68"
+                        strokeDashoffset={81.68 * (1 - springTension)}
                         strokeLinecap="round"
                         className="transition-all duration-75"
                       />
@@ -471,7 +481,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
                   {/* Brass Crossbar Notch */}
                   <div
-                    className="w-3.5 h-1 rounded-full bg-gradient-to-r from-[#9e7b36] via-[#fae7b5] to-[#9e7b36] pointer-events-none shadow-2xs"
+                    className="relative z-10 w-3.5 h-1 rounded-full bg-gradient-to-r from-[#9e7b36] via-[#fae7b5] to-[#9e7b36] border border-[#ffe787]/50 pointer-events-none shadow-2xs"
                     style={{ transform: `rotate(${jogRotationAngle}rad)` }}
                   />
                 </div>
