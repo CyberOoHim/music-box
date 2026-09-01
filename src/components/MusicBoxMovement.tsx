@@ -270,10 +270,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
         </div>
 
         {/* TOP-VIEW MECHANICAL MOVEMENT SVG VIEWPORT */}
-        <div className="relative w-full aspect-[16/8.2] sm:aspect-[16/7.5] bg-[#100b07] rounded-xl border border-[#523c24] overflow-hidden shadow-inner flex items-center justify-center">
+        <div className="relative w-full aspect-[780/270] bg-[#100b07] rounded-xl border border-[#523c24] overflow-hidden shadow-inner flex items-center justify-center">
           <svg
             viewBox="0 0 780 270"
-            className="w-full h-full object-contain"
+            className="w-full h-full block"
             preserveAspectRatio="xMidYMid meet"
           >
             <defs>
