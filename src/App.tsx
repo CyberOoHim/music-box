@@ -108,7 +108,7 @@ export default function App() {
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playMode, setPlayMode] = useState<PlayMode>(() => savedSettings.playMode || 'spring');
+  const [playMode, setPlayMode] = useState<PlayMode>(() => savedSettings.playMode || 'continuous');
   const [springTension, setSpringTension] = useState<number>(1.0); // 100% full wind (3 rounds capacity)
   const [tempoBpm, setTempoBpm] = useState<number>(() => currentSong.tempoBpm || savedSettings.tempoBpm || 88);
   const [activeTines, setActiveTines] = useState<Set<number>>(new Set());
@@ -138,23 +138,23 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabView>('movement');
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
-  const [hasAiComposer, setHasAiComposer] = useState<boolean>(false);
+  const [hasAiComposer, setHasAiComposer] = useState<boolean>(true);
   const [requiresPasscode, setRequiresPasscode] = useState<boolean>(false);
 
-  // Check if Gemini API key is configured on server/environment and if passcode is required
+  // Check if AI Composer passcode protection is active
   useEffect(() => {
     let isMounted = true;
     fetch('/api/gemini/status')
-      .then((res) => (res.ok ? res.json() : { enabled: false, requiresPasscode: false }))
+      .then((res) => (res.ok ? res.json() : { enabled: true, requiresPasscode: false }))
       .then((data) => {
         if (isMounted) {
-          setHasAiComposer(Boolean(data?.enabled));
+          setHasAiComposer(true);
           setRequiresPasscode(Boolean(data?.requiresPasscode));
         }
       })
       .catch(() => {
         if (isMounted) {
-          setHasAiComposer(false);
+          setHasAiComposer(true);
           setRequiresPasscode(false);
         }
       });
@@ -496,12 +496,12 @@ export default function App() {
     await ensureAudioInitialized();
 
     if (!isPlayingRef.current) {
-      // 1. If currently in Hand Crank mode, switch to Spring mode automatically so playback runs
+      // 1. If currently in Hand Crank mode, switch to Continuous mode automatically so playback runs
       let mode = playModeRef.current;
       if (mode === 'crank') {
-        mode = 'spring';
-        setPlayMode('spring');
-        playModeRef.current = 'spring';
+        mode = 'continuous';
+        setPlayMode('continuous');
+        playModeRef.current = 'continuous';
       }
 
       // 2. If in Spring mode and tension is depleted or low (< 0.15), freshly wind to 100% (1.0)
@@ -740,9 +740,9 @@ export default function App() {
       // 5. Proceed as previous play mode
       let currentMode = playModeRef.current;
       if (currentMode === 'crank') {
-        currentMode = 'spring';
-        setPlayMode('spring');
-        playModeRef.current = 'spring';
+        currentMode = 'continuous';
+        setPlayMode('continuous');
+        playModeRef.current = 'continuous';
       }
 
       if (currentMode === 'spring') {
@@ -868,7 +868,7 @@ export default function App() {
     setNatureSettings(DEFAULT_NATURE_SETTINGS);
     setMasterVolume(0.9);
     setIsMuted(false);
-    setPlayMode('spring');
+    setPlayMode('continuous');
     setSpringTension(1.0);
     setFontZoom(100);
     setCurrentStep(0);
@@ -896,7 +896,7 @@ export default function App() {
     setNatureSettings(DEFAULT_NATURE_SETTINGS);
     setMasterVolume(0.9);
     setIsMuted(false);
-    setPlayMode('spring');
+    setPlayMode('continuous');
     setFontZoom(100);
 
     musicBoxAudio.applyChamberPreset('gold-sankyo');
@@ -1039,18 +1039,16 @@ export default function App() {
             )}
           </button>
 
-          {/* Gemini AI Compose Action - only accessible when API key is set in environment */}
-          {hasAiComposer && (
-            <button
-              id="header-gemini-compose-btn"
-              onClick={() => setIsGeminiModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40"
-            >
-              <Sparkles className="w-3.5 h-3.5 fill-[#2d2419]" />
-              <span className="hidden sm:inline">AI Compose</span>
-              <span className="sm:hidden">AI</span>
-            </button>
-          )}
+          {/* Gemini AI Compose Action */}
+          <button
+            id="header-gemini-compose-btn"
+            onClick={() => setIsGeminiModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40"
+          >
+            <Sparkles className="w-3.5 h-3.5 fill-[#2d2419]" />
+            <span className="hidden sm:inline">AI Compose</span>
+            <span className="sm:hidden">AI</span>
+          </button>
 
           {/* Master Mute Button */}
           <button
@@ -1368,9 +1366,9 @@ export default function App() {
               onPlaySong={handlePlaySong}
               onImportSong={handleLoadNewSong}
               onDeleteCustomSong={handleDeleteCustomSong}
-              onOpenGeminiModal={() => hasAiComposer && setIsGeminiModalOpen(true)}
+              onOpenGeminiModal={() => setIsGeminiModalOpen(true)}
               onOpenImportExportModal={() => setIsImportExportModalOpen(true)}
-              hasAiComposer={hasAiComposer}
+              hasAiComposer={true}
             />
           </div>
         )}
@@ -1379,8 +1377,7 @@ export default function App() {
       {/* Footer with Quick Restore Link */}
       <footer className="w-full border-t border-[#e5dcce] py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#8c7b67] font-serif-sub">
         <span>
-          Classic 18-Note Mechanical Music Box • Sankyo Acoustic Model
-          {hasAiComposer ? ' • Gemini AI Compositions' : ''}
+          Classic 18-Note Mechanical Music Box • Sankyo Acoustic Model • Gemini AI Compositions
         </span>
         <button
           onClick={() => setIsImportExportModalOpen(true)}
@@ -1390,17 +1387,15 @@ export default function App() {
         </button>
       </footer>
 
-      {/* Gemini AI Composer Modal - only mounted if API is enabled */}
-      {hasAiComposer && (
-        <GeminiComposerModal
-          isOpen={isGeminiModalOpen}
-          onClose={() => setIsGeminiModalOpen(false)}
-          onLoadSong={handleLoadNewSong}
-          hasAiComposer={hasAiComposer}
-          requiresPasscode={requiresPasscode}
-          initialCombScaleId={combScaleId}
-        />
-      )}
+      {/* Gemini AI Composer Modal */}
+      <GeminiComposerModal
+        isOpen={isGeminiModalOpen}
+        onClose={() => setIsGeminiModalOpen(false)}
+        onLoadSong={handleLoadNewSong}
+        hasAiComposer={true}
+        requiresPasscode={requiresPasscode}
+        initialCombScaleId={combScaleId}
+      />
 
       {/* Repertoire, Backup, Export, Import & Restore Modal */}
       <ImportExportModal

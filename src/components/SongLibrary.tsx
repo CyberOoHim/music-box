@@ -33,7 +33,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onImportSong,
   onOpenGeminiModal,
   onOpenImportExportModal,
-  hasAiComposer = false,
+  hasAiComposer = true,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -81,8 +81,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* AI Compose button - Only rendered when AI composer is enabled */}
-          {hasAiComposer && onOpenGeminiModal && (
+          {/* AI Compose button */}
+          {onOpenGeminiModal && (
             <button
               id="library-gemini-compose-btn"
               onClick={onOpenGeminiModal}
@@ -129,9 +129,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             { id: 'anime', label: 'Anime & Ghibli' },
             { id: 'lullaby', label: 'Lullaby' },
             { id: 'nature', label: 'Relaxing' },
-            ...(hasAiComposer || songs.some((s) => s.isAiGenerated || s.category === 'ai' || !!s.modelUsed)
-              ? [{ id: 'ai', label: 'Gemini AI' }]
-              : []),
+            { id: 'ai', label: 'Gemini AI' },
             { id: 'custom', label: 'Custom' },
           ].map((cat) => (
             <button

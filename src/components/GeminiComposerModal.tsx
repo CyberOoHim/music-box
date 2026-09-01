@@ -170,7 +170,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   isOpen,
   onClose,
   onLoadSong,
-  hasAiComposer = false,
+  hasAiComposer = true,
   requiresPasscode = false,
   initialCombScaleId = 'romantic-flat',
 }) => {
@@ -401,7 +401,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
     };
   }, [stopAudioPreview]);
 
-  if (!isOpen || !hasAiComposer) return null;
+  if (!isOpen) return null;
 
   const handleClose = () => {
     stopAudioPreview();

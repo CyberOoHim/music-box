@@ -42,13 +42,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-// Check if Gemini AI composer is enabled (API key configured) and if passcode protection is active
+// Check if Gemini AI composer is enabled and if passcode protection is active
 app.get('/api/gemini/status', (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
-  const isEnabled = Boolean(apiKey && apiKey.trim().length > 0);
+  const hasApiKey = Boolean(apiKey && apiKey.trim().length > 0);
   const serverPasscode = (process.env.AI_COMPOSER_PASSCODE || process.env.COMPOSER_PASSCODE || '').trim();
   res.json({
-    enabled: isEnabled,
+    enabled: true,
+    hasApiKey,
     requiresPasscode: serverPasscode.length > 0,
   });
 });
@@ -183,12 +184,6 @@ app.post('/api/gemini/compose', async (req, res) => {
     });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    return res.status(403).json({
-      error: 'AI Composer is disabled because GEMINI_API_KEY is not configured in the environment.',
-    });
-  }
 
   const rawSteps = Number(req.body.totalSteps);
   const totalSteps = Number.isFinite(rawSteps) ? Math.min(Math.max(rawSteps, 16), 256) : 64;
