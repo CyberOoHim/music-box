@@ -11,6 +11,8 @@ import {
   FolderArchive,
   Play,
   Sliders,
+  Plus,
+  Copy,
 } from 'lucide-react';
 
 const DEFAULT_PRESET_IDS = new Set(DEFAULT_SONGS.map((s) => s.id));
@@ -24,6 +26,8 @@ interface SongLibraryProps {
   onImportSong: (song: MusicBoxSong) => void;
   onOpenGeminiModal?: () => void;
   onOpenImportExportModal?: () => void;
+  onNewBlankSong?: () => void;
+  onDuplicateSong?: (song: MusicBoxSong) => void;
   hasAiComposer?: boolean;
 }
 
@@ -36,6 +40,8 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onImportSong,
   onOpenGeminiModal,
   onOpenImportExportModal,
+  onNewBlankSong,
+  onDuplicateSong,
   hasAiComposer = true,
 }) => {
   const [search, setSearch] = useState('');
@@ -88,6 +94,18 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* New Blank Cylinder button */}
+          {onNewBlankSong && (
+            <button
+              id="library-new-blank-btn"
+              onClick={onNewBlankSong}
+              className="px-3 py-1.5 rounded-xl bg-[#433422] hover:bg-[#2d2419] text-[#fbf8f2] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Melody</span>
+            </button>
+          )}
+
           {/* AI Compose button */}
           {onOpenGeminiModal && (
             <button
@@ -248,6 +266,20 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                     >
                       <Play className="w-3 h-3 fill-current" />
                       <span>Play</span>
+                    </button>
+                  )}
+
+                  {onDuplicateSong && (
+                    <button
+                      id={`duplicate-song-${song.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDuplicateSong(song);
+                      }}
+                      title="Duplicate & Remix this song as a new custom score"
+                      className="p-1.5 rounded-lg hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
                     </button>
                   )}
 

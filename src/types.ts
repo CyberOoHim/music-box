@@ -22,6 +22,16 @@ export interface MusicBoxSong {
   modelUsed?: string;
 }
 
+export type EditorTool = 'draw' | 'erase' | 'audition' | 'step-record';
+export type GridZoomLevel = 'compact' | 'normal' | 'spacious' | 'wide';
+export type StepAdvanceInterval = 1 | 2 | 4 | 8;
+
+export interface EditorHistoryEntry {
+  pins: MusicBoxPin[];
+  timestamp: number;
+  description: string;
+}
+
 export interface TineNote {
   index: number;
   note: string;

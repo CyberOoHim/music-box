@@ -23,5 +23,29 @@
   .font-serif-sub {
     font-family: "Playfair Display", Georgia, serif;
   }
+
+  /* iPad Touch Ergonomics & Responsiveness */
+  .touch-manipulation {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .touch-pan-x {
+    touch-action: pan-x;
+  }
+
+  .touch-pan-y {
+    touch-action: pan-y;
+  }
+
+  .touch-none {
+    touch-action: none;
+  }
+
+  /* Smooth momentum scrolling for iOS/iPadOS Safari */
+  .ios-momentum-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
 }
+
 

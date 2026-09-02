@@ -87,6 +87,50 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   const [jogRotationAngle, setJogRotationAngle] = useState(0);
   const totalJogDeltaRef = useRef(0);
 
+  // Keyboard Glissando Multi-Touch State & Handlers
+  const isKeyboardPointerDownRef = useRef(false);
+  const lastPluckedTineRef = useRef<number | null>(null);
+
+  const handleKeyboardPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    isKeyboardPointerDownRef.current = true;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    const target = (e.target as HTMLElement).closest('[data-tine-idx]') as HTMLElement | null;
+    if (target) {
+      const idx = Number(target.dataset.tineIdx);
+      if (Number.isFinite(idx)) {
+        lastPluckedTineRef.current = idx;
+        onPluckTine(idx);
+      }
+    }
+  };
+
+  const handleKeyboardPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isKeyboardPointerDownRef.current) return;
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    const target = element?.closest('[data-tine-idx]') as HTMLElement | null;
+    if (target) {
+      const idx = Number(target.dataset.tineIdx);
+      if (Number.isFinite(idx) && idx !== lastPluckedTineRef.current) {
+        lastPluckedTineRef.current = idx;
+        onPluckTine(idx);
+      }
+    }
+  };
+
+  const handleKeyboardPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    isKeyboardPointerDownRef.current = false;
+    lastPluckedTineRef.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleJogPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     if (!miniJogRef.current) return;
@@ -1135,9 +1179,14 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             </span>
           </div>
 
-          {/* Dynamic Keyboard Keys Rack with Elevated Sharp/Flat Keys */}
+          {/* Dynamic Keyboard Keys Rack with Elevated Sharp/Flat Keys & Glissando Multi-Touch Support */}
           <div className="w-full pt-3 pb-1">
-            <div className="w-full flex items-end gap-0.5 sm:gap-1 p-1 sm:p-1.5 rounded-xl bg-[#120d08] border border-[#523c24]/90 shadow-inner">
+            <div
+              onPointerDown={handleKeyboardPointerDown}
+              onPointerMove={handleKeyboardPointerMove}
+              onPointerUp={handleKeyboardPointerUp}
+              className="w-full flex items-end gap-0.5 sm:gap-1 p-1 sm:p-1.5 rounded-xl bg-[#120d08] border border-[#523c24]/90 shadow-inner select-none touch-none"
+            >
               {tinesList.map((tine, idx) => {
                 const isActive = activeTines.has(idx);
                 const isHovered = hoveredTine === idx;
@@ -1148,6 +1197,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   <button
                     key={`${tine.note}-${idx}`}
                     id={`keyboard-tine-key-${idx}`}
+                    data-tine-idx={idx}
                     onClick={() => onPluckTine(idx)}
                     onMouseEnter={() => setHoveredTine(idx)}
                     onMouseLeave={() => setHoveredTine(null)}

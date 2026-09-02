@@ -747,6 +747,127 @@ export default function App() {
     showToast(`Switched comb to ${scaleInfo?.shortLabel || scaleInfo?.name || newScaleId} (${scaleInfo?.tinesCount} Tines • ${scaleInfo?.rangeLabel})`, 'info');
   }, [persistCustomSongs, showToast]);
 
+  // Set all pins (e.g. from Undo/Redo or Pattern Transforms)
+  const handleSetPins = useCallback(
+    (newPins: MusicBoxPin[]) => {
+      setCurrentSong((prevSong) => {
+        const updatedSong = { ...prevSong, pins: newPins };
+        setSongs((prevSongs) => {
+          const updatedSongs = prevSongs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
+          persistCustomSongs(updatedSongs);
+          return updatedSongs;
+        });
+        return updatedSong;
+      });
+    },
+    [persistCustomSongs]
+  );
+
+  // Seek to step
+  const handleSeekStep = useCallback((step: number) => {
+    setCurrentStep(step);
+    currentStepRef.current = step;
+    subStepRef.current = step;
+  }, []);
+
+  // Update song metadata (title, description, tempo, totalSteps)
+  const handleUpdateSongMeta = useCallback(
+    (updates: { title?: string; description?: string; tempoBpm?: number; totalSteps?: number }) => {
+      setCurrentSong((prevSong) => {
+        const updatedSong = {
+          ...prevSong,
+          ...updates,
+          category: prevSong.category === 'classic' ? 'custom' : prevSong.category,
+        };
+        if (typeof updates.tempoBpm === 'number') {
+          setTempoBpm(updates.tempoBpm);
+          tempoBpmRef.current = updates.tempoBpm;
+        }
+        setSongs((prevSongs) => {
+          const updatedSongs = prevSongs.map((s) => (s.id === updatedSong.id ? updatedSong : s));
+          persistCustomSongs(updatedSongs);
+          return updatedSongs;
+        });
+        return updatedSong;
+      });
+      if (updates.title) {
+        showToast(`Renamed song to "${updates.title}"`, 'info');
+      }
+    },
+    [persistCustomSongs, showToast]
+  );
+
+  // Create new blank song from scratch
+  const handleNewBlankSong = useCallback(() => {
+    const newSongId = `custom-${Date.now()}`;
+    const newSong: MusicBoxSong = {
+      id: newSongId,
+      title: 'My Custom Composition',
+      category: 'custom',
+      description: 'Original mechanical music box cylinder created in editor.',
+      tempoBpm: 88,
+      totalSteps: 64,
+      combScaleId: combScaleId,
+      pins: [],
+      createdAt: Date.now(),
+    };
+
+    setSongs((prevSongs) => {
+      const updated = [newSong, ...prevSongs];
+      persistCustomSongs(updated);
+      return updated;
+    });
+
+    setCurrentSong(newSong);
+    currentSongRef.current = newSong;
+    setTempoBpm(88);
+    tempoBpmRef.current = 88;
+    setCurrentStep(0);
+    currentStepRef.current = 0;
+    subStepRef.current = 0;
+    setActiveTab('editor');
+    showToast('Created new blank melody cylinder', 'success');
+  }, [combScaleId, persistCustomSongs, showToast]);
+
+  // Duplicate / Remix song
+  const handleDuplicateSong = useCallback(
+    (songToClone?: MusicBoxSong) => {
+      const baseSong = songToClone || currentSong;
+      const cloneId = `remix-${Date.now()}`;
+      const clonedSong: MusicBoxSong = {
+        ...baseSong,
+        id: cloneId,
+        title: `${baseSong.title} (Remix)`,
+        category: 'custom',
+        isAiGenerated: false,
+        createdAt: Date.now(),
+        pins: [...baseSong.pins.map((p) => ({ ...p }))],
+      };
+
+      setSongs((prevSongs) => {
+        const updated = [clonedSong, ...prevSongs];
+        persistCustomSongs(updated);
+        return updated;
+      });
+
+      setCurrentSong(clonedSong);
+      currentSongRef.current = clonedSong;
+      if (clonedSong.combScaleId) {
+        setCombScaleId(clonedSong.combScaleId);
+        combScaleIdRef.current = clonedSong.combScaleId;
+      }
+      const songTempo = clonedSong.tempoBpm || 88;
+      setTempoBpm(songTempo);
+      tempoBpmRef.current = songTempo;
+      setCurrentStep(0);
+      currentStepRef.current = 0;
+      subStepRef.current = 0;
+      setActiveTab('editor');
+      showToast(`Duplicated "${baseSong.title}" as editable remix`, 'success');
+    },
+    [currentSong, persistCustomSongs, showToast]
+  );
+
   // Select song from library
   const handleSelectSong = useCallback((song: MusicBoxSong) => {
     setCurrentSong(song);
@@ -1372,13 +1493,21 @@ export default function App() {
               isPlaying={isPlaying}
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
+              songTitle={currentSong.title}
+              songDescription={currentSong.description}
+              tempoBpm={tempoBpm}
               onSubscribeStep={handleSubscribeStep}
               onChangeCombScale={handleChangeCombScale}
               onTogglePin={handleTogglePin}
+              onSetPins={handleSetPins}
               onClearAll={handleClearPins}
               onShiftPins={handleShiftPins}
               onPluckTine={handlePluckTine}
               onTogglePlay={handleTogglePlay}
+              onSeekStep={handleSeekStep}
+              onUpdateSongMeta={handleUpdateSongMeta}
+              onDuplicateSong={handleDuplicateSong}
+              onNewBlankSong={handleNewBlankSong}
             />
 
             {/* Winding & Play controls also accessible under Editor */}
@@ -1425,6 +1554,8 @@ export default function App() {
               onDeleteCustomSong={handleDeleteCustomSong}
               onOpenGeminiModal={() => setIsGeminiModalOpen(true)}
               onOpenImportExportModal={() => setIsImportExportModalOpen(true)}
+              onNewBlankSong={handleNewBlankSong}
+              onDuplicateSong={handleDuplicateSong}
               hasAiComposer={true}
             />
           </div>
