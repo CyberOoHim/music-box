@@ -473,6 +473,7 @@ export interface NatureAmbienceSettings {
 }
 
 export type PlayMode = 'spring' | 'crank' | 'continuous';
+export type PowerSaveMode = 'auto' | 'battery-saver' | 'balanced' | 'performance';
 
 export interface UserSettings {
   soundPreset: SoundChamberPreset;
@@ -484,6 +485,7 @@ export interface UserSettings {
   tempoBpm?: number;
   currentSongId?: string;
   fontZoom: number; // e.g. 100 (percentage)
+  powerSaveMode?: PowerSaveMode;
 }
 
 export interface MusicBoxExportBundle {
@@ -492,6 +494,27 @@ export interface MusicBoxExportBundle {
   appName: string;
   songs: MusicBoxSong[];
   settings?: Partial<UserSettings>;
+}
+
+/**
+ * Detects whether the current device is an iPad or iOS/mobile device
+ */
+export function isIpadOrMobileDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIpad =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  return isIpad || isMobile || (navigator.maxTouchPoints > 1 && window.innerWidth < 1200);
+}
+
+/**
+ * Checks if the user prefers reduced motion
+ */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 export function formatModelDisplayName(model?: string, isAi?: boolean): string {

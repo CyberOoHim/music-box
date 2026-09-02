@@ -170,7 +170,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    if (playMode === 'crank') {
+    if (playMode === 'crank' && angularVelocityRef.current > 0.04) {
       startPhysicsLoopIfNeeded();
     } else {
       if (reqAnimIdRef.current) {

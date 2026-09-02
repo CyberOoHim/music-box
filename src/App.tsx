@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   MusicBoxSong,
   MusicBoxPin,
@@ -10,6 +10,8 @@ import {
   CombScaleId,
   COMB_SCALES_MAP,
   ROMANTIC_FLAT_22_TINES,
+  PowerSaveMode,
+  isIpadOrMobileDevice,
   formatModelDisplayName,
 } from './types';
 import { DEFAULT_SONGS } from './data/defaultSongs';
@@ -177,6 +179,58 @@ export default function App() {
     }, 3200);
   }, []);
 
+  // Power Saving Mode with persistence ('auto' | 'battery-saver' | 'balanced' | 'performance')
+  const [powerSaveMode, setPowerSaveMode] = useState<PowerSaveMode>(
+    () => savedSettings.powerSaveMode || 'auto'
+  );
+
+  // Live Hardware Battery State tracking (where supported by browser)
+  const [batteryState, setBatteryState] = useState<{
+    level: number | null;
+    charging: boolean | null;
+  }>({ level: null, charging: null });
+
+  useEffect(() => {
+    let batteryObj: any = null;
+    let isMounted = true;
+
+    const updateBattery = (b: any) => {
+      if (!isMounted) return;
+      setBatteryState({
+        level: typeof b.level === 'number' ? Math.round(b.level * 100) : null,
+        charging: typeof b.charging === 'boolean' ? b.charging : null,
+      });
+    };
+
+    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+      (navigator as any).getBattery?.().then((b: any) => {
+        if (!isMounted || !b) return;
+        batteryObj = b;
+        updateBattery(b);
+        b.addEventListener?.('levelchange', () => updateBattery(b));
+        b.addEventListener?.('chargingchange', () => updateBattery(b));
+      }).catch(() => {});
+    }
+
+    return () => {
+      isMounted = false;
+      if (batteryObj) {
+        batteryObj.removeEventListener?.('levelchange', () => updateBattery(batteryObj));
+        batteryObj.removeEventListener?.('chargingchange', () => updateBattery(batteryObj));
+      }
+    };
+  }, []);
+
+  // Compute effective Eco / Power Saver Mode active state
+  const isEcoActive = useMemo(() => {
+    if (powerSaveMode === 'battery-saver') return true;
+    if (powerSaveMode === 'performance') return false;
+    // auto or balanced: true if iPad/mobile or low battery <= 20%
+    const isMobile = isIpadOrMobileDevice();
+    const isLowBat = typeof batteryState.level === 'number' && batteryState.level <= 20 && !batteryState.charging;
+    return isMobile || isLowBat;
+  }, [powerSaveMode, batteryState]);
+
   // Persist User Settings to localStorage
   useEffect(() => {
     try {
@@ -190,12 +244,13 @@ export default function App() {
         currentSongId: currentSong.id,
         combScaleId,
         fontZoom,
+        powerSaveMode,
       };
       localStorage.setItem('musicbox_user_settings', JSON.stringify(settingsToSave));
     } catch (e) {
       console.warn('Could not save user settings to localStorage', e);
     }
-  }, [soundPreset, natureSettings, masterVolume, isMuted, playMode, tempoBpm, currentSong.id, combScaleId, fontZoom]);
+  }, [soundPreset, natureSettings, masterVolume, isMuted, playMode, tempoBpm, currentSong.id, combScaleId, fontZoom, powerSaveMode]);
 
   // Persist Custom and AI Songs to localStorage
   const persistCustomSongs = useCallback((songList: MusicBoxSong[]) => {
@@ -386,7 +441,7 @@ export default function App() {
     };
   }, [ensureAudioInitialized]);
 
-  // Main playback loop
+  // Main playback loop with adaptive frame pacing for iPad & battery efficiency
   useEffect(() => {
     if (!isPlaying) {
       if (stepTimerRef.current) {
@@ -396,6 +451,7 @@ export default function App() {
       musicBoxAudio.setMechanicalHum(false);
       setCurrentStep(currentStepRef.current);
       setSpringTension(springTensionRef.current);
+      musicBoxAudio.scheduleIdleSleep();
       return;
     }
 
@@ -403,7 +459,8 @@ export default function App() {
     musicBoxAudio.setMechanicalHum(true, tempoBpm / 90);
     lastStepTimeRef.current = performance.now();
     let lastTickTime = performance.now();
-    const tickInterval = 1000 / 24; // 24 FPS throttled sequencer check
+    // 20 FPS in Eco mode / iPad to minimize wakeups; 30 FPS in normal mode
+    const tickInterval = 1000 / (isEcoActive ? 20 : 30);
 
     const loop = (timestamp: number) => {
       if (!isPlayingRef.current) return;
@@ -430,6 +487,7 @@ export default function App() {
             isPlayingRef.current = false;
             setIsPlaying(false);
             musicBoxAudio.setMechanicalHum(false);
+            musicBoxAudio.scheduleIdleSleep();
             return;
           }
 
@@ -475,7 +533,24 @@ export default function App() {
         cancelAnimationFrame(stepTimerRef.current);
       }
     };
-  }, [isPlaying, executeStep, ensureAudioInitialized, tempoBpm]);
+  }, [isPlaying, executeStep, ensureAudioInitialized, tempoBpm, isEcoActive]);
+
+  // Cycle Power Saving Mode with clear toast guidance
+  const handleCyclePowerMode = useCallback(() => {
+    const modes: PowerSaveMode[] = ['auto', 'battery-saver', 'balanced', 'performance'];
+    const nextIdx = (modes.indexOf(powerSaveMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+    setPowerSaveMode(nextMode);
+    if (nextMode === 'battery-saver') {
+      showToast('Eco Battery Saver Active • 30 FPS pacing, lightweight glows & Web Audio auto-sleep', 'info');
+    } else if (nextMode === 'balanced') {
+      showToast('Balanced Mode • Standard adaptive graphics', 'info');
+    } else if (nextMode === 'performance') {
+      showToast('Performance Mode • 60 FPS visual smoothness', 'info');
+    } else {
+      showToast(`Auto Power Mode • ${isIpadOrMobileDevice() ? 'Optimized for iPad battery life' : 'Adaptive device power management'}`, 'info');
+    }
+  }, [powerSaveMode, showToast]);
 
   // Cleanly switch play mode: cleanly stop current mode and restart target mode freshly
   const handleSwitchPlayMode = useCallback(
@@ -1028,6 +1103,9 @@ export default function App() {
     if (typeof newSettings.fontZoom === 'number') {
       setFontZoom(Math.max(75, Math.min(150, newSettings.fontZoom)));
     }
+    if (newSettings.powerSaveMode) {
+      setPowerSaveMode(newSettings.powerSaveMode);
+    }
     if (newSettings.playMode) {
       handleSwitchPlayMode(newSettings.playMode);
     }
@@ -1049,6 +1127,7 @@ export default function App() {
     setPlayMode('continuous');
     setSpringTension(1.0);
     setFontZoom(100);
+    setPowerSaveMode('auto');
     setCurrentStep(0);
     setIsPlaying(false);
 
@@ -1076,6 +1155,7 @@ export default function App() {
     setIsMuted(false);
     setPlayMode('continuous');
     setFontZoom(100);
+    setPowerSaveMode('auto');
 
     musicBoxAudio.applyChamberPreset('gold-sankyo');
     musicBoxAudio.updateNatureVolumes(DEFAULT_NATURE_SETTINGS);
@@ -1199,6 +1279,44 @@ export default function App() {
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Power Saving / Eco Mode Selector */}
+          <button
+            id="header-power-mode-btn"
+            onClick={handleCyclePowerMode}
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-serif font-semibold flex items-center space-x-1.5 transition shadow-2xs cursor-pointer ${
+              isEcoActive
+                ? 'bg-[#edf7e8] hover:bg-[#e2f2da] border-[#b0d99a] text-[#2e591b]'
+                : powerSaveMode === 'performance'
+                ? 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36]'
+                : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36]'
+            }`}
+            title={`Power Saving: ${
+              powerSaveMode === 'auto'
+                ? `Auto (${isEcoActive ? 'Eco active for iPad/battery' : 'Balanced'})`
+                : powerSaveMode === 'battery-saver'
+                ? 'Battery Saver (Eco) active'
+                : powerSaveMode === 'balanced'
+                ? 'Balanced mode'
+                : 'Performance mode'
+            }\n${typeof batteryState.level === 'number' ? `Battery: ${batteryState.level}% ${batteryState.charging ? '⚡' : '🔋'}\n` : ''}• Click to cycle modes (Auto / Eco / Balanced / Performance)`}
+          >
+            <Leaf className={`w-3.5 h-3.5 ${isEcoActive ? 'text-[#38a169] fill-[#38a169]/20' : 'text-[#8a765e]'}`} />
+            <span className="hidden sm:inline font-sans font-medium text-[11px]">
+              {powerSaveMode === 'battery-saver'
+                ? 'Eco'
+                : powerSaveMode === 'performance'
+                ? 'Perf'
+                : powerSaveMode === 'balanced'
+                ? 'Balanced'
+                : 'Auto'}
+            </span>
+            {typeof batteryState.level === 'number' && (
+              <span className="text-[10px] font-mono opacity-80">
+                {batteryState.level}%
+              </span>
+            )}
+          </button>
 
           {/* Backup / Export / Import / Restore Trigger */}
           <button
@@ -1456,6 +1574,7 @@ export default function App() {
               crankRpm={crankRpm}
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
+              powerSaveMode={powerSaveMode}
               onChangeCombScale={handleChangeCombScale}
               onPluckTine={handlePluckTine}
               onSubscribeStep={handleSubscribeStep}

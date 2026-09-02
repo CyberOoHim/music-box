@@ -50,6 +50,8 @@ class MusicBoxAudioEngine {
   private streamSource: AudioBufferSourceNode | null = null;
 
   private cachedNoiseBuffer: AudioBuffer | null = null;
+  private clickBufferCache: Map<string, AudioBuffer> = new Map();
+  private gearHumCleanupTimer: number | null = null;
 
   // Cached pre-generated acoustic impulse responses
   private impulseCache: Map<SoundChamberPreset, AudioBuffer> = new Map();
@@ -251,10 +253,7 @@ class MusicBoxAudioEngine {
       this.initPromise = null;
       await this.init();
     }
-    if (this.idleSleepTimer) {
-      clearTimeout(this.idleSleepTimer);
-      this.idleSleepTimer = null;
-    }
+    this.cancelIdleSleep();
     if (this.ctx && this.ctx.state !== 'running') {
       try {
         await this.ctx.resume();
@@ -266,10 +265,46 @@ class MusicBoxAudioEngine {
     this.ensureNatureAmbianceRunning();
   }
 
-  public resetIdleSleepTimer(): void {
+  public cancelIdleSleep(): void {
     if (this.idleSleepTimer) {
       clearTimeout(this.idleSleepTimer);
       this.idleSleepTimer = null;
+    }
+  }
+
+  public scheduleIdleSleep(): void {
+    this.cancelIdleSleep();
+    const hasNature = Object.values(this.currentNatureSettings).some((v) => v > 0.01);
+    if (hasNature || this.isMechanicalHumActive || this.activeVoiceStoppers.size > 0) {
+      return;
+    }
+    // Auto-suspend AudioContext after 3.5s of complete silence to preserve battery on iPad & mobile
+    this.idleSleepTimer = window.setTimeout(async () => {
+      const hasNatureNow = Object.values(this.currentNatureSettings).some((v) => v > 0.01);
+      if (
+        this.ctx &&
+        this.ctx.state === 'running' &&
+        this.activeVoiceStoppers.size === 0 &&
+        !this.isMechanicalHumActive &&
+        !hasNatureNow
+      ) {
+        try {
+          await this.ctx.suspend();
+        } catch {
+          // ignore
+        }
+      }
+    }, 3500);
+  }
+
+  public resetIdleSleepTimer(): void {
+    this.cancelIdleSleep();
+  }
+
+  private handleVoiceEnded(stopper: (time: number) => void): void {
+    this.activeVoiceStoppers.delete(stopper);
+    if (this.activeVoiceStoppers.size === 0) {
+      this.scheduleIdleSleep();
     }
   }
 
@@ -797,6 +832,7 @@ class MusicBoxAudioEngine {
     if (this.ctx.state !== 'running') {
       this.resumeIfNeeded().catch(() => {});
     }
+    this.cancelIdleSleep();
 
     try {
       const now = typeof when === 'number' && when >= this.ctx.currentTime ? when : Math.max(0, this.ctx.currentTime);
@@ -901,7 +937,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1001,7 +1037,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1135,7 +1171,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         oscA.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             oscA.disconnect();
             gainA.disconnect();
@@ -1219,7 +1255,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1299,7 +1335,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1391,7 +1427,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1556,7 +1592,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1649,7 +1685,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         carrierOsc.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             carrierOsc.disconnect();
             carrierGain.disconnect();
@@ -1762,7 +1798,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.add(stopper);
 
         osc1.onended = () => {
-          this.activeVoiceStoppers.delete(stopper);
+          this.handleVoiceEnded(stopper);
           try {
             osc1.disconnect();
             gain1.disconnect();
@@ -1780,7 +1816,26 @@ class MusicBoxAudioEngine {
     }
   }
 
-  // Plectrum pluck noise transient tailored to chamber material
+  // Cached procedural click noise buffers
+  private getOrCreateClickBuffer(duration: number): AudioBuffer | null {
+    if (!this.ctx) return null;
+    const key = `${this.ctx.sampleRate}_${Math.round(duration * 1000)}`;
+    const cached = this.clickBufferCache.get(key);
+    if (cached) return cached;
+
+    const bufferSize = Math.max(128, Math.floor(this.ctx.sampleRate * duration));
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+    }
+
+    this.clickBufferCache.set(key, buffer);
+    return buffer;
+  }
+
+  // Plectrum pluck noise transient tailored to chamber material (Zero GC overhead)
   private playPluckClick(
     time: number,
     baseFreq: number,
@@ -1846,15 +1901,10 @@ class MusicBoxAudioEngine {
         clickVol = 0.22 * velocity;
       }
 
+      const buffer = this.getOrCreateClickBuffer(clickDuration);
+      if (!buffer) return;
+
       const t = Math.max(time, this.ctx.currentTime);
-      const bufferSize = Math.floor(this.ctx.sampleRate * clickDuration);
-      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
-      }
-
       const noiseSource = this.ctx.createBufferSource();
       noiseSource.buffer = buffer;
 
@@ -1897,6 +1947,7 @@ class MusicBoxAudioEngine {
     if (this.ctx.state !== 'running') {
       this.resumeIfNeeded().catch(() => {});
     }
+    this.cancelIdleSleep();
     try {
       const now = this.ctx.currentTime;
 
@@ -1928,6 +1979,9 @@ class MusicBoxAudioEngine {
         } catch {
           // ignore
         }
+        if (this.activeVoiceStoppers.size === 0 && !this.isMechanicalHumActive) {
+          this.scheduleIdleSleep();
+        }
       };
 
       osc.start(now);
@@ -1937,7 +1991,7 @@ class MusicBoxAudioEngine {
     }
   }
 
-  // Setup gentle mechanical gear / governor whirring hum
+  // Setup gentle mechanical gear / governor whirring hum on demand
   private setupGearHum(): void {
     if (!this.ctx || !this.masterGain) return;
     try {
@@ -1976,22 +2030,24 @@ class MusicBoxAudioEngine {
 
   public setMechanicalHum(active: boolean, speed = 1.0, immediate = false): void {
     this.isMechanicalHumActive = active;
-    if (!this.ctx || !this.gearGain || !this.gearOsc) {
-      if (active && this.ctx && this.ctx.state === 'running') {
-        this.setupGearHum();
-      }
-      if (!this.ctx || !this.gearGain || !this.gearOsc) return;
+    if (this.gearHumCleanupTimer) {
+      clearTimeout(this.gearHumCleanupTimer);
+      this.gearHumCleanupTimer = null;
     }
-    const now = this.ctx.currentTime;
 
     if (active) {
-      if (this.idleSleepTimer) {
-        clearTimeout(this.idleSleepTimer);
-        this.idleSleepTimer = null;
+      this.cancelIdleSleep();
+      if (!this.ctx || !this.gearGain || !this.gearOsc) {
+        if (this.ctx && this.ctx.state === 'running') {
+          this.setupGearHum();
+        }
       }
-      if (this.ctx.state !== 'running') {
+      if (this.ctx && this.ctx.state !== 'running') {
         this.resumeIfNeeded().catch(() => {});
       }
+      if (!this.ctx || !this.gearGain || !this.gearOsc) return;
+
+      const now = this.ctx.currentTime;
       try {
         this.gearOsc.frequency.setTargetAtTime(70 * Math.max(0.5, speed), now, 0.1);
         this.gearGain.gain.setTargetAtTime(0.028, now, 0.15);
@@ -1999,24 +2055,39 @@ class MusicBoxAudioEngine {
         // safe fallback
       }
     } else {
+      if (!this.ctx || !this.gearGain) {
+        this.scheduleIdleSleep();
+        return;
+      }
+      const now = this.ctx.currentTime;
       if (immediate) {
         try {
           this.gearGain.gain.cancelScheduledValues(now);
           this.gearGain.gain.setValueAtTime(0.00001, now);
-        } catch {
+        } catch {}
+        if (this.gearOsc) {
           try {
-            this.gearGain.gain.setTargetAtTime(0.00001, now, 0.05);
-          } catch {
-            // safe fallback
-          }
+            this.gearOsc.stop();
+            this.gearOsc.disconnect();
+          } catch {}
+          this.gearOsc = null;
         }
       } else {
         try {
-          this.gearGain.gain.setTargetAtTime(0.00001, now, 0.2);
-        } catch {
-          // safe fallback
-        }
+          this.gearGain.gain.setTargetAtTime(0.00001, now, 0.18);
+        } catch {}
+        // Stop and disconnect oscillator after fade out to save battery
+        this.gearHumCleanupTimer = window.setTimeout(() => {
+          if (!this.isMechanicalHumActive && this.gearOsc) {
+            try {
+              this.gearOsc.stop();
+              this.gearOsc.disconnect();
+            } catch {}
+            this.gearOsc = null;
+          }
+        }, 250);
       }
+      this.scheduleIdleSleep();
     }
   }
 
@@ -2644,6 +2715,10 @@ class MusicBoxAudioEngine {
     } else {
       this.stopStreamGenerator();
     }
+
+    if (!hasAnyNature && !this.isMechanicalHumActive && this.activeVoiceStoppers.size === 0) {
+      this.scheduleIdleSleep();
+    }
   }
 
   public setMasterVolume(vol: number): void {
@@ -2684,7 +2759,7 @@ class MusicBoxAudioEngine {
     } catch {
       // safe fallback
     }
-    this.resetIdleSleepTimer();
+    this.scheduleIdleSleep();
   }
 
   public cleanup(): void {

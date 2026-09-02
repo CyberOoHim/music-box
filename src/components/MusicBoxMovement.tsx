@@ -6,6 +6,8 @@ import {
   CombScaleId,
   TineNote,
   COMB_SCALES_MAP,
+  PowerSaveMode,
+  isIpadOrMobileDevice,
 } from '../types';
 import {
   Keyboard,
@@ -17,6 +19,7 @@ import {
   RotateCw,
   Zap,
   Sparkles,
+  Leaf,
 } from 'lucide-react';
 import { musicBoxAudio } from '../audio/musicBoxAudio';
 
@@ -38,6 +41,7 @@ interface MusicBoxMovementProps {
   crankRpm?: number;
   combScaleId?: CombScaleId;
   customTines?: TineNote[];
+  powerSaveMode?: PowerSaveMode;
   onChangeCombScale?: (scaleId: CombScaleId) => void;
   onPluckTine: (tineIndex: number) => void;
   onTogglePin?: (step: number, tineIndex: number) => void;
@@ -61,6 +65,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   crankRpm = 0,
   combScaleId = 'sankyo-18',
   customTines,
+  powerSaveMode = 'auto',
   onChangeCombScale,
   onPluckTine,
   onSubscribeStep,
@@ -75,6 +80,13 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   const governorFanRef = useRef<SVGGElement | null>(null);
   const nylonGearRef = useRef<SVGGElement | null>(null);
   const governorAngleRef = useRef<number>(0);
+
+  // Dynamic Eco / Power Saver Mode check for iPad & low-power configurations
+  const isEco = useMemo(() => {
+    if (powerSaveMode === 'battery-saver') return true;
+    if (powerSaveMode === 'performance') return false;
+    return isIpadOrMobileDevice();
+  }, [powerSaveMode]);
 
   // Miniature Rotary Jog Dial State & Handlers
   const miniJogRef = useRef<HTMLDivElement | null>(null);
@@ -253,7 +265,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
     setSmoothStep(currentStep);
   }, [currentStep]);
 
-  // High-performance Air-Friction Governor & Gear Train Animation Loop (sleeps when idle to save power)
+  // High-performance Air-Friction Governor & Gear Train Animation Loop with adaptive frame pacing
   useEffect(() => {
     const isCranking = playMode === 'crank' && crankRpm > 0.5;
     const shouldSpin = isPlaying || isCranking;
@@ -263,7 +275,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
     }
 
     let animId: number | null = null;
-    let lastTime = performance.now();
+    const targetFps = isEco ? 30 : 60; // 30 FPS for iPad / Eco battery saving; 60 FPS cap on 120Hz ProMotion
+    const frameInterval = 1000 / targetFps;
+    let lastRenderTime = performance.now();
+    let lastCalcTime = performance.now();
 
     const updateGovernor = (time: number) => {
       if (document.hidden) {
@@ -271,24 +286,29 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
         return;
       }
 
-      const deltaSec = Math.min(0.1, (time - lastTime) / 1000);
-      lastTime = time;
+      const elapsed = time - lastRenderTime;
+      if (elapsed >= frameInterval) {
+        lastRenderTime = time - (elapsed % frameInterval);
 
-      let speed = 0;
-      if (playMode === 'crank' && crankRpm > 0.5) {
-        speed = (crankRpm / 60) * Math.PI * 4.5;
-      } else {
-        const speedFactor = playMode === 'spring' ? Math.max(0.4, springTension) : 1.0;
-        speed = (tempoBpm / 90) * speedFactor * Math.PI * 3.8;
-      }
+        const deltaSec = Math.min(0.1, (time - lastCalcTime) / 1000);
+        lastCalcTime = time;
 
-      governorAngleRef.current += speed * deltaSec;
+        let speed = 0;
+        if (playMode === 'crank' && crankRpm > 0.5) {
+          speed = (crankRpm / 60) * Math.PI * 4.5;
+        } else {
+          const speedFactor = playMode === 'spring' ? Math.max(0.4, springTension) : 1.0;
+          speed = (tempoBpm / 90) * speedFactor * Math.PI * 3.8;
+        }
 
-      if (governorFanRef.current) {
-        governorFanRef.current.style.transform = `rotate(${governorAngleRef.current}rad)`;
-      }
-      if (nylonGearRef.current) {
-        nylonGearRef.current.style.transform = `rotate(${-governorAngleRef.current * 0.32}rad)`;
+        governorAngleRef.current += speed * deltaSec;
+
+        if (governorFanRef.current) {
+          governorFanRef.current.style.transform = `rotate(${governorAngleRef.current}rad)`;
+        }
+        if (nylonGearRef.current) {
+          nylonGearRef.current.style.transform = `rotate(${-governorAngleRef.current * 0.32}rad)`;
+        }
       }
 
       animId = requestAnimationFrame(updateGovernor);
@@ -301,7 +321,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
           animId = null;
         }
       } else if (!animId) {
-        lastTime = performance.now();
+        lastRenderTime = performance.now();
+        lastCalcTime = performance.now();
         animId = requestAnimationFrame(updateGovernor);
       }
     };
@@ -315,7 +336,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
         cancelAnimationFrame(animId);
       }
     };
-  }, [isPlaying, playMode, crankRpm, tempoBpm, springTension]);
+  }, [isPlaying, playMode, crankRpm, tempoBpm, springTension, isEco]);
 
   // Physical computer keyboard shortcuts handler to pluck tines
   useEffect(() => {
@@ -424,6 +445,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2b1e13] border border-[#523c24] text-[#caa87c] font-mono">
               {tinesCount} Tines • {COMB_SCALES_MAP[combScaleId]?.rangeLabel || ''}
             </span>
+            {isEco && (
+              <span
+                className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-[#1b2b18] border border-[#3b5e28] text-[#86efac] text-[10px] font-serif font-semibold"
+                title="Eco Power Saving Mode active: 30 FPS governor pacing, GPU-optimized glows, and Web Audio auto-sleep"
+              >
+                <Leaf className="w-3 h-3 text-[#4ade80]" />
+                <span className="hidden xs:inline">Eco</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center space-x-2 sm:space-x-2.5 text-xs font-serif text-[#a68d72]">
@@ -796,7 +826,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             {/* 3. AIR FRICTION GOVERNOR & GEAR TRAIN (BOTTOM LEFT) */}
             <g transform="translate(100, 185)">
               {/* Intermediate Ivory Nylon Gear */}
-              <g ref={nylonGearRef}>
+              <g ref={nylonGearRef} style={{ willChange: 'transform' }}>
                 <circle r="26" fill="#f8f4e2" stroke="#d5caa8" strokeWidth="1.5" />
                 {/* Nylon Gear Teeth */}
                 {Array.from({ length: 18 }).map((_, gIdx) => {
@@ -829,7 +859,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 />
 
                 {/* Spinning Black Butterfly Air Fan */}
-                <g ref={governorFanRef} id="governorFan">
+                <g ref={governorFanRef} id="governorFan" style={{ willChange: 'transform' }}>
                   {/* Blade 1 */}
                   <rect
                     x="-24"
@@ -977,10 +1007,10 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   {/* Pin Strike Glow Spark */}
                   {item.isStriking && (
                     <circle
-                      r="10"
+                      r={isEco ? 8 : 10}
                       fill="#ffeb99"
-                      opacity="0.85"
-                      filter="url(#sparkGlow)"
+                      opacity={isEco ? 0.95 : 0.85}
+                      filter={isEco ? undefined : 'url(#sparkGlow)'}
                     />
                   )}
                   {/* 3D Pin Bead */}
@@ -1066,8 +1096,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                         height={tineBottomY - tineTopY + 8}
                         rx="3"
                         fill="#ffea8a"
-                        opacity="0.45"
-                        filter="url(#sparkGlow)"
+                        opacity={isEco ? 0.6 : 0.45}
+                        filter={isEco ? undefined : 'url(#sparkGlow)'}
                       />
                     )}
 
