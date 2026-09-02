@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+GEMINI.md
+gemini.md
+
