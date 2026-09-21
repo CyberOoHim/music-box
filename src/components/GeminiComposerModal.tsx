@@ -157,11 +157,11 @@ const COMB_CHOICES: { id: CombScaleId; label: string; tines: number; range: stri
   { id: 'flat-major-18', label: 'Flat Major 18N', tines: 18, range: 'Bb4–Eb7', desc: 'Eb / Bb / Ab Major rich lullabies' },
 ];
 
-export type ComposerEngineId = 'auto' | 'gemini-3.7-flash' | 'gemini-3.1-flash-lite' | 'procedural';
+export type ComposerEngineId = 'auto' | 'gemini-3.8-flash' | 'gemini-3.1-flash-lite' | 'procedural';
 
 const ENGINE_CHOICES: { id: ComposerEngineId; label: string; desc: string }[] = [
-  { id: 'auto', label: 'Auto (Gemini 3.7 Flash)', desc: 'Best AI quality with fast fallback' },
-  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', desc: 'Complex harmonies & melodic reasoning' },
+  { id: 'auto', label: 'Auto (Gemini 3.8 Flash)', desc: 'Best AI quality with fast fallback' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', desc: 'Complex harmonies & melodic reasoning' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', desc: 'Fast & lightweight AI arrangement' },
   { id: 'procedural', label: 'Procedural Engine (Offline)', desc: 'Instant algorithmic physical sequencer' },
 ];
@@ -527,7 +527,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           pins: data.pins || [],
           createdAt: Date.now(),
           isAiGenerated: true,
-          modelUsed: data.modelUsed || (engineToUse === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : 'gemini-3.7-flash'),
+          modelUsed: data.modelUsed || (engineToUse === 'gemini-3.1-flash-lite' ? 'gemini-3.1-flash-lite' : 'gemini-3.8-flash'),
         };
         setGeneratedSong(newSong);
         return;
@@ -644,14 +644,14 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const renderModelBadge = (modelUsed?: string) => {
     if (!modelUsed) return null;
 
-    if (modelUsed === 'gemini-3.7-flash') {
+    if (modelUsed === 'gemini-3.8-flash' || modelUsed === 'gemini-3.7-flash') {
       return (
         <span
           className="text-[11px] font-serif font-bold px-2 py-0.5 rounded-md bg-[#dfcd9f] text-[#342718] border border-[#bfa175] flex items-center gap-1 shadow-2xs"
-          title="Generated with Gemini 3.7 Flash Model"
+          title="Generated with Gemini 3.8 Flash Model"
         >
           <Sparkles className="w-3 h-3 text-[#8a6b3e] fill-[#8a6b3e]" />
-          Gemini 3.7 Flash
+          Gemini 3.8 Flash
         </span>
       );
     }
@@ -1367,8 +1367,8 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                         ? 'Compose (Procedural Engine)'
                         : selectedEngine === 'gemini-3.1-flash-lite'
                         ? 'Compose (Gemini 3.1 Flash Lite)'
-                        : selectedEngine === 'gemini-3.7-flash'
-                        ? 'Compose (Gemini 3.7)'
+                        : selectedEngine === 'gemini-3.8-flash'
+                        ? 'Compose (Gemini 3.8)'
                         : 'Compose with Gemini'}
                     </span>
                   </>
