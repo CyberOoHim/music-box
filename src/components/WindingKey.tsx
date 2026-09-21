@@ -29,6 +29,7 @@ interface WindingKeyProps {
   onRewind?: () => void;
   tempoBpm?: number;
   onChangeTempoBpm?: (bpm: number) => void;
+  onOpenRecordModal?: () => void;
 }
 
 export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
@@ -43,6 +44,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
   onRewind,
   tempoBpm = 88,
   onChangeTempoBpm,
+  onOpenRecordModal,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -772,6 +774,17 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
                     className="p-1 rounded-md bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
+                  </button>
+                )}
+                {onOpenRecordModal && (
+                  <button
+                    id="winding-record-btn"
+                    onClick={onOpenRecordModal}
+                    title="Play & Record Studio (.wav / .mp3)"
+                    className="p-1 rounded-md bg-[#eee5d3] hover:bg-[#ebd9c8] text-[#8a2d1d] border border-[#d6be8e] transition cursor-pointer flex items-center gap-1 px-1.5"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#c0392b] animate-pulse" />
+                    <span className="text-[10px] font-mono font-bold text-[#8a2d1d]">REC</span>
                   </button>
                 )}
               </div>

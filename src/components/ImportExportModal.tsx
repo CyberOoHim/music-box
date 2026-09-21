@@ -17,6 +17,7 @@ import {
   FolderArchive,
   RefreshCw,
   Plus,
+  Radio,
 } from 'lucide-react';
 
 interface ImportExportModalProps {
@@ -31,6 +32,7 @@ interface ImportExportModalProps {
   onRestoreSongsDefault: () => void;
   onRestoreSettingsDefault: () => void;
   showToast: (msg: string, type?: 'success' | 'info' | 'warn') => void;
+  onOpenRecordModal?: () => void;
 }
 
 type ModalTab = 'export' | 'import' | 'restore';
@@ -47,6 +49,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   onRestoreSongsDefault,
   onRestoreSettingsDefault,
   showToast,
+  onOpenRecordModal,
 }) => {
   const [activeTab, setActiveTab] = useState<ModalTab>('export');
   const [jsonText, setJsonText] = useState('');
@@ -422,6 +425,39 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   >
                     <Copy className="w-3.5 h-3.5 text-[#8a765e]" />
                     <span>Copy Bundle JSON</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 3: Audio Recording Studio (.wav / .mp3) */}
+              <div className="p-4 rounded-xl bg-[#fcfbf8] border border-[#ded3be] space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#c0392b] animate-pulse" />
+                    <span className="font-serif font-bold text-sm text-[#433422]">
+                      Audio Studio Recording (.WAV / .MP3)
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#faebd4] text-[#8a6b3e] font-mono font-bold border border-[#d8caa8]">
+                    Lossless & MP3
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#75644e] font-serif-sub">
+                  Record studio-quality audio with 1, 2, or 3 turn repetitions, natural chime ring-outs, and lead-in/lead-out silences.
+                </p>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenRecordModal?.();
+                    }}
+                    className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#b34028] via-[#c94d34] to-[#9c321c] hover:from-[#9c321c] hover:to-[#842714] text-[#fbf8f2] text-xs font-serif font-bold flex items-center space-x-1.5 transition shadow-xs cursor-pointer"
+                  >
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>Open Play & Record Studio</span>
                   </button>
                 </div>
               </div>

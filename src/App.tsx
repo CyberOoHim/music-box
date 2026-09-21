@@ -24,6 +24,18 @@ import { NatureAmbianceMixer } from './components/NatureAmbianceMixer';
 import { SongLibrary } from './components/SongLibrary';
 import { ImportExportModal } from './components/ImportExportModal';
 import {
+  PlayRecordModal,
+  RecordingState,
+  PlayRecordConfig,
+} from './components/PlayRecordModal';
+import {
+  AudioRecorder,
+  RecordedAudioSession,
+  encodeWav,
+  encodeMp3,
+  cleanupRecordedSession,
+} from './audio/audioRecorder';
+import {
   Sparkles,
   Music,
   RotateCcw,
@@ -40,6 +52,7 @@ import {
   AlertCircle,
   Play,
   Pause,
+  Radio,
 } from 'lucide-react';
 
 type TabView = 'movement' | 'editor' | 'nature' | 'library';
@@ -140,6 +153,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabView>('movement');
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
+
+  // Play & Record Studio state
+  const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [recordingConfig, setRecordingConfig] = useState<PlayRecordConfig>({
+    turns: 2,
+    interTurnSilence: 1.5,
+    leadInPadding: 1.0,
+    leadOutPadding: 1.5,
+    includeAmbiance: false,
+  });
+  const [recordingCurrentTurn, setRecordingCurrentTurn] = useState(1);
+  const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
+  const [recordingPeakLevel, setRecordingPeakLevel] = useState(0);
+  const [recordedSession, setRecordedSession] = useState<RecordedAudioSession | null>(null);
   // Gemini AI Status & Client API Key
   const [clientApiKey, setClientApiKey] = useState<string>(() => {
     try {
@@ -302,9 +330,20 @@ export default function App() {
   const springTensionRef = useRef(springTension);
   const playModeRef = useRef(playMode);
   const tempoBpmRef = useRef(tempoBpm);
+  const soundPresetRef = useRef(soundPreset);
   const stepTimerRef = useRef<number | null>(null);
   const lastStepTimeRef = useRef<number>(0);
   const subStepRef = useRef<number>(0);
+
+  // Play & Record Studio Refs
+  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const recordingStateRef = useRef<RecordingState>('idle');
+  const recordingConfigRef = useRef<PlayRecordConfig>(recordingConfig);
+  const recordingCurrentTurnRef = useRef<number>(1);
+  const recordingTimerRef = useRef<number | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const elapsedIntervalRef = useRef<number | null>(null);
+  const handleFinalizeRecordingRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   const stepSubscribersRef = useRef<Set<(step: number) => void>>(new Set());
   const notifyStepSubscribers = useCallback((step: number) => {
@@ -326,7 +365,11 @@ export default function App() {
     springTensionRef.current = springTension;
     playModeRef.current = playMode;
     tempoBpmRef.current = tempoBpm;
-  }, [isPlaying, currentStep, currentSong, combScaleId, springTension, playMode, tempoBpm]);
+    soundPresetRef.current = soundPreset;
+    recordingConfigRef.current = recordingConfig;
+    recordingStateRef.current = recordingState;
+    recordingCurrentTurnRef.current = recordingCurrentTurn;
+  }, [isPlaying, currentStep, currentSong, combScaleId, springTension, playMode, tempoBpm, soundPreset, recordingConfig, recordingState, recordingCurrentTurn]);
 
   // Apply audio settings on initial mount
   useEffect(() => {
@@ -510,8 +553,8 @@ export default function App() {
 
         let speedFactor = 1.0;
 
-        // Realistic spring unwinding physics
-        if (playModeRef.current === 'spring') {
+        // Realistic spring unwinding physics (bypassed during multi-turn recording)
+        if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
           const tension = springTensionRef.current;
           if (tension <= 0.0001) {
             isPlayingRef.current = false;
@@ -539,12 +582,69 @@ export default function App() {
           lastStepTimeRef.current = timestamp;
 
           // Consume tension in spring mode (100% powers 3 full song rotations)
-          if (playModeRef.current === 'spring') {
+          if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
             const tensionPerStep = 1.0 / (3 * total);
             springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
           }
 
           const nextStep = (currentStepRef.current + 1) % total;
+
+          // Check if a full turn rotation completed while recording
+          if (nextStep === 0 && recordingStateRef.current === 'recording-turn') {
+            const currentTurn = recordingCurrentTurnRef.current;
+            const targetTurns = recordingConfigRef.current.turns;
+
+            if (currentTurn < targetTurns) {
+              // Pause playback for inter-turn silence allowing chime harmonics to ring down
+              isPlayingRef.current = false;
+              setIsPlaying(false);
+              musicBoxAudio.setMechanicalHum(false);
+              currentStepRef.current = 0;
+              setCurrentStep(0);
+              notifyStepSubscribers(0);
+
+              recordingStateRef.current = 'inter-turn-silence';
+              setRecordingState('inter-turn-silence');
+
+              recordingTimerRef.current = window.setTimeout(() => {
+                if (recordingStateRef.current !== 'inter-turn-silence') return;
+                const nextTurnNum = currentTurn + 1;
+                recordingCurrentTurnRef.current = nextTurnNum;
+                setRecordingCurrentTurn(nextTurnNum);
+                recordingStateRef.current = 'recording-turn';
+                setRecordingState('recording-turn');
+
+                isPlayingRef.current = true;
+                setIsPlaying(true);
+                musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+                lastStepTimeRef.current = performance.now();
+                executeStep(0);
+              }, recordingConfigRef.current.interTurnSilence * 1000);
+
+              return;
+            } else {
+              // Target turns reached: pause playback and transition to lead-out
+              isPlayingRef.current = false;
+              setIsPlaying(false);
+              musicBoxAudio.setMechanicalHum(false);
+              currentStepRef.current = 0;
+              setCurrentStep(0);
+              notifyStepSubscribers(0);
+
+              recordingStateRef.current = 'lead-out';
+              setRecordingState('lead-out');
+
+              // Chime ring-out (2.0s) + lead-out padding
+              const leadOutTotalMs = (2.0 + recordingConfigRef.current.leadOutPadding) * 1000;
+              recordingTimerRef.current = window.setTimeout(() => {
+                if (recordingStateRef.current !== 'lead-out') return;
+                handleFinalizeRecordingRef.current();
+              }, leadOutTotalMs);
+
+              return;
+            }
+          }
+
           currentStepRef.current = nextStep;
           executeStep(nextStep);
           notifyStepSubscribers(nextStep);
@@ -706,6 +806,243 @@ export default function App() {
     currentStepRef.current = 0;
     subStepRef.current = 0;
   };
+
+  // ==========================================
+  // PLAY & RECORD STUDIO HANDLERS
+  // ==========================================
+  const handleFinalizeRecording = useCallback(async () => {
+    if (elapsedIntervalRef.current) {
+      clearInterval(elapsedIntervalRef.current);
+      elapsedIntervalRef.current = null;
+    }
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    musicBoxAudio.setMechanicalHum(false);
+    musicBoxAudio.setRecording(false);
+
+    if (!audioRecorderRef.current) {
+      recordingStateRef.current = 'idle';
+      setRecordingState('idle');
+      return;
+    }
+
+    recordingStateRef.current = 'encoding';
+    setRecordingState('encoding');
+
+    try {
+      const { leftBuffer, rightBuffer, durationSeconds, sampleRate } =
+        await audioRecorderRef.current.stop();
+      audioRecorderRef.current = null;
+
+      // Encode lossless 16-bit PCM stereo WAV
+      const wavBlob = encodeWav(leftBuffer, rightBuffer, sampleRate);
+      const wavUrl = URL.createObjectURL(wavBlob);
+
+      // Encode 192 kbps stereo MP3
+      const mp3Blob = encodeMp3(leftBuffer, rightBuffer, sampleRate, 192);
+      const mp3Url = URL.createObjectURL(mp3Blob);
+
+      const session: RecordedAudioSession = {
+        wavBlob,
+        mp3Blob,
+        wavUrl,
+        mp3Url,
+        durationSeconds,
+        sampleRate,
+        channels: 2,
+        songTitle: currentSongRef.current.title,
+        turns: recordingConfigRef.current.turns,
+        chamberPreset: soundPresetRef.current,
+      };
+
+      setRecordedSession(session);
+      recordingStateRef.current = 'complete';
+      setRecordingState('complete');
+      showToast(
+        `Master recording complete: "${currentSongRef.current.title}" (${recordingConfigRef.current.turns} ${recordingConfigRef.current.turns === 1 ? 'turn' : 'turns'})`,
+        'success'
+      );
+    } catch (err) {
+      console.error('Recording encoding failed:', err);
+      showToast('Failed to encode audio recording', 'warn');
+      recordingStateRef.current = 'idle';
+      setRecordingState('idle');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    handleFinalizeRecordingRef.current = handleFinalizeRecording;
+  }, [handleFinalizeRecording]);
+
+  const handleStartRecording = useCallback(
+    async (config: PlayRecordConfig) => {
+      // 1. Clean up any previous session
+      if (recordedSession) {
+        cleanupRecordedSession(recordedSession);
+        setRecordedSession(null);
+      }
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      if (elapsedIntervalRef.current) {
+        clearInterval(elapsedIntervalRef.current);
+        elapsedIntervalRef.current = null;
+      }
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.cancel();
+        audioRecorderRef.current = null;
+      }
+
+      recordingConfigRef.current = config;
+      setRecordingConfig(config);
+
+      // 2. Resume & configure audio engine
+      await musicBoxAudio.resumeIfNeeded();
+      musicBoxAudio.setRecording(true);
+
+      // 3. Stop any current playback & rewind cleanly
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      musicBoxAudio.setMechanicalHum(false);
+      currentStepRef.current = 0;
+      setCurrentStep(0);
+      subStepRef.current = 0;
+      notifyStepSubscribers(0);
+
+      // 4. Get recording audio tap
+      const sourceNode = musicBoxAudio.getRecordingNode(config.includeAmbiance);
+      const audioCtx = musicBoxAudio.getAudioContext();
+
+      if (!sourceNode || !audioCtx) {
+        showToast('Web Audio engine not ready for recording', 'warn');
+        musicBoxAudio.setRecording(false);
+        return;
+      }
+
+      // 5. Initialize recorder and start capturing
+      const recorder = new AudioRecorder();
+      recorder.start({
+        sourceNode,
+        audioContext: audioCtx,
+        onLevelUpdate: (level) => setRecordingPeakLevel(level),
+      });
+      audioRecorderRef.current = recorder;
+
+      // 6. Set state to lead-in
+      recordingStateRef.current = 'lead-in';
+      setRecordingState('lead-in');
+      recordingCurrentTurnRef.current = 1;
+      setRecordingCurrentTurn(1);
+      setRecordingElapsedSeconds(0);
+      setRecordingPeakLevel(0);
+
+      const startTime = Date.now();
+      recordingStartTimeRef.current = startTime;
+
+      elapsedIntervalRef.current = window.setInterval(() => {
+        setRecordingElapsedSeconds((Date.now() - startTime) / 1000);
+      }, 100);
+
+      // 7. Schedule lead-in expiration -> start turn 1
+      recordingTimerRef.current = window.setTimeout(() => {
+        if (recordingStateRef.current !== 'lead-in') return;
+        recordingStateRef.current = 'recording-turn';
+        setRecordingState('recording-turn');
+
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+        musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+        lastStepTimeRef.current = performance.now();
+        executeStep(0);
+      }, config.leadInPadding * 1000);
+    },
+    [recordedSession, showToast, executeStep, notifyStepSubscribers]
+  );
+
+  const handleStopEarlyAndExport = useCallback(() => {
+    if (recordingStateRef.current !== 'idle' && recordingStateRef.current !== 'complete') {
+      handleFinalizeRecording();
+    }
+  }, [handleFinalizeRecording]);
+
+  const handleCancelRecording = useCallback(() => {
+    if (elapsedIntervalRef.current) {
+      clearInterval(elapsedIntervalRef.current);
+      elapsedIntervalRef.current = null;
+    }
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (audioRecorderRef.current) {
+      audioRecorderRef.current.cancel();
+      audioRecorderRef.current = null;
+    }
+
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    musicBoxAudio.setMechanicalHum(false);
+    musicBoxAudio.setRecording(false);
+    musicBoxAudio.scheduleIdleSleep();
+
+    recordingStateRef.current = 'idle';
+    setRecordingState('idle');
+    setRecordingPeakLevel(0);
+    setRecordingElapsedSeconds(0);
+    showToast('Recording cancelled', 'info');
+  }, [showToast]);
+
+  const handleRecordAgain = useCallback(() => {
+    if (recordedSession) {
+      cleanupRecordedSession(recordedSession);
+      setRecordedSession(null);
+    }
+    recordingStateRef.current = 'idle';
+    setRecordingState('idle');
+    setRecordingPeakLevel(0);
+    setRecordingElapsedSeconds(0);
+  }, [recordedSession]);
+
+  // Clean up recorded session on unmount
+  useEffect(() => {
+    return () => {
+      if (recordedSession) {
+        cleanupRecordedSession(recordedSession);
+      }
+      if (elapsedIntervalRef.current) {
+        clearInterval(elapsedIntervalRef.current);
+      }
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+      }
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.cancel();
+      }
+    };
+  }, [recordedSession]);
+
+  const estimatedTotalSeconds = useMemo(() => {
+    const totalSteps = currentSong.totalSteps || 64;
+    const bpm = tempoBpm || 88;
+    const turnDuration = (totalSteps * 15) / bpm;
+    const numTurns = recordingConfig.turns;
+    const songPlayTime = numTurns * turnDuration;
+    const pauses = (numTurns - 1) * recordingConfig.interTurnSilence;
+    const ringout = 2.0;
+    return (
+      recordingConfig.leadInPadding +
+      songPlayTime +
+      pauses +
+      ringout +
+      recordingConfig.leadOutPadding
+    );
+  }, [currentSong, tempoBpm, recordingConfig]);
 
   // Winding action
   const handleWindSpring = (added: number) => {
@@ -1599,6 +1936,18 @@ export default function App() {
                   {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
                 </button>
 
+                {/* Quick Play & Record Studio Button */}
+                <button
+                  id="top-banner-record-btn"
+                  onClick={() => setIsRecordModalOpen(true)}
+                  title="Play & Record Studio (.wav / .mp3)"
+                  className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#ebd9c8] border border-[#ded3be] text-[#8a2d1d] hover:text-[#a8321e] transition shadow-xs cursor-pointer flex items-center justify-center group"
+                >
+                  <span className="relative flex items-center justify-center">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#c0392b] group-hover:scale-110 transition-transform" />
+                  </span>
+                </button>
+
                 <button
                   id="rewind-step-btn"
                   onClick={handleRewind}
@@ -1646,6 +1995,7 @@ export default function App() {
               onRewind={handleRewind}
               tempoBpm={tempoBpm}
               onChangeTempoBpm={setTempoBpm}
+              onOpenRecordModal={() => setIsRecordModalOpen(true)}
             />
           </div>
         )}
@@ -1690,6 +2040,7 @@ export default function App() {
               onRewind={handleRewind}
               tempoBpm={tempoBpm}
               onChangeTempoBpm={setTempoBpm}
+              onOpenRecordModal={() => setIsRecordModalOpen(true)}
             />
           </div>
         )}
@@ -1777,6 +2128,26 @@ export default function App() {
         onRestoreSongsDefault={handleRestoreSongsDefault}
         onRestoreSettingsDefault={handleRestoreSettingsDefault}
         showToast={showToast}
+        onOpenRecordModal={() => setIsRecordModalOpen(true)}
+      />
+
+      {/* Play & Record Studio Modal */}
+      <PlayRecordModal
+        isOpen={isRecordModalOpen}
+        onClose={() => setIsRecordModalOpen(false)}
+        currentSong={currentSong}
+        chamberPreset={soundPreset}
+        recordingState={recordingState}
+        recordingCurrentTurn={recordingCurrentTurn}
+        recordingTargetTurns={recordingConfig.turns}
+        elapsedSeconds={recordingElapsedSeconds}
+        estimatedTotalSeconds={estimatedTotalSeconds}
+        peakLevel={recordingPeakLevel}
+        recordedSession={recordedSession}
+        onStartRecording={handleStartRecording}
+        onStopEarlyAndExport={handleStopEarlyAndExport}
+        onCancelRecording={handleCancelRecording}
+        onRecordAgain={handleRecordAgain}
       />
     </div>
   );

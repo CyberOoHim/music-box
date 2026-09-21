@@ -21,12 +21,14 @@ class MusicBoxAudioEngine {
   private chamberConvolver: ConvolverNode | null = null;
   private dryGain: GainNode | null = null;
   private wetGain: GainNode | null = null;
+  private recordingTapGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
 
   // Mechanical background noise nodes
   private gearGain: GainNode | null = null;
   private gearOsc: OscillatorNode | null = null;
   public isMechanicalHumActive = false;
+  public isRecording = false;
 
   // Nature ambiance nodes & lazy state tracking
   private natureMasterGain: GainNode | null = null;
@@ -203,6 +205,12 @@ class MusicBoxAudioEngine {
         this.chamberConvolver.connect(this.wetGain);
         this.wetGain.connect(this.masterGain);
 
+        // Dedicated studio recording tap for pure chime capture (without gear or nature hum)
+        this.recordingTapGain = this.ctx.createGain();
+        this.recordingTapGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+        this.dryGain.connect(this.recordingTapGain);
+        this.wetGain.connect(this.recordingTapGain);
+
         // Mechanical gear hum & governor click generator
         this.setupGearHum();
 
@@ -272,10 +280,30 @@ class MusicBoxAudioEngine {
     }
   }
 
+  public setRecording(active: boolean): void {
+    this.isRecording = active;
+    if (active) {
+      this.cancelIdleSleep();
+    } else {
+      this.scheduleIdleSleep();
+    }
+  }
+
+  public getAudioContext(): AudioContext | null {
+    return this.ctx;
+  }
+
+  public getRecordingNode(includeAmbiance = false): GainNode | null {
+    if (includeAmbiance) {
+      return this.masterGain;
+    }
+    return this.recordingTapGain;
+  }
+
   public scheduleIdleSleep(): void {
     this.cancelIdleSleep();
     const hasNature = Object.values(this.currentNatureSettings).some((v) => v > 0.01);
-    if (hasNature || this.isMechanicalHumActive || this.activeVoiceStoppers.size > 0) {
+    if (hasNature || this.isMechanicalHumActive || this.isRecording || this.activeVoiceStoppers.size > 0) {
       return;
     }
     // Auto-suspend AudioContext after 3.5s of complete silence to preserve battery on iPad & mobile
@@ -286,6 +314,7 @@ class MusicBoxAudioEngine {
         this.ctx.state === 'running' &&
         this.activeVoiceStoppers.size === 0 &&
         !this.isMechanicalHumActive &&
+        !this.isRecording &&
         !hasNatureNow
       ) {
         try {
