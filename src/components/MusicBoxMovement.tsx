@@ -375,6 +375,11 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   const drumHeight = 105;
   const drumTop = 40;
   const strikeLineY = drumTop + drumHeight - 8; // y = 137
+  const cylinderCenterY = drumTop + drumHeight / 2; // y = 92.5
+  const cylinderRadius = drumHeight / 2; // R = 52.5
+  // Exact angular position on the cylinder corresponding to comb tine tips (strike line)
+  // sin(phiStrike) = (strikeLineY - cylinderCenterY) / cylinderRadius
+  const phiStrike = Math.asin((strikeLineY - cylinderCenterY) / cylinderRadius);
 
   // Calculate visible pins on the revolving drum surface
   // Cylinder wraps totalSteps across 360 degrees.
@@ -398,20 +403,27 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
       if (stepDelta < -totalSteps / 2) stepDelta += totalSteps;
       if (stepDelta > totalSteps / 2) stepDelta -= totalSteps;
 
-      // Visible arc: stepDelta between -12 and +24
-      const angle = (stepDelta / totalSteps) * Math.PI * 2; // in radians
-      // Project angle on cylindrical drum: 0 rad = strike line (y = strikeLineY)
-      // angle > 0: approaching from top of drum
-      // angle < 0: just passed under comb
-      if (angle >= -0.35 && angle <= 1.45) {
-        // Vertical projection on curved surface
-        const normY = (1.45 - angle) / 1.8; // 0 (top of drum) to 1 (strike line)
-        const py = drumTop + 14 + normY * (drumHeight - 26);
+      // Angular distance from the comb strike line (radians, cylinder turns top -> comb)
+      const angleDelta = (stepDelta / totalSteps) * Math.PI * 2;
+      // Pin cylinder surface angle (phi: 0 at horizontal equator, negative towards top, positive towards bottom)
+      const phi = phiStrike - angleDelta;
+
+      // Visible arc on the front face of the revolving cylinder:
+      // From near top edge (phi ≈ -1.22 rad) to just past comb strike line (phi ≈ 1.25 rad)
+      if (phi >= -1.22 && phi <= 1.25) {
+        // Authentic orthographic projection of the curved cylindrical surface
+        // When stepDelta === 0, angleDelta === 0, phi === phiStrike, and py === strikeLineY exactly
+        const py = cylinderCenterY + cylinderRadius * Math.sin(phi);
         const px = drumLeft + (pin.tineIndex + 0.5) * slotWidth;
 
+        // Pin is striking exactly at the comb tine tip
         const isStriking = Math.abs(stepDelta) < 0.65;
-        const opacity = Math.max(0.25, Math.min(1.0, 1.0 - Math.abs(normY - 0.95) * 0.7));
-        const scale = isStriking ? 1.4 : 0.75 + normY * 0.35;
+
+        // Surface normal cos(phi) provides natural 3D foreshortening & shading
+        const cosPhi = Math.max(0.18, Math.cos(phi));
+        // Pins appear foreshortened near top horizon, bright and distinct near strike line
+        const opacity = Math.min(1.0, cosPhi * 1.15 + (phi > 0 ? 0.15 : 0));
+        const scale = isStriking ? 1.35 : 0.72 + cosPhi * 0.35;
 
         visible.push({
           pin,
@@ -425,7 +437,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
     });
 
     return visible;
-  }, [pins, smoothStep, totalSteps, tinesCount, drumLeft, drumWidth, drumHeight, drumTop]);
+  }, [pins, smoothStep, totalSteps, tinesCount, drumLeft, drumWidth, drumHeight, drumTop, cylinderCenterY, cylinderRadius, phiStrike]);
 
   return (
     <div className="relative w-full max-w-4xl mx-auto flex flex-col items-center select-none">
@@ -1074,9 +1086,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 const isActive = activeTines.has(idx);
                 const isHovered = hoveredTine === idx;
 
-                // Bass tines (left) are physically longer; treble tines (right) are shorter
-                const tineLengthDelta = ((tinesCount - 1 - idx) / tinesCount) * 12;
-                const tineTopY = strikeLineY - (isActive ? 3 : 0) + (12 - tineLengthDelta) * 0.25;
+                // All comb tine tips align precisely at the cylinder contact strike line, with slight downward pluck deflection
+                const tineTopY = strikeLineY + (isActive ? 1.5 : 0);
                 const tineBottomY = 222;
 
                 return (
@@ -1147,6 +1158,30 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   </g>
                 );
               })}
+
+              {/* Striking Pin Highlight Overlay (Ensures pin bead and spark shine right at the comb contact point) */}
+              {visiblePins.filter((item) => item.isStriking).map((item, pIdx) => (
+                <g key={`striking-pin-overlay-${pIdx}`} transform={`translate(${item.x}, ${item.y})`}>
+                  <circle
+                    r={isEco ? 8 : 11}
+                    fill="#ffeb99"
+                    opacity={isEco ? 0.95 : 0.9}
+                    filter={isEco ? undefined : 'url(#sparkGlow)'}
+                  />
+                  <circle
+                    r={4.2}
+                    fill="url(#pinBeadGrad)"
+                    stroke="#ffe58f"
+                    strokeWidth="1.2"
+                  />
+                  <circle
+                    cx={-1.3}
+                    cy={-1.3}
+                    r={1.4}
+                    fill="#ffffff"
+                  />
+                </g>
+              ))}
             </g>
           </svg>
         </div>

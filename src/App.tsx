@@ -499,17 +499,21 @@ export default function App() {
 
         const stepInterval = (60000 / tempoBpmRef.current / 4) / speedFactor;
 
+        // Smooth sub-step interpolation for continuous cylinder rotation
+        const total = currentSongRef.current.totalSteps;
+        const fraction = Math.min(0.999, Math.max(0, elapsed / stepInterval));
+        const subStep = (currentStepRef.current + fraction) % total;
+        notifyStepSubscribers(subStep);
+
         if (elapsed >= stepInterval) {
           lastStepTimeRef.current = timestamp;
 
           // Consume tension in spring mode (100% powers 3 full song rotations)
           if (playModeRef.current === 'spring') {
-            const total = currentSongRef.current.totalSteps;
             const tensionPerStep = 1.0 / (3 * total);
             springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
           }
 
-          const total = currentSongRef.current.totalSteps;
           const nextStep = (currentStepRef.current + 1) % total;
           currentStepRef.current = nextStep;
           executeStep(nextStep);
