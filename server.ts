@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -17,12 +18,16 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Security hardening
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '100kb' }));
 
 // Lazy getter for GoogleGenAI
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) return null;
   if (!aiClient) {
     aiClient = new GoogleGenAI({
@@ -517,6 +522,14 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
 });
 
 async function startServer() {
+  // Shield: Block direct requests to server bundle, sourcemaps, or environment files
+  app.use((req, res, next) => {
+    if (/\.(env|cjs|mjs|map|ts)$/i.test(req.path) || req.path.includes('server')) {
+      return res.status(404).end();
+    }
+    next();
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -524,12 +537,25 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Serve client assets from isolated dist/client directory
+    const clientDist = path.join(process.cwd(), 'dist', 'client');
+    const staticPath = fs.existsSync(clientDist) ? clientDist : path.join(process.cwd(), 'dist');
+    app.use(express.static(staticPath, {
+      dotfiles: 'ignore',
+      index: 'index.html',
+    }));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(path.join(staticPath, 'index.html'));
     });
   }
+
+  // Centralized safe error handler: prevents unhandled errors or stack traces from reaching clients
+  app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[Internal Server Error]', err instanceof Error ? err.message : err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'An unexpected internal server error occurred.' });
+    }
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Music Box Server running on http://0.0.0.0:${PORT}`);

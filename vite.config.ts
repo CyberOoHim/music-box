@@ -1,15 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // Security guard: Fail build immediately if API keys are mistakenly prefixed with VITE_
+  const env = loadEnv(mode, process.cwd(), '');
+  if (env.VITE_GEMINI_API_KEY || env.VITE_API_KEY) {
+    throw new Error(
+      'SECURITY FATAL: Do NOT prefix GEMINI_API_KEY with VITE_! Variables with the VITE_ prefix are bundled into the public client JavaScript.'
+    );
+  }
+
   return {
     base: './',
+    build: {
+      outDir: 'dist/client',
+      emptyOutDir: true,
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, 'src'),
       },
     },
     server: {
