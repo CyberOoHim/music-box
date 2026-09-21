@@ -379,10 +379,10 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
   // Determine models to try based on user selection
   const modelsToTry =
     requestedModel === 'gemini-3.7-flash'
-      ? ['gemini-3.7-flash']
+      ? ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite']
       : requestedModel === 'gemini-3.1-flash-lite'
-      ? ['gemini-3.1-flash-lite']
-      : ['gemini-3.7-flash', 'gemini-3.1-flash-lite'];
+      ? ['gemini-3.1-flash-lite', 'gemini-3.8-flash']
+      : ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite'];
 
   if (ai) {
     for (const model of modelsToTry) {

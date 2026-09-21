@@ -520,6 +520,7 @@ export function prefersReducedMotion(): boolean {
 export function formatModelDisplayName(model?: string, isAi?: boolean): string {
   if (!model && !isAi) return '';
   if (!model) return 'Gemini AI';
+  if (model === 'gemini-3.8-flash') return 'Gemini 3.8 Flash';
   if (model === 'gemini-3.7-flash') return 'Gemini 3.7 Flash';
   if (model === 'gemini-3.1-flash-lite') return 'Gemini 3.1 Flash Lite';
   if (model === 'gemini-2.5-flash') return 'Gemini 2.5 Flash';
