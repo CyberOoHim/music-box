@@ -111,10 +111,20 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             <button
               id="library-gemini-compose-btn"
               onClick={onOpenGeminiModal}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition cursor-pointer"
+              className={
+                hasAiComposer
+                  ? "px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs border border-[#ae8b54]/40 transition cursor-pointer"
+                  : "px-3 py-1.5 rounded-xl bg-[#ede6da] hover:bg-[#e4dcce] text-[#8c7e6c] border border-[#d5cbba] text-xs font-serif font-medium flex items-center space-x-1.5 shadow-none transition cursor-pointer opacity-75 hover:opacity-100"
+              }
+              title={hasAiComposer ? "AI Music Box Composer" : "AI features muted: No API key provided (click to configure or use offline engine)"}
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className={`w-3.5 h-3.5 ${hasAiComposer ? 'fill-[#2d2419]' : 'text-[#8c7e6c]'}`} />
               <span>AI Compose</span>
+              {!hasAiComposer && (
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[#ded5c6] text-[#706454] font-mono leading-none">
+                  No Key
+                </span>
+              )}
             </button>
           )}
 
@@ -156,19 +166,30 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
             { id: 'nature', label: 'Relaxing' },
             { id: 'ai', label: 'Gemini AI' },
             { id: 'custom', label: 'Custom' },
-          ].map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-2.5 py-1 rounded-lg font-serif transition whitespace-nowrap cursor-pointer ${
-                selectedCategory === cat.id
-                  ? 'bg-[#433422] text-[#fbf8f2] font-semibold shadow-xs'
-                  : 'text-[#6f5e49] hover:text-[#2d2419]'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
+          ].map((cat) => {
+            const isAi = cat.id === 'ai';
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                title={isAi && !hasAiComposer ? 'Gemini AI songs (AI composer muted: No API key provided)' : undefined}
+                className={`px-2.5 py-1 rounded-lg font-serif transition whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+                  selectedCategory === cat.id
+                    ? 'bg-[#433422] text-[#fbf8f2] font-semibold shadow-xs'
+                    : isAi && !hasAiComposer
+                    ? 'text-[#9c8e7c] hover:text-[#5e4c36] opacity-75'
+                    : 'text-[#6f5e49] hover:text-[#2d2419]'
+                }`}
+              >
+                <span>{cat.label}</span>
+                {isAi && !hasAiComposer && (
+                  <span className="text-[9px] px-1 rounded bg-[#ded5c6] text-[#706454] font-mono">
+                    Muted
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

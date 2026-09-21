@@ -34,6 +34,9 @@ interface GeminiComposerModalProps {
   onClose: () => void;
   onLoadSong: (song: MusicBoxSong) => void;
   hasAiComposer?: boolean;
+  serverHasApiKey?: boolean;
+  clientApiKey?: string;
+  onSaveClientApiKey?: (apiKey: string) => void;
   requiresPasscode?: boolean;
   initialCombScaleId?: CombScaleId;
 }
@@ -171,12 +174,15 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   onClose,
   onLoadSong,
   hasAiComposer = true,
+  serverHasApiKey = false,
+  clientApiKey = '',
+  onSaveClientApiKey,
   requiresPasscode = false,
   initialCombScaleId = 'romantic-flat',
 }) => {
   const [composerMode, setComposerMode] = useState<'transcription' | 'creative'>('transcription');
   const [prompt, setPrompt] = useState('');
-  const [selectedEngine, setSelectedEngine] = useState<ComposerEngineId>('auto');
+  const [selectedEngine, setSelectedEngine] = useState<ComposerEngineId>(() => (hasAiComposer ? 'auto' : 'procedural'));
   const [selectedStylePreset, setSelectedStylePreset] = useState('classical');
   const [customStyleText, setCustomStyleText] = useState('');
   const [totalSteps, setTotalSteps] = useState<number>(128);
@@ -184,6 +190,45 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedSong, setGeneratedSong] = useState<MusicBoxSong | null>(null);
+
+  // Client API key state inside modal
+  const [apiKeyInput, setApiKeyInput] = useState<string>(clientApiKey || '');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySuccessMsg, setApiKeySuccessMsg] = useState<string | null>(null);
+  const [isApiKeyExpanderOpen, setIsApiKeyExpanderOpen] = useState<boolean>(() => !hasAiComposer);
+
+  // Auto-switch to procedural engine if AI features are muted (no API key)
+  useEffect(() => {
+    if (!hasAiComposer && selectedEngine !== 'procedural') {
+      setSelectedEngine('procedural');
+    }
+  }, [hasAiComposer, selectedEngine]);
+
+  // Sync clientApiKey prop into local input
+  useEffect(() => {
+    setApiKeyInput(clientApiKey || '');
+  }, [clientApiKey]);
+
+  const handleSaveApiKey = () => {
+    const trimmed = apiKeyInput.trim();
+    if (onSaveClientApiKey) {
+      onSaveClientApiKey(trimmed);
+    }
+    setApiKeySuccessMsg(trimmed ? 'Gemini API key saved! AI composition features unlocked.' : 'API key cleared.');
+    setTimeout(() => setApiKeySuccessMsg(null), 3500);
+    if (trimmed) {
+      setIsApiKeyExpanderOpen(false);
+    }
+  };
+
+  const handleClearApiKey = () => {
+    setApiKeyInput('');
+    if (onSaveClientApiKey) {
+      onSaveClientApiKey('');
+    }
+    setApiKeySuccessMsg('API key removed. AI features muted.');
+    setTimeout(() => setApiKeySuccessMsg(null), 3500);
+  };
 
   // Local storage passcode authentication state
   const [passcode, setPasscode] = useState<string>(() => {
@@ -441,6 +486,13 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
       return;
     }
 
+    // API key check before invoking LLM API
+    if (engineToUse !== 'procedural' && !hasAiComposer) {
+      setError('No Gemini API key provided. AI models are muted. Please provide an API key below or switch to the Procedural Engine.');
+      setIsApiKeyExpanderOpen(true);
+      return;
+    }
+
     // Passcode validation check before invoking LLM API
     if (engineToUse !== 'procedural' && requiresPasscode) {
       if (!passcode.trim()) {
@@ -501,6 +553,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         headers: {
           'Content-Type': 'application/json',
           'X-Composer-Passcode': passcode.trim(),
+          ...(clientApiKey ? { 'X-Gemini-Api-Key': clientApiKey.trim() } : {}),
         },
         signal: controller.signal,
         body: JSON.stringify({
@@ -511,6 +564,7 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
           model: engineToUse,
           mode: modeToUse,
           passcode: passcode.trim(),
+          apiKey: clientApiKey?.trim() || undefined,
         }),
       });
 
@@ -697,15 +751,26 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#e5dcce]">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#f0e6d6] border border-[#d8caa8] flex items-center justify-center text-[#8a6b3e] shadow-2xs">
+            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shadow-2xs ${
+              hasAiComposer ? 'bg-[#f0e6d6] border-[#d8caa8] text-[#8a6b3e]' : 'bg-[#eae3d5] border-[#d0c5b3] text-[#8c7e6c]'
+            }`}>
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
-                Gemini AI Music Box Composer
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422]">
+                  Gemini AI Music Box Composer
+                </h2>
+                {!hasAiComposer && (
+                  <span className="px-2 py-0.5 rounded-full bg-[#ded5c6] text-[#706454] border border-[#cfc4b2] text-[10px] font-mono font-medium">
+                    AI Muted (No API Key)
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-[#75644e] font-serif-sub italic">
-                Compose custom mechanical cylinder arrangements arranged for tuned steel comb scales.
+                {hasAiComposer
+                  ? 'Compose custom mechanical cylinder arrangements arranged for tuned steel comb scales.'
+                  : 'No Gemini API key provided. AI models are muted; offline procedural engine is active.'}
               </p>
             </div>
           </div>
@@ -720,6 +785,23 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto py-4 space-y-5 custom-scrollbar pr-1">
+          {/* Muted Warning Banner when no API key is provided */}
+          {!hasAiComposer && (
+            <div className="p-3.5 rounded-xl bg-[#f4ede2] border border-[#d8cbbb] text-[#6b5840] text-xs font-serif flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+              <AlertCircle className="w-4 h-4 text-[#9c7844] shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#4a3a25]">Gemini AI features are currently muted</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#e5dcce] text-[#705e46]">
+                    API Key Missing
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#75634d] leading-relaxed">
+                  No Gemini API key was detected. AI models (Gemini 3.8 Flash and Gemini 3.1 Flash Lite) are muted and disabled. You can provide an API key below to unlock AI composition, or compose using the <strong>Procedural Engine (Offline)</strong>.
+                </p>
+              </div>
+            </div>
+          )}
           {/* Mode Switcher: Classical Motif Transcription vs Creative Improvisation */}
           <div className="flex items-center p-1 rounded-xl bg-[#ede4d4] border border-[#d8caa8]">
             <button
@@ -868,6 +950,152 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Gemini API Key Configuration (Stored in LocalStorage & Expandable) */}
+          {hasAiComposer && !isApiKeyExpanderOpen ? (
+            <div className="p-3 rounded-xl bg-[#f5f1e8] border border-[#d6caa8] shadow-2xs transition-all duration-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-[#e2edd8] border border-[#b9d9a4] flex items-center justify-center text-[#3e6826] shrink-0 shadow-2xs">
+                    <Key className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-serif font-bold text-[#433422]">
+                        Gemini API Key
+                      </span>
+                      <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded font-semibold bg-[#e2edd8] text-[#3e6826] border border-[#b9d9a4] flex items-center gap-1">
+                        <Check className="w-2.5 h-2.5" />
+                        {serverHasApiKey ? 'Server Configured' : 'Browser Key Active'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#75644e] font-serif-sub italic truncate">
+                      {serverHasApiKey
+                        ? 'Configured via server GEMINI_API_KEY environment variable. AI composition unlocked.'
+                        : 'Custom Gemini API key active in browser storage. AI composition unlocked.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsApiKeyExpanderOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#ebdcc7] hover:bg-[#dfcdb5] text-[#5c462b] hover:text-[#2d2419] text-xs font-serif font-medium border border-[#cfbe9e] transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs"
+                  title="Configure or change Gemini API key"
+                >
+                  <span>Configure Key</span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={`p-3 sm:p-3.5 rounded-xl border space-y-2.5 shadow-2xs transition-all duration-200 ${
+              hasAiComposer ? 'bg-[#f7f2e8] border-[#ded3be]' : 'bg-[#f7efe3] border-[#d8cbbb]'
+            }`}>
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="gemini-api-key-input"
+                  className="text-xs font-serif font-bold text-[#433422] flex items-center gap-1.5"
+                >
+                  <Key className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Gemini API Key</span>
+                  {hasAiComposer ? (
+                    <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded font-semibold bg-[#e2edd8] text-[#3e6826] border border-[#b9d9a4] flex items-center gap-1">
+                      <Check className="w-2.5 h-2.5" />
+                      {serverHasApiKey ? 'Server Configured' : 'Browser Key Active'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] uppercase font-serif px-1.5 py-0.5 rounded font-semibold bg-[#ded5c6] text-[#706454] border border-[#cfc4b2] flex items-center gap-1">
+                      <AlertCircle className="w-2.5 h-2.5" />
+                      No Key Provided (AI Muted)
+                    </span>
+                  )}
+                </label>
+
+                {hasAiComposer && (
+                  <button
+                    type="button"
+                    onClick={() => setIsApiKeyExpanderOpen(false)}
+                    className="p-1 rounded text-[#8a765e] hover:text-[#2d2419] hover:bg-[#ebdcc7]/60 transition"
+                    title="Collapse API key configuration"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status Message */}
+              {apiKeySuccessMsg && (
+                <div className="p-2 rounded-lg bg-[#f0f7ec] border border-[#b9d9a4] text-[#3e6826] text-xs font-serif flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>{apiKeySuccessMsg}</span>
+                </div>
+              )}
+
+              {serverHasApiKey && !clientApiKey && (
+                <p className="text-xs text-[#5c462b] font-serif bg-[#eedfc9]/50 p-2 rounded-lg border border-[#ded3be]">
+                  ✓ A server-level API key is already configured via <code className="font-mono font-bold">GEMINI_API_KEY</code>. You can optionally enter a personal key override below.
+                </p>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    id="gemini-api-key-input"
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder={serverHasApiKey ? 'Server key active (optional key override)...' : 'Enter Gemini API Key (AIzaSy...)...'}
+                    className="w-full rounded-lg bg-[#fdfcf9] border border-[#cfbe9e] focus:border-[#bfa175] focus:ring-1 focus:ring-[#bfa175] pl-3 pr-10 py-2 text-xs text-[#2d2419] placeholder-[#9f8f7c] font-mono outline-none shadow-2xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8a765e] hover:text-[#2d2419] transition cursor-pointer"
+                    title={showApiKey ? 'Hide API key' : 'Show API key'}
+                  >
+                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleSaveApiKey}
+                    className="px-3 py-2 rounded-lg bg-[#433422] hover:bg-[#2d2419] text-[#fbf8f2] text-xs font-serif font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Key</span>
+                  </button>
+
+                  {clientApiKey && (
+                    <button
+                      type="button"
+                      onClick={handleClearApiKey}
+                      className="px-2.5 py-2 rounded-lg bg-[#ede0d0] hover:bg-[#e0cfbd] text-[#75593b] hover:text-[#523d24] text-xs font-serif transition shadow-2xs cursor-pointer shrink-0"
+                      title="Clear saved browser API key"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-[#75644e] font-serif-sub italic">
+                <span>
+                  Keys are stored in browser localStorage.
+                </span>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#8a6b3e] hover:text-[#5c462b] underline not-italic font-semibold"
+                >
+                  Get a free Gemini API Key →
+                </a>
+              </div>
+            </div>
+          )}
 
           {/* AI Composer Passcode Authentication (Stored in LocalStorage & Expandable) */}
           {authStatus === 'verified' && !isPasscodeExpanderOpen ? (
@@ -1082,12 +1310,21 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
                   onChange={(e) => setSelectedEngine(e.target.value as ComposerEngineId)}
                   className="w-full rounded-lg bg-[#f8f5ee] border border-[#ded3be] px-2.5 py-2 text-xs text-[#2d2419] outline-none focus:border-[#bfa175] font-serif shadow-2xs cursor-pointer"
                 >
-                  {ENGINE_CHOICES.map((choice) => (
-                    <option key={choice.id} value={choice.id}>
-                      {choice.label}
-                    </option>
-                  ))}
+                  {ENGINE_CHOICES.map((choice) => {
+                    const isGemini = choice.id !== 'procedural';
+                    const isMuted = isGemini && !hasAiComposer;
+                    return (
+                      <option key={choice.id} value={choice.id} disabled={isMuted}>
+                        {choice.label} {isMuted ? '(Muted - No Key)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
+                {!hasAiComposer && (
+                  <span className="text-[10px] text-[#8a6b3e] italic block mt-1">
+                    AI models muted without API key. Procedural engine active.
+                  </span>
+                )}
               </div>
 
               {/* Comb Scale Selector */}
@@ -1291,90 +1528,109 @@ export const GeminiComposerModal: React.FC<GeminiComposerModalProps> = ({
 
           {/* Right Actions: Compose / Regenerate / Load */}
           <div className="flex items-center gap-2">
-            {generatedSong ? (
-              <>
-                {/* Re-generate Variation Button */}
+            {(() => {
+              const isEngineAvailable = hasAiComposer || selectedEngine === 'procedural';
+              return generatedSong ? (
+                <>
+                  {/* Re-generate Variation Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleGenerate()}
+                    disabled={isLoading || !prompt.trim() || !isEngineAvailable}
+                    className={`px-3.5 py-2.5 rounded-xl font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 border transition shadow-2xs ${
+                      !isEngineAvailable
+                        ? 'bg-[#ede6da] text-[#8c7e6c] border-[#d5cbba] cursor-not-allowed opacity-60 shadow-none'
+                        : 'bg-[#f4eee4] hover:bg-[#eae2d3] text-[#433422] border-[#ded3be] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer'
+                    }`}
+                    title={isEngineAvailable ? 'Generate another variation with the same prompt & style' : 'AI composition muted: No API key provided'}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Composing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className={`w-3.5 h-3.5 ${isEngineAvailable ? 'text-[#8a6b3e]' : 'text-[#8c7e6c]'}`} />
+                        <span>{isEngineAvailable ? 'Regenerate Variation' : 'Regenerate (Muted)'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Load Into Cylinder Button */}
+                  {!isLoading && (
+                    <button
+                      type="button"
+                      onClick={handleApplySong}
+                      className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Load Into Music Box</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                /* Initial Compose Button */
                 <button
                   type="button"
                   onClick={() => handleGenerate()}
-                  disabled={isLoading || !prompt.trim()}
-                  className="px-3.5 py-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] text-[#433422] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 border border-[#ded3be] disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-2xs"
-                  title="Generate another variation with the same prompt & style"
+                  disabled={isLoading || !prompt.trim() || !isEngineAvailable}
+                  className={
+                    !isEngineAvailable
+                      ? 'px-5 py-2.5 rounded-xl bg-[#ded6c8] text-[#8c7e6c] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 border border-[#cfc5b4] cursor-not-allowed opacity-60 shadow-none'
+                      : selectedEngine === 'procedural'
+                      ? 'px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 shadow-xs border border-[#342718] transition cursor-pointer'
+                      : 'px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 shadow-xs border border-[#ae8b54]/40 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer'
+                  }
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Composing...</span>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>
+                        {selectedEngine === 'procedural'
+                          ? composerMode === 'transcription'
+                            ? 'Transcribing Motif...'
+                            : 'Sequencing Procedurally...'
+                          : selectedEngine === 'gemini-3.1-flash-lite'
+                          ? composerMode === 'transcription'
+                            ? 'Transcribing with Gemini 3.1...'
+                            : 'Composing with Gemini 3.1...'
+                          : composerMode === 'transcription'
+                          ? 'Transcribing with Gemini...'
+                          : 'Composing with Gemini...'}
+                      </span>
                     </>
                   ) : (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 text-[#8a6b3e]" />
-                      <span>Regenerate Variation</span>
+                      {composerMode === 'transcription' ? (
+                        <BookOpen className="w-4 h-4" />
+                      ) : selectedEngine === 'procedural' ? (
+                        <Cpu className="w-4 h-4" />
+                      ) : (
+                        <Wand2 className={`w-4 h-4 ${!isEngineAvailable ? 'text-[#8c7e6c]' : ''}`} />
+                      )}
+                      <span>
+                        {!isEngineAvailable
+                          ? composerMode === 'transcription'
+                            ? 'Transcribe Motif (Muted - No Key)'
+                            : 'Compose with Gemini (Muted - No Key)'
+                          : composerMode === 'transcription'
+                          ? selectedEngine === 'procedural'
+                            ? 'Transcribe Motif (Procedural Engine)'
+                            : 'Transcribe Motif (Faithful Score)'
+                          : selectedEngine === 'procedural'
+                          ? 'Compose (Procedural Engine)'
+                          : selectedEngine === 'gemini-3.1-flash-lite'
+                          ? 'Compose (Gemini 3.1 Flash Lite)'
+                          : selectedEngine === 'gemini-3.8-flash'
+                          ? 'Compose (Gemini 3.8)'
+                          : 'Compose with Gemini'}
+                      </span>
                     </>
                   )}
                 </button>
-
-                {/* Load Into Cylinder Button */}
-                {!isLoading && (
-                  <button
-                    type="button"
-                    onClick={handleApplySong}
-                    className="px-5 py-2.5 rounded-xl bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] font-serif font-bold text-xs sm:text-sm flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>Load Into Music Box</span>
-                  </button>
-                )}
-              </>
-            ) : (
-              /* Initial Compose Button */
-              <button
-                type="button"
-                onClick={() => handleGenerate()}
-                disabled={isLoading || !prompt.trim()}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] font-serif font-bold text-xs sm:text-sm flex items-center space-x-2 shadow-xs border border-[#ae8b54]/40 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>
-                      {selectedEngine === 'procedural'
-                        ? composerMode === 'transcription'
-                          ? 'Transcribing Motif...'
-                          : 'Sequencing Procedurally...'
-                        : selectedEngine === 'gemini-3.1-flash-lite'
-                        ? composerMode === 'transcription'
-                          ? 'Transcribing with Gemini 3.1...'
-                          : 'Composing with Gemini 3.1...'
-                        : composerMode === 'transcription'
-                        ? 'Transcribing with Gemini...'
-                        : 'Composing with Gemini...'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    {composerMode === 'transcription' ? (
-                      <BookOpen className="w-4 h-4" />
-                    ) : selectedEngine === 'procedural' ? (
-                      <Cpu className="w-4 h-4" />
-                    ) : (
-                      <Wand2 className="w-4 h-4" />
-                    )}
-                    <span>
-                      {composerMode === 'transcription'
-                        ? 'Transcribe Motif (Faithful Score)'
-                        : selectedEngine === 'procedural'
-                        ? 'Compose (Procedural Engine)'
-                        : selectedEngine === 'gemini-3.1-flash-lite'
-                        ? 'Compose (Gemini 3.1 Flash Lite)'
-                        : selectedEngine === 'gemini-3.8-flash'
-                        ? 'Compose (Gemini 3.8)'
-                        : 'Compose with Gemini'}
-                    </span>
-                  </>
-                )}
-              </button>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>

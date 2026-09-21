@@ -26,20 +26,24 @@ app.use(express.json({ limit: '100kb' }));
 
 // Lazy getter for GoogleGenAI
 let aiClient: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+function getGeminiClient(clientKeyOverride?: string): GoogleGenAI | null {
+  const apiKey = (clientKeyOverride || process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) return null;
-  if (!aiClient) {
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
+  if (!clientKeyOverride && aiClient) {
+    return aiClient;
   }
-  return aiClient;
+  const client = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+  if (!clientKeyOverride) {
+    aiClient = client;
+  }
+  return client;
 }
 
 // Health check endpoint
@@ -49,12 +53,18 @@ app.get('/api/health', (req, res) => {
 
 // Check if Gemini AI composer is enabled and if passcode protection is active
 app.get('/api/gemini/status', (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const hasApiKey = Boolean(apiKey && apiKey.trim().length > 0);
+  const clientApiKey = (
+    (typeof req.headers['x-gemini-api-key'] === 'string' ? req.headers['x-gemini-api-key'] : '') ||
+    (typeof req.query.apiKey === 'string' ? req.query.apiKey : '')
+  ).trim();
+  const envApiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const hasServerKey = envApiKey.length > 0;
+  const hasApiKey = Boolean(hasServerKey || clientApiKey.length > 0);
   const serverPasscode = (process.env.AI_COMPOSER_PASSCODE || process.env.COMPOSER_PASSCODE || '').trim();
   res.json({
     enabled: true,
     hasApiKey,
+    hasServerKey,
     requiresPasscode: serverPasscode.length > 0,
   });
 });
@@ -210,7 +220,12 @@ app.post('/api/gemini/compose', async (req, res) => {
   const requestedMode = req.body.mode === 'transcription' ? 'transcription' : 'creative';
   const isTranscription = requestedMode === 'transcription';
 
-  const ai = getGeminiClient();
+  const clientApiKey = (
+    (typeof req.body?.apiKey === 'string' ? req.body.apiKey : '') ||
+    (typeof req.headers['x-gemini-api-key'] === 'string' ? req.headers['x-gemini-api-key'] : '')
+  ).trim();
+
+  const ai = getGeminiClient(clientApiKey || undefined);
 
   const selectedComb = COMB_TUNINGS[combScaleId];
   const tineMax = selectedComb.tinesCount - 1;
@@ -387,8 +402,14 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
       ? ['gemini-3.1-flash-lite', 'gemini-3.8-flash']
       : ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
 
-  if (ai) {
-    for (const model of modelsToTry) {
+  if (!ai) {
+    return res.status(400).json({
+      error: 'No Gemini API key provided. Please configure GEMINI_API_KEY in the server environment or provide an API key in the composer modal.',
+      hasApiKey: false,
+    });
+  }
+
+  for (const model of modelsToTry) {
       try {
         console.log(`[AI Composer] Generating music with ${model}...`);
 
@@ -513,7 +534,6 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
         console.warn(`[AI Composer] Model ${model} attempt error:`, err instanceof Error ? err.message : err);
       }
     }
-  }
 
   // Graceful procedural fallback if API surges occur
   console.log('[AI Composer] Using acoustic procedural music generator fallback.');

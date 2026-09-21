@@ -8,4 +8,5 @@ coverage/
 !.env.example
 GEMINI.md
 gemini.md
+bun.lock
 

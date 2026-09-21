@@ -140,30 +140,60 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabView>('movement');
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
-  const [hasAiComposer, setHasAiComposer] = useState<boolean>(true);
+  // Gemini AI Status & Client API Key
+  const [clientApiKey, setClientApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('musicbox_gemini_api_key') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [serverHasApiKey, setServerHasApiKey] = useState<boolean>(false);
   const [requiresPasscode, setRequiresPasscode] = useState<boolean>(false);
 
-  // Check if AI Composer passcode protection is active
+  // Effective AI Composer availability: true if server has key OR user provided client key
+  const hasAiComposer = Boolean(serverHasApiKey || clientApiKey.trim().length > 0);
+
+  const handleSaveClientApiKey = useCallback((newKey: string) => {
+    const trimmed = newKey.trim();
+    setClientApiKey(trimmed);
+    try {
+      if (trimmed) {
+        localStorage.setItem('musicbox_gemini_api_key', trimmed);
+      } else {
+        localStorage.removeItem('musicbox_gemini_api_key');
+      }
+    } catch (e) {
+      console.warn('Could not save API key to localStorage', e);
+    }
+  }, []);
+
+  // Check if AI Composer is enabled on server and if passcode protection is active
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/gemini/status')
-      .then((res) => (res.ok ? res.json() : { enabled: true, requiresPasscode: false }))
+    const headers: Record<string, string> = {};
+    if (clientApiKey.trim()) {
+      headers['X-Gemini-Api-Key'] = clientApiKey.trim();
+    }
+
+    fetch('/api/gemini/status', { headers })
+      .then((res) => (res.ok ? res.json() : { enabled: true, hasApiKey: false, hasServerKey: false, requiresPasscode: false }))
       .then((data) => {
         if (isMounted) {
-          setHasAiComposer(true);
+          setServerHasApiKey(Boolean(data?.hasServerKey ?? data?.hasApiKey));
           setRequiresPasscode(Boolean(data?.requiresPasscode));
         }
       })
       .catch(() => {
         if (isMounted) {
-          setHasAiComposer(true);
+          setServerHasApiKey(false);
           setRequiresPasscode(false);
         }
       });
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [clientApiKey]);
 
   // Toast notification state
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -1343,11 +1373,25 @@ export default function App() {
           <button
             id="header-gemini-compose-btn"
             onClick={() => setIsGeminiModalOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40"
+            className={
+              hasAiComposer
+                ? "px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 shadow-xs transition-all hover:scale-[1.02] active:scale-[0.98] border border-[#ae8b54]/40 cursor-pointer"
+                : "px-3 py-1.5 rounded-xl bg-[#ede6da] hover:bg-[#e4dcce] text-[#8c7e6c] border border-[#d5cbba] text-xs font-serif font-medium flex items-center space-x-1.5 shadow-none transition-all cursor-pointer opacity-75 hover:opacity-100"
+            }
+            title={
+              hasAiComposer
+                ? "Compose original melody with Gemini AI"
+                : "AI features muted: No API key provided (click to configure or view offline options)"
+            }
           >
-            <Sparkles className="w-3.5 h-3.5 fill-[#2d2419]" />
+            <Sparkles className={`w-3.5 h-3.5 ${hasAiComposer ? 'fill-[#2d2419]' : 'text-[#8c7e6c]'}`} />
             <span className="hidden sm:inline">AI Compose</span>
             <span className="sm:hidden">AI</span>
+            {!hasAiComposer && (
+              <span className="text-[9px] px-1 py-0.2 rounded bg-[#ded5c6] text-[#706454] font-mono leading-none">
+                No Key
+              </span>
+            )}
           </button>
 
           {/* Master Mute Button */}
@@ -1679,7 +1723,7 @@ export default function App() {
               onOpenImportExportModal={() => setIsImportExportModalOpen(true)}
               onNewBlankSong={handleNewBlankSong}
               onDuplicateSong={handleDuplicateSong}
-              hasAiComposer={true}
+              hasAiComposer={hasAiComposer}
             />
           </div>
         )}
@@ -1703,7 +1747,10 @@ export default function App() {
         isOpen={isGeminiModalOpen}
         onClose={() => setIsGeminiModalOpen(false)}
         onLoadSong={handleLoadNewSong}
-        hasAiComposer={true}
+        hasAiComposer={hasAiComposer}
+        serverHasApiKey={serverHasApiKey}
+        clientApiKey={clientApiKey}
+        onSaveClientApiKey={handleSaveClientApiKey}
         requiresPasscode={requiresPasscode}
         initialCombScaleId={combScaleId}
       />
