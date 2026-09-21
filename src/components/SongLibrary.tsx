@@ -13,6 +13,7 @@ import {
   Sliders,
   Plus,
   Copy,
+  Share2,
 } from 'lucide-react';
 
 const DEFAULT_PRESET_IDS = new Set(DEFAULT_SONGS.map((s) => s.id));
@@ -28,6 +29,7 @@ interface SongLibraryProps {
   onOpenImportExportModal?: () => void;
   onNewBlankSong?: () => void;
   onDuplicateSong?: (song: MusicBoxSong) => void;
+  onShareSong?: (song: MusicBoxSong) => void;
   hasAiComposer?: boolean;
 }
 
@@ -42,6 +44,7 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
   onOpenImportExportModal,
   onNewBlankSong,
   onDuplicateSong,
+  onShareSong,
   hasAiComposer = true,
 }) => {
   const [search, setSearch] = useState('');
@@ -301,6 +304,20 @@ export const SongLibrary: React.FC<SongLibraryProps> = ({
                       className="p-1.5 rounded-lg hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition cursor-pointer"
                     >
                       <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {onShareSong && (
+                    <button
+                      id={`share-song-${song.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShareSong(song);
+                      }}
+                      title="Share cylinder via direct link or QR code"
+                      className="p-1.5 rounded-lg hover:bg-[#e8dfcf] text-[#8a765e] hover:text-[#433422] transition cursor-pointer"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
                     </button>
                   )}
 

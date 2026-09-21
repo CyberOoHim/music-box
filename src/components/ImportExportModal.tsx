@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Plus,
   Radio,
+  Share2,
 } from 'lucide-react';
 
 interface ImportExportModalProps {
@@ -33,6 +34,7 @@ interface ImportExportModalProps {
   onRestoreSettingsDefault: () => void;
   showToast: (msg: string, type?: 'success' | 'info' | 'warn') => void;
   onOpenRecordModal?: () => void;
+  onOpenShareModal?: (song: MusicBoxSong) => void;
 }
 
 type ModalTab = 'export' | 'import' | 'restore';
@@ -50,6 +52,7 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
   onRestoreSettingsDefault,
   showToast,
   onOpenRecordModal,
+  onOpenShareModal,
 }) => {
   const [activeTab, setActiveTab] = useState<ModalTab>('export');
   const [jsonText, setJsonText] = useState('');
@@ -364,6 +367,20 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">
+                  {onOpenShareModal && (
+                    <button
+                      id="export-share-url-btn"
+                      onClick={() => {
+                        onOpenShareModal(currentSong);
+                        onClose();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#8a6b3e] hover:bg-[#725730] text-[#fbf8f2] text-xs font-serif font-semibold flex items-center space-x-1.5 transition shadow-2xs"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share via URL / QR Code</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleExportSingleSong(currentSong)}
                     className="px-3 py-1.5 rounded-lg bg-[#433422] hover:bg-[#342718] text-[#fbf8f2] text-xs font-serif font-semibold flex items-center space-x-1.5 transition shadow-2xs"

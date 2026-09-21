@@ -35,6 +35,12 @@ import {
   encodeMp3,
   cleanupRecordedSession,
 } from './audio/audioRecorder';
+import { ShareSongModal } from './components/ShareSongModal';
+import {
+  parseCylinderFromUrl,
+  cleanUrlAddressBar,
+  sanitizeMusicBoxSong,
+} from './utils/songUrl';
 import {
   Sparkles,
   Music,
@@ -53,6 +59,7 @@ import {
   Play,
   Pause,
   Radio,
+  Share2,
 } from 'lucide-react';
 
 type TabView = 'movement' | 'editor' | 'nature' | 'library';
@@ -153,6 +160,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabView>('movement');
   const [isGeminiModalOpen, setIsGeminiModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareModalSong, setShareModalSong] = useState<MusicBoxSong | null>(null);
+  const [sharedSongNotice, setSharedSongNotice] = useState<{ song: MusicBoxSong; isPreset: boolean } | null>(null);
 
   // Play & Record Studio state
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
@@ -1457,6 +1467,71 @@ export default function App() {
     }
   }, [persistCustomSongs]);
 
+  // Open Share Cylinder modal with specified or current song
+  const handleOpenShareModal = useCallback((song?: MusicBoxSong) => {
+    setShareModalSong(song || currentSong);
+    setIsShareModalOpen(true);
+  }, [currentSong]);
+
+  // Save shared cylinder to local repertoire
+  const handleSaveSharedSongToLibrary = useCallback(() => {
+    if (!sharedSongNotice) return;
+    const songToSave = sharedSongNotice.song;
+    setSongs((prevSongs) => {
+      const exists = prevSongs.some((s) => s.id === songToSave.id);
+      const newSongList = exists ? prevSongs : [songToSave, ...prevSongs];
+      persistCustomSongs(newSongList);
+      return newSongList;
+    });
+    showToast(`Saved "${songToSave.title}" to your repertoire!`, 'success');
+    setSharedSongNotice(null);
+  }, [sharedSongNotice, persistCustomSongs, showToast]);
+
+  // Hydrate shared cylinder from URL hash fragment (#song=... or #preset=...)
+  useEffect(() => {
+    let isMounted = true;
+    const loadFromUrl = async () => {
+      try {
+        const parsed = await parseCylinderFromUrl(window.location);
+        if (parsed && isMounted) {
+          const cleanSong = sanitizeMusicBoxSong(parsed.song);
+          setCurrentSong(cleanSong);
+          currentSongRef.current = cleanSong;
+          if (cleanSong.combScaleId) {
+            setCombScaleId(cleanSong.combScaleId);
+            combScaleIdRef.current = cleanSong.combScaleId;
+          }
+          const songTempo = cleanSong.tempoBpm || 88;
+          setTempoBpm(songTempo);
+          tempoBpmRef.current = songTempo;
+          setCurrentStep(0);
+          currentStepRef.current = 0;
+          subStepRef.current = 0;
+          setSharedSongNotice({ song: cleanSong, isPreset: parsed.isPreset });
+          cleanUrlAddressBar();
+          showToast(`Opened shared cylinder: "${cleanSong.title}"`, 'success');
+        }
+      } catch (err) {
+        console.warn('Failed to parse shared cylinder from URL:', err);
+        if (isMounted) {
+          showToast('Could not load shared cylinder from link', 'warn');
+        }
+      }
+    };
+
+    loadFromUrl();
+
+    const handleHashChange = () => {
+      loadFromUrl();
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [showToast]);
+
   // Apply partial settings from imported bundle
   const handleApplySettings = useCallback(async (newSettings: Partial<UserSettings>) => {
     if (newSettings.soundPreset) {
@@ -1706,6 +1781,17 @@ export default function App() {
             )}
           </button>
 
+          {/* Share Cylinder Link & QR Trigger */}
+          <button
+            id="header-share-cylinder-btn"
+            onClick={() => handleOpenShareModal(currentSong)}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] text-xs font-serif font-semibold flex items-center space-x-1.5 transition shadow-2xs cursor-pointer"
+            title="Share this music box cylinder via direct link or QR code"
+          >
+            <Share2 className="w-3.5 h-3.5 text-[#8a765e]" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
+
           {/* Gemini AI Compose Action */}
           <button
             id="header-gemini-compose-btn"
@@ -1767,6 +1853,77 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+        {/* Received Shared Cylinder Banner */}
+        {sharedSongNotice && (
+          <div className="w-full max-w-4xl mx-auto rounded-2xl bg-gradient-to-r from-[#f9f5ed] via-[#fcfbf8] to-[#f6f0e4] border border-[#d8cbbb] p-4 shadow-[0_4px_24px_rgba(67,52,34,0.08)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#8a6b3e]/15 border border-[#8a6b3e]/30 flex items-center justify-center text-[#8a6b3e] shrink-0 shadow-2xs">
+                <Music className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold font-serif uppercase tracking-wider text-[#8a6b3e]">
+                    Shared Cylinder Received
+                  </span>
+                  {sharedSongNotice.isPreset ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 font-medium">
+                      Built-in Preset
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-medium">
+                      Custom Cylinder
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-sm sm:text-base font-serif font-bold text-[#433422] leading-tight mt-0.5">
+                  "{sharedSongNotice.song.title}"
+                </h4>
+                <p className="text-xs text-[#75644e] font-serif-sub mt-0.5">
+                  {sharedSongNotice.song.pins.length} pins • {sharedSongNotice.song.totalSteps || 64} steps •{' '}
+                  {sharedSongNotice.song.tempoBpm || 88} BPM •{' '}
+                  {COMB_SCALES_MAP[sharedSongNotice.song.combScaleId || 'romantic-flat']?.shortLabel || 'Romantic Flat 22N'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <button
+                onClick={handleSaveSharedSongToLibrary}
+                className="px-3 py-1.5 rounded-xl bg-[#8a6b3e] hover:bg-[#725730] text-[#fbf9f4] text-xs font-serif font-semibold shadow-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Save to Repertoire</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handlePlaySong(sharedSongNotice.song);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#433422] hover:bg-[#2d2419] text-[#fbf9f4] text-xs font-serif font-semibold shadow-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Play Now</span>
+              </button>
+
+              <button
+                onClick={() => handleOpenShareModal(sharedSongNotice.song)}
+                className="p-1.5 rounded-xl bg-[#ede6da] hover:bg-[#e0d6c4] text-[#5e4c36] transition cursor-pointer"
+                title="Reshare this cylinder"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={() => setSharedSongNotice(null)}
+                className="px-2 py-1 rounded-xl text-[#8a765e] hover:bg-[#eae0d1] hover:text-[#433422] transition text-xs font-bold cursor-pointer"
+                title="Dismiss notice"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* View Navigation Tabs */}
         <div className="w-full max-w-4xl mx-auto flex items-center justify-center">
           <div className="inline-flex p-1 rounded-2xl bg-[#eee7da] border border-[#ded3be] overflow-x-auto text-xs sm:text-sm font-medium shadow-xs">
@@ -2074,6 +2231,7 @@ export default function App() {
               onOpenImportExportModal={() => setIsImportExportModalOpen(true)}
               onNewBlankSong={handleNewBlankSong}
               onDuplicateSong={handleDuplicateSong}
+              onShareSong={handleOpenShareModal}
               hasAiComposer={hasAiComposer}
             />
           </div>
@@ -2129,6 +2287,15 @@ export default function App() {
         onRestoreSettingsDefault={handleRestoreSettingsDefault}
         showToast={showToast}
         onOpenRecordModal={() => setIsRecordModalOpen(true)}
+        onOpenShareModal={handleOpenShareModal}
+      />
+
+      {/* Share Cylinder Modal with direct link, compact encoded URL & QR code */}
+      <ShareSongModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        song={shareModalSong || currentSong}
+        showToast={showToast}
       />
 
       {/* Play & Record Studio Modal */}
