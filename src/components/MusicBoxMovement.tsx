@@ -196,13 +196,13 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
         jogRatchetAccumRef.current += delta;
         const RATCHET_STEP_RAD = (2 * Math.PI) / 16;
         if (jogRatchetAccumRef.current >= RATCHET_STEP_RAD) {
-          musicBoxAudio.playWindingClick();
+          musicBoxAudio.playRatchetClick(0.9);
           jogRatchetAccumRef.current %= RATCHET_STEP_RAD;
         }
       } else if (delta < -0.05) {
         jogRatchetAccumRef.current += Math.abs(delta);
         if (jogRatchetAccumRef.current > 0.35) {
-          musicBoxAudio.playWindingClick();
+          musicBoxAudio.playRatchetClick(0.7);
           jogRatchetAccumRef.current = 0;
         }
       }
@@ -227,7 +227,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
     if (wasTapped) {
       if (playMode === 'spring') {
-        musicBoxAudio.playWindingClick();
+        musicBoxAudio.playRatchetClick(1.0);
         onWindSpring?.(0.334);
       } else if (playMode === 'crank') {
         onManualCrankAdvance?.(0.2, 30);
@@ -237,7 +237,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
   const handleCyclePlayMode = () => {
     if (!onChangePlayMode) return;
-    musicBoxAudio.playWindingClick();
+    musicBoxAudio.playLeverClick(true);
     const modeCycle: PlayMode[] = ['spring', 'crank', 'continuous'];
     const nextIndex = (modeCycle.indexOf(playMode) + 1) % modeCycle.length;
     onChangePlayMode(modeCycle[nextIndex]);
@@ -441,8 +441,38 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
   return (
     <div className="relative w-full max-w-4xl mx-auto flex flex-col items-center select-none">
-      {/* Top-View Mechanical Movement Card */}
-      <div className="relative w-full rounded-2xl bg-[#17110a] p-3 sm:p-5 border border-[#8a6838]/60 shadow-[0_16px_40px_rgba(20,14,8,0.5)] overflow-hidden">
+      {/* Top-View Mechanical Movement Card in Heirloom Burl-Walnut Acoustic Cradle */}
+      <div className="relative w-full rounded-3xl burl-walnut-cradle p-3 sm:p-5 border-2 border-[#8a6838]/70 shadow-[0_20px_50px_rgba(14,9,5,0.75)] overflow-hidden">
+        {/* Antique Cast Brass Corner Reinforcement Brackets */}
+        <div className="absolute top-1 left-1 w-10 h-10 pointer-events-none z-20 brass-corner-bracket">
+          <svg viewBox="0 0 40 40" className="w-full h-full">
+            <path d="M 2,2 L 38,2 L 38,7 L 9,7 Q 7,7 7,9 L 7,38 L 2,38 Z" fill="#d4af62" stroke="#593f18" strokeWidth="0.9" />
+            <circle cx="16" cy="4.5" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+            <circle cx="4.5" cy="16" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+          </svg>
+        </div>
+        <div className="absolute top-1 right-1 w-10 h-10 pointer-events-none z-20 brass-corner-bracket -scale-x-100">
+          <svg viewBox="0 0 40 40" className="w-full h-full">
+            <path d="M 2,2 L 38,2 L 38,7 L 9,7 Q 7,7 7,9 L 7,38 L 2,38 Z" fill="#d4af62" stroke="#593f18" strokeWidth="0.9" />
+            <circle cx="16" cy="4.5" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+            <circle cx="4.5" cy="16" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+          </svg>
+        </div>
+        <div className="absolute bottom-1 left-1 w-10 h-10 pointer-events-none z-20 brass-corner-bracket -scale-y-100">
+          <svg viewBox="0 0 40 40" className="w-full h-full">
+            <path d="M 2,2 L 38,2 L 38,7 L 9,7 Q 7,7 7,9 L 7,38 L 2,38 Z" fill="#d4af62" stroke="#593f18" strokeWidth="0.9" />
+            <circle cx="16" cy="4.5" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+            <circle cx="4.5" cy="16" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+          </svg>
+        </div>
+        <div className="absolute bottom-1 right-1 w-10 h-10 pointer-events-none z-20 brass-corner-bracket -scale-100">
+          <svg viewBox="0 0 40 40" className="w-full h-full">
+            <path d="M 2,2 L 38,2 L 38,7 L 9,7 Q 7,7 7,9 L 7,38 L 2,38 Z" fill="#d4af62" stroke="#593f18" strokeWidth="0.9" />
+            <circle cx="16" cy="4.5" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+            <circle cx="4.5" cy="16" r="1.5" fill="#fff3c4" stroke="#4a3212" strokeWidth="0.6" />
+          </svg>
+        </div>
+
         {/* Ambient Warm Golden Glows */}
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-[#c99f52]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#a67c3b]/15 rounded-full blur-3xl pointer-events-none" />
@@ -605,7 +635,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 id="movement-quick-play-btn"
                 onClick={(e) => {
                   e.stopPropagation();
-                  musicBoxAudio.playWindingClick();
+                  musicBoxAudio.playLeverClick(!isPlaying);
                   onTogglePlay();
                 }}
                 title={
@@ -644,8 +674,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
           </div>
         </div>
 
-        {/* TOP-VIEW MECHANICAL MOVEMENT SVG VIEWPORT */}
-        <div className="relative w-full aspect-[780/270] bg-[#100b07] rounded-xl border border-[#523c24] overflow-hidden shadow-inner flex items-center justify-center">
+        {/* TOP-VIEW MECHANICAL MOVEMENT SVG VIEWPORT IN RECESSED SOUND CAVITY */}
+        <div className="relative w-full aspect-[780/270] bg-[#0d0905] rounded-2xl border-2 border-[#543b1c] overflow-hidden shadow-[inset_0_4px_20px_rgba(0,0,0,0.9),0_6px_20px_rgba(0,0,0,0.5)] ring-1 ring-[#c99f52]/40 flex items-center justify-center">
           <svg
             viewBox="0 0 780 270"
             className="w-full h-full block"
@@ -659,13 +689,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 <stop offset="100%" stopColor="#684f27" />
               </radialGradient>
 
-              {/* Polished Gold Cylinder Lathe Gradient */}
+              {/* Polished Gold Cylinder Lathe Gradient with 3D Specular Highlight Sweep */}
               <linearGradient id="drumLatheGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#f3e198" />
-                <stop offset="15%" stopColor="#dfbf6d" />
-                <stop offset="50%" stopColor="#c79f4c" />
-                <stop offset="85%" stopColor="#e8cf83" />
-                <stop offset="100%" stopColor="#96722d" />
+                <stop offset="0%" stopColor="#fdf2b8" />
+                <stop offset="8%" stopColor="#dfbf6d" />
+                <stop offset="22%" stopColor="#fff9de" />
+                <stop offset="38%" stopColor="#c79f4c" />
+                <stop offset="65%" stopColor="#9e7b36" />
+                <stop offset="82%" stopColor="#e8cf83" />
+                <stop offset="100%" stopColor="#634515" />
               </linearGradient>
 
               {/* Mainspring Drum Cap Gradient */}
@@ -678,25 +710,25 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
               {/* Brushed Steel Comb Base Gradient */}
               <linearGradient id="combBaseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#e2e6eb" />
+                <stop offset="0%" stopColor="#e8edf3" />
                 <stop offset="35%" stopColor="#c5cbd2" />
                 <stop offset="70%" stopColor="#9ea5ad" />
-                <stop offset="100%" stopColor="#697078" />
+                <stop offset="100%" stopColor="#646b73" />
               </linearGradient>
 
               {/* Steel Tine Normal Gradient */}
               <linearGradient id="steelTineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="25%" stopColor="#d5dbe2" />
-                <stop offset="80%" stopColor="#9aa1a9" />
-                <stop offset="100%" stopColor="#636a72" />
+                <stop offset="22%" stopColor="#dbe2ea" />
+                <stop offset="75%" stopColor="#9aa1a9" />
+                <stop offset="100%" stopColor="#5f666f" />
               </linearGradient>
 
               {/* Vibrating / Plucked Steel Tine Golden Glow Gradient */}
               <linearGradient id="tineGlowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="20%" stopColor="#ffe999" />
-                <stop offset="60%" stopColor="#f0c465" />
+                <stop offset="18%" stopColor="#fff0b3" />
+                <stop offset="55%" stopColor="#f0c465" />
                 <stop offset="100%" stopColor="#c98e28" />
               </linearGradient>
 
@@ -708,11 +740,27 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 <stop offset="100%" stopColor="#4a535c" />
               </radialGradient>
 
+              {/* Synthetic Ruby Jewel Bearing */}
+              <radialGradient id="rubyJewelGrad" cx="35%" cy="35%" r="65%">
+                <stop offset="0%" stopColor="#ff8da1" />
+                <stop offset="45%" stopColor="#e11d48" />
+                <stop offset="80%" stopColor="#9f1239" />
+                <stop offset="100%" stopColor="#4c0519" />
+              </radialGradient>
+
+              {/* Helical Worm Gear Spindle Gradient */}
+              <linearGradient id="wormScrewGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#523d20" />
+                <stop offset="35%" stopColor="#dfbf6d" />
+                <stop offset="65%" stopColor="#fff2ba" />
+                <stop offset="100%" stopColor="#7a5518" />
+              </linearGradient>
+
               {/* Brass Pin Bead Shading */}
               <radialGradient id="pinBeadGrad" cx="30%" cy="30%" r="70%">
-                <stop offset="0%" stopColor="#fff9e0" />
-                <stop offset="50%" stopColor="#f0c465" />
-                <stop offset="85%" stopColor="#b88320" />
+                <stop offset="0%" stopColor="#fffdf0" />
+                <stop offset="45%" stopColor="#f0c465" />
+                <stop offset="80%" stopColor="#b88320" />
                 <stop offset="100%" stopColor="#543706" />
               </radialGradient>
 
@@ -835,12 +883,12 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
               <line x1="-5" y1="0" x2="5" y2="0" stroke="#1c1409" strokeWidth="2" />
             </g>
 
-            {/* 3. AIR FRICTION GOVERNOR & GEAR TRAIN (BOTTOM LEFT) */}
+            {/* 3. HOROLOGICAL SPEED GOVERNOR & GEAR TRAIN (BOTTOM LEFT) */}
             <g transform="translate(100, 185)">
-              {/* Intermediate Ivory Nylon Gear */}
+              {/* Intermediate Ivory Nylon / Phosphor Bronze Meshing Gear */}
               <g ref={nylonGearRef} style={{ willChange: 'transform' }}>
                 <circle r="26" fill="#f8f4e2" stroke="#d5caa8" strokeWidth="1.5" />
-                {/* Nylon Gear Teeth */}
+                {/* Involute Gear Teeth */}
                 {Array.from({ length: 18 }).map((_, gIdx) => {
                   const gAngle = (gIdx / 18) * Math.PI * 2;
                   const tx = Math.cos(gAngle) * 26;
@@ -858,19 +906,34 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   );
                 })}
                 <circle r="9" fill="#caa35c" stroke="#8a6b3e" strokeWidth="1" />
+                {/* Center Arbor Screw */}
+                <circle r="3.5" fill="url(#chromeScrewGrad)" stroke="#3a2a16" strokeWidth="0.6" />
               </g>
 
-              {/* Governor Flywheel Spindle & Black Butterfly Air-Brake Fan */}
-              <g transform="translate(42, -6)">
-                {/* Gold Teardrop Top Cover Bracket */}
+              {/* Helical Worm Screw Spindle Meshing with Cylinder Spur Gear */}
+              <g transform="translate(24, 0)">
+                <rect x="-3.5" y="-18" width="7" height="36" rx="2" fill="url(#wormScrewGrad)" stroke="#4a3418" strokeWidth="0.8" />
+                {[-13, -7, -1, 5, 11].map((sy, i) => (
+                  <line key={`worm-thread-${i}`} x1="-3.5" y1={sy} x2="3.5" y2={sy + 3} stroke="#fae7b5" strokeWidth="1.2" />
+                ))}
+                {/* Upper and Lower Pivot Ruby Bearings */}
+                <circle cx="0" cy="-18" r="3" fill="url(#rubyJewelGrad)" stroke="#590d22" strokeWidth="0.6" />
+                <circle cx="0" cy="18" r="3" fill="url(#rubyJewelGrad)" stroke="#590d22" strokeWidth="0.6" />
+              </g>
+
+              {/* Governor Flywheel Spindle & Air-Friction Butterfly Fan */}
+              <g transform="translate(44, -6)">
+                {/* Horological Teardrop Top Cock Bracket with Polished Chamfer */}
                 <path
                   d="M -16,0 C -16,-10 16,-10 16,0 L 8,16 L -8,16 Z"
                   fill="#d4af62"
                   stroke="#684f27"
                   strokeWidth="1.2"
                 />
+                {/* Bracket Screws */}
+                <circle cx="0" cy="11" r="2.2" fill="url(#chromeScrewGrad)" stroke="#3a2a16" strokeWidth="0.5" />
 
-                {/* Spinning Black Butterfly Air Fan */}
+                {/* Spinning Dual-Vane Butterfly Air Fan */}
                 <g ref={governorFanRef} id="governorFan" style={{ willChange: 'transform' }}>
                   {/* Blade 1 */}
                   <rect
@@ -879,9 +942,9 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                     width="48"
                     height="10"
                     rx="2"
-                    fill="#18181b"
-                    stroke="#424248"
-                    strokeWidth="1"
+                    fill="#18181c"
+                    stroke="#484852"
+                    strokeWidth="0.9"
                   />
                   {/* Blade 2 (Cross) */}
                   <rect
@@ -890,16 +953,20 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                     width="10"
                     height="48"
                     rx="2"
-                    fill="#18181b"
-                    stroke="#424248"
-                    strokeWidth="1"
+                    fill="#18181c"
+                    stroke="#484852"
+                    strokeWidth="0.9"
                   />
-                  {/* Center Brass Hub */}
-                  <circle r="5" fill="#f0c465" stroke="#7a5518" strokeWidth="1" />
+                  {/* Specular Vane Edge Highlight */}
+                  <line x1="-22" y1="-4" x2="22" y2="-4" stroke="#71717a" strokeWidth="0.8" opacity="0.6" />
+                  <line x1="-4" y1="-22" x2="-4" y2="22" stroke="#71717a" strokeWidth="0.8" opacity="0.6" />
+                  {/* Center Turned Brass Hub */}
+                  <circle r="6" fill="#f0c465" stroke="#7a5518" strokeWidth="1" />
                 </g>
 
-                {/* Center Pivot Jewel */}
-                <circle r="3" fill="#ffffff" stroke="#98a4b0" strokeWidth="0.8" />
+                {/* Center Pivot Synthetic Ruby Jewel Bearing */}
+                <circle r="3.5" fill="url(#rubyJewelGrad)" stroke="#4c0519" strokeWidth="0.8" />
+                <circle cx="-1" cy="-1" r="1.2" fill="#ffffff" opacity="0.85" />
               </g>
             </g>
 
@@ -1016,16 +1083,25 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
               {/* Revolving Brass Song Pins on Drum */}
               {visiblePins.map((item, pIdx) => (
                 <g key={`pin-bead-${pIdx}`} transform={`translate(${item.x}, ${item.y})`}>
+                  {/* Cast shadow projection against curved brass drum surface */}
+                  <ellipse
+                    cx={1.8 * item.scale}
+                    cy={2.8 * item.scale}
+                    rx={3.2 * item.scale}
+                    ry={1.6 * item.scale}
+                    fill="#140b04"
+                    opacity={item.opacity * 0.65}
+                  />
                   {/* Pin Strike Glow Spark */}
                   {item.isStriking && (
                     <circle
-                      r={isEco ? 8 : 10}
+                      r={isEco ? 8 : 11}
                       fill="#ffeb99"
                       opacity={isEco ? 0.95 : 0.85}
                       filter={isEco ? undefined : 'url(#sparkGlow)'}
                     />
                   )}
-                  {/* 3D Pin Bead */}
+                  {/* 3D Pin Bead Needle Peg */}
                   <circle
                     r={3.8 * item.scale}
                     fill="url(#pinBeadGrad)"
@@ -1078,16 +1154,19 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 <line x1="-8" y1="0" x2="8" y2="0" stroke="#16181b" strokeWidth="2.5" strokeLinecap="round" />
               </g>
 
-              {/* Tuned Spring Steel Tines Extending Upwards to Drum */}
+              {/* Tuned Spring Steel Tines Extending Upwards to Drum with Physical Tapering */}
               {tinesList.map((tine, idx) => {
                 const slotW = drumWidth / tinesCount;
                 const tx = drumLeft + (idx + 0.5) * slotW;
-                const tineWidth = Math.max(4, slotW * 0.76);
+                // Physical tapering: bass notes are wider (up to 86% of slot), treble tines taper fine (58% of slot)
+                const taperRatio = 0.86 - (idx / Math.max(1, tinesCount - 1)) * 0.28;
+                const tineWidth = Math.max(4, slotW * taperRatio);
                 const isActive = activeTines.has(idx);
                 const isHovered = hoveredTine === idx;
+                const isBass = idx < Math.ceil(tinesCount * 0.35);
 
-                // All comb tine tips align precisely at the cylinder contact strike line, with slight downward pluck deflection
-                const tineTopY = strikeLineY + (isActive ? 1.5 : 0);
+                // Physical pin contact deflection: tine deflects downward 2.2px on contact
+                const tineTopY = strikeLineY + (isActive ? 2.2 : 0);
                 const tineBottomY = 222;
 
                 return (
@@ -1132,22 +1211,44 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                       y2={tineBottomY - 2}
                       stroke="#ffffff"
                       strokeWidth={Math.max(1, tineWidth * 0.2)}
-                      opacity={isActive ? 0.9 : 0.6}
+                      opacity={isActive ? 0.95 : 0.65}
                     />
 
-                    {/* Lead Tuning Weights on Bass Tines (Lower 30% of notes) */}
-                    {idx < Math.ceil(tinesCount * 0.35) && (
-                      <rect
-                        x={tx - tineWidth / 2 + 0.5}
-                        y={tineTopY + 8}
-                        width={tineWidth - 1}
-                        height={10 + (Math.ceil(tinesCount * 0.35) - idx) * 1.5}
-                        rx="1"
-                        fill="#383d44"
-                        stroke="#202428"
-                        strokeWidth="0.8"
-                        opacity="0.85"
-                      />
+                    {/* Longitudinal brushed grain striation */}
+                    <line
+                      x1={tx + tineWidth / 5}
+                      y1={tineTopY + 4}
+                      x2={tx + tineWidth / 5}
+                      y2={tineBottomY - 4}
+                      stroke="#808892"
+                      strokeWidth="0.6"
+                      opacity="0.5"
+                    />
+
+                    {/* Lead Tuning Counterweights Soldered Underneath Low Bass Tines */}
+                    {isBass && (
+                      <g>
+                        <rect
+                          x={tx - tineWidth / 2 + 0.5}
+                          y={tineTopY + 8}
+                          width={tineWidth - 1}
+                          height={10 + (Math.ceil(tinesCount * 0.35) - idx) * 1.8}
+                          rx="1"
+                          fill="#2a2e35"
+                          stroke="#181b20"
+                          strokeWidth="0.8"
+                          opacity="0.95"
+                        />
+                        {/* Soldered seam bead */}
+                        <rect
+                          x={tx - tineWidth / 2 + 1}
+                          y={tineTopY + 7.5}
+                          width={tineWidth - 2}
+                          height="1.2"
+                          fill="#98a0aa"
+                          opacity="0.85"
+                        />
+                      </g>
                     )}
 
                     {/* Tine Tip Pin Contact Bevel */}
@@ -1244,13 +1345,19 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
             </span>
           </div>
 
-          {/* Dynamic Keyboard Keys Rack with Elevated Sharp/Flat Keys & Glissando Multi-Touch Support */}
-          <div className="w-full pt-3 pb-1">
+          {/* Dynamic Keyboard Keys Rack with Elevated Spring-Steel Comb Tines & Glissando Multi-Touch Support */}
+          <div className="w-full pt-2 pb-1">
+            {/* Machined Brass Bedplate Clamp Bar */}
+            <div className="w-full h-2 rounded-t-md bg-gradient-to-r from-[#5a3e1b] via-[#c9a050] to-[#5a3e1b] border-b border-[#2d1e0c] flex justify-between px-2 sm:px-4 items-center shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#dbe2ea] border border-[#2d3138] inline-block" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#dbe2ea] border border-[#2d3138] inline-block" />
+            </div>
+
             <div
               onPointerDown={handleKeyboardPointerDown}
               onPointerMove={handleKeyboardPointerMove}
               onPointerUp={handleKeyboardPointerUp}
-              className="w-full flex items-end gap-0.5 sm:gap-1 p-1 sm:p-1.5 rounded-xl bg-[#120d08] border border-[#523c24]/90 shadow-inner select-none touch-none"
+              className="w-full flex items-end gap-0.5 sm:gap-1 p-1 sm:p-1.5 rounded-b-xl bg-[#100b07] border-x border-b border-[#523c24]/90 shadow-inner select-none touch-none"
             >
               {tinesList.map((tine, idx) => {
                 const isActive = activeTines.has(idx);
@@ -1269,18 +1376,16 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                     title={`Note #${idx + 1}: ${tine.note} (${tine.frequency ? tine.frequency.toFixed(1) + ' Hz' : ''})${tine.flatEnharmonic ? ` • ${tine.flatEnharmonic}` : ''} • Keyboard shortcut: [${shortcut || ''}]`}
                     className={`group relative flex-1 min-w-0 flex flex-col items-center justify-between px-0.5 sm:px-1 py-1 sm:py-1.5 rounded sm:rounded-lg border transition-all select-none cursor-pointer ${
                       isAccidental
-                        ? 'h-22 sm:h-26 md:h-28 -translate-y-2 sm:-translate-y-2.5 z-20 shadow-[0_6px_14px_rgba(0,0,0,0.65)]'
-                        : 'h-19 sm:h-23 md:h-25 translate-y-0 z-10'
+                        ? 'h-22 sm:h-26 md:h-28 -translate-y-2 sm:-translate-y-2.5 z-20 blued-steel-key border-[#3b4e6d]'
+                        : 'h-19 sm:h-23 md:h-25 translate-y-0 z-10 spring-steel-key border-[#88929e]'
                     } ${
                       isActive
-                        ? 'bg-gradient-to-b from-[#ffe599] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#ffe8a3] shadow-[0_0_14px_rgba(240,196,101,0.9)] scale-105 z-30'
+                        ? 'bg-gradient-to-b from-[#fff0b3] via-[#f0c465] to-[#c99432]! text-[#1c1208]! border-[#ffe8a3]! shadow-[0_0_16px_rgba(240,196,101,0.95)]! ring-2 ring-[#ffe082] translate-y-1 z-30 tine-vibrating'
                         : isHovered
                         ? isAccidental
-                          ? 'bg-gradient-to-b from-[#4a341e] via-[#382614] to-[#25170a] text-[#fffdf7] border-[#b38842] shadow-sm'
-                          : 'bg-gradient-to-b from-[#5c4228] to-[#3a2717] text-[#fffdf7] border-[#8a6838] shadow-xs'
-                        : isAccidental
-                        ? 'bg-gradient-to-b from-[#2a1d12] via-[#20150b] to-[#140c06] text-[#dfc39e] border-[#7d5622]'
-                        : 'bg-gradient-to-b from-[#3a2818] via-[#2c1d11] to-[#1f1309] text-[#faebd4] border-[#553b22]'
+                          ? 'brightness-125 border-[#6b8bb8] shadow-md'
+                          : 'brightness-110 border-[#b0b8c2] shadow-sm'
+                        : ''
                     }`}
                   >
                     {/* Top Tuned Pin Notch Accent */}
@@ -1289,8 +1394,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                         isActive
                           ? 'bg-[#7a5416]'
                           : isAccidental
-                          ? 'bg-[#b8860b]'
-                          : 'bg-[#523c24]'
+                          ? 'bg-[#d4af37] shadow-[0_0_4px_rgba(212,175,55,0.8)]'
+                          : 'bg-[#5a6572]'
                       }`}
                     />
 
@@ -1300,8 +1405,8 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                         isActive
                           ? 'text-[#3d2706]'
                           : isAccidental
-                          ? 'text-[#d4aa70]'
-                          : 'text-[#a68d72]'
+                          ? 'text-[#9ec0e6]'
+                          : 'text-[#363e47]'
                       }`}
                     >
                       #{idx + 1}
@@ -1309,7 +1414,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
 
                     {/* Musical Note Name with Elevated Accidental Badge */}
                     <div className="flex flex-col items-center min-w-0 w-full overflow-hidden my-0.5">
-                      <span className="text-[9px] sm:text-[11px] md:text-xs font-serif font-bold tracking-tight leading-tight truncate w-full text-center">
+                      <span
+                        className={`text-[9px] sm:text-[11px] md:text-xs font-serif font-bold tracking-tight leading-tight truncate w-full text-center ${
+                          isActive
+                            ? 'text-[#241604]'
+                            : isAccidental
+                            ? 'text-[#f0f4f8]'
+                            : 'text-[#1e2329]'
+                        }`}
+                      >
                         {tine.note}
                       </span>
                       {isAccidental && (
@@ -1323,15 +1436,15 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                       )}
                     </div>
 
-                    {/* Keyboard Shortcut Keycap Badge */}
+                    {/* Keyboard Shortcut Keycap Badge Styled Like Vintage Instrument Keycap */}
                     {shortcut && (
                       <div
                         className={`px-0.5 sm:px-1 py-0.5 rounded text-[7px] sm:text-[8px] md:text-[9px] font-mono font-bold uppercase transition-colors shadow-xs leading-none ${
                           isActive
                             ? 'bg-[#1c1208] text-[#f0c465]'
                             : isAccidental
-                            ? 'bg-[#120a04] text-[#ffd280] border border-[#7d5622]'
-                            : 'bg-[#19110a] text-[#9e8568] border border-[#523c24]/70'
+                            ? 'bg-[#0b1017] text-[#a5c3e8] border border-[#2b3a50]'
+                            : 'bg-[#e2e7ed] text-[#424b55] border border-[#b4bec8]'
                         }`}
                       >
                         {shortcut}

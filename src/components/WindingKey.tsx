@@ -249,7 +249,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
         updateCrankVisuals(crankAngleRef.current, 0);
         reverseRatchetAccumRef.current += Math.abs(delta);
         if (reverseRatchetAccumRef.current > 0.35) {
-          musicBoxAudio.playWindingClick();
+          musicBoxAudio.playRatchetClick(0.6);
           reverseRatchetAccumRef.current = 0;
         }
       }
@@ -265,13 +265,13 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
         springRatchetAccumRef.current += delta;
         const RATCHET_STEP_RAD = (2 * Math.PI) / 16;
         if (springRatchetAccumRef.current >= RATCHET_STEP_RAD) {
-          musicBoxAudio.playWindingClick();
+          musicBoxAudio.playRatchetClick(1.0);
           springRatchetAccumRef.current %= RATCHET_STEP_RAD;
         }
       } else if (delta < -0.05) {
         reverseRatchetAccumRef.current += Math.abs(delta);
         if (reverseRatchetAccumRef.current > 0.35) {
-          musicBoxAudio.playWindingClick();
+          musicBoxAudio.playRatchetClick(0.6);
           reverseRatchetAccumRef.current = 0;
         }
       }
@@ -293,7 +293,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
 
   // Quick Full Wind for Spring mode
   const handleQuickFullWind = () => {
-    musicBoxAudio.playWindingClick();
+    musicBoxAudio.playRatchetClick(1.0);
     if (onSetSpringTension) {
       onSetSpringTension(1.0);
     } else {
@@ -303,7 +303,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
 
   // Unwind Spring to 0%
   const handleUnwindSpring = () => {
-    musicBoxAudio.playWindingClick();
+    musicBoxAudio.playRatchetClick(0.7);
     if (onSetSpringTension) {
       onSetSpringTension(0);
     } else {
@@ -314,7 +314,7 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
   // Mechanical switch click handler with tactile audio
   const handleMechanicalSwitchToggle = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    musicBoxAudio.playWindingClick();
+    musicBoxAudio.playLeverClick(!isPlaying);
     onTogglePlay();
   };
 
@@ -338,7 +338,10 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
         <div className="inline-flex rounded-xl bg-[#eee7da] p-1 border border-[#ded3be] shadow-xs">
           <button
             id="mode-spring-btn"
-            onClick={() => onChangePlayMode('spring')}
+            onClick={() => {
+              musicBoxAudio.playLeverClick(true);
+              onChangePlayMode('spring');
+            }}
             className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'spring'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
@@ -353,7 +356,10 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
 
           <button
             id="mode-crank-btn"
-            onClick={() => onChangePlayMode('crank')}
+            onClick={() => {
+              musicBoxAudio.playLeverClick(true);
+              onChangePlayMode('crank');
+            }}
             className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'crank'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
@@ -368,7 +374,10 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
 
           <button
             id="mode-continuous-btn"
-            onClick={() => onChangePlayMode('continuous')}
+            onClick={() => {
+              musicBoxAudio.playLeverClick(true);
+              onChangePlayMode('continuous');
+            }}
             className={`px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-serif transition-all cursor-pointer ${
               playMode === 'continuous'
                 ? 'bg-[#433422] text-[#fbf8f2] font-bold shadow-xs'
@@ -492,23 +501,25 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
                     <div className="absolute w-32 sm:w-38 h-14 sm:h-16 rounded-full bg-[#ffe58f]/20 blur-md pointer-events-none" />
                   )}
 
-                  {/* LARGE BUTTERFLY WINGS KEY BODY */}
-                  <div className="relative w-32 h-12 sm:w-38 sm:h-14 rounded-full bg-gradient-to-r from-[#8a5f14] via-[#ffd966] to-[#8a5f14] shadow-[0_6px_20px_rgba(20,14,6,0.6)] border-2 border-[#ffeaa7] flex items-center justify-between px-3 sm:px-4 cursor-grab active:cursor-grabbing">
-                    {/* Left Wing Cutout */}
-                    <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-[#1a1207] via-[#2d2010] to-[#120c04] border-2 border-[#d4b788] shadow-inner flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-[#ecd8af]/30 border border-[#ecd8af]/60" />
+                  {/* LARGE BUTTERFLY WINGS KEY BODY WITH CAST BRASS RELIEF */}
+                  <div className="relative w-34 h-13 sm:w-40 sm:h-15 rounded-full bg-gradient-to-r from-[#7a510d] via-[#f7d66e] to-[#7a510d] shadow-[0_8px_24px_rgba(18,12,5,0.7)] border-2 border-[#fff3b8] flex items-center justify-between px-3 sm:px-4 cursor-grab active:cursor-grabbing">
+                    {/* Left Wing Cutout with Filigree Rim */}
+                    <div className="relative w-6.5 h-6.5 sm:w-7.5 sm:h-7.5 rounded-full bg-gradient-to-br from-[#181006] via-[#2d2010] to-[#100a03] border-2 border-[#d4b788] shadow-inner flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[#ecd8af]/40 border border-[#ecd8af]/70" />
+                      <div className="absolute inset-0.5 rounded-full border border-dashed border-[#d4b788]/30 pointer-events-none" />
                     </div>
 
-                    {/* Center Arbor Shaft Hub */}
-                    <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-[#6b470b] via-[#eed882] to-[#6b470b] border-2 border-[#fff2b8] shadow-md flex items-center justify-center z-10">
-                      <div className="w-3.5 h-3.5 rounded-full bg-[#241a0e] border border-[#ecd8af] flex items-center justify-center">
-                        <div className="w-2 h-[1.5px] bg-[#ecd8af]" />
+                    {/* Center Arbor Square Socket Hub */}
+                    <div className="relative w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-gradient-to-tr from-[#6b470b] via-[#eed882] to-[#6b470b] border-2 border-[#fff2b8] shadow-md flex items-center justify-center z-10">
+                      <div className="w-4 h-4 rounded-xs bg-[#1a1208] border border-[#d4af62] flex items-center justify-center shadow-inner">
+                        <div className="w-2 h-2 bg-[#ecd8af]/40 rounded-xs" />
                       </div>
                     </div>
 
-                    {/* Right Wing Cutout */}
-                    <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-br from-[#1a1207] via-[#2d2010] to-[#120c04] border-2 border-[#d4b788] shadow-inner flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-[#ecd8af]/30 border border-[#ecd8af]/60" />
+                    {/* Right Wing Cutout with Filigree Rim */}
+                    <div className="relative w-6.5 h-6.5 sm:w-7.5 sm:h-7.5 rounded-full bg-gradient-to-br from-[#181006] via-[#2d2010] to-[#100a03] border-2 border-[#d4b788] shadow-inner flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[#ecd8af]/40 border border-[#ecd8af]/70" />
+                      <div className="absolute inset-0.5 rounded-full border border-dashed border-[#d4b788]/30 pointer-events-none" />
                     </div>
                   </div>
                 </div>
@@ -601,16 +612,16 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
               </span>
             </div>
 
-            {/* Authentic Brass Mechanical Slider Switch Housing */}
+            {/* Authentic Brass Mechanical Slider Switch Housing with Milled Detents */}
             <div
               id="mechanical-lever-switch"
               onClick={handleMechanicalSwitchToggle}
-              className={`group relative w-full h-16 sm:h-18 rounded-xl p-1.5 transition-all select-none cursor-pointer border-2 shadow-[0_4px_16px_rgba(45,33,20,0.25)] flex items-center justify-between overflow-hidden ${
+              className={`group relative w-full h-16 sm:h-18 rounded-2xl p-1.5 transition-all select-none cursor-pointer border-2 shadow-[0_6px_20px_rgba(35,24,12,0.3)] flex items-center justify-between overflow-hidden ${
                 isPlaying
-                  ? 'bg-gradient-to-r from-[#241a0e] via-[#3a2a16] to-[#1a1208] border-[#dfc282] ring-2 ring-[#e6c986]/40'
+                  ? 'bg-gradient-to-r from-[#201509] via-[#332311] to-[#181006] border-[#dfc282] ring-2 ring-[#e6c986]/50'
                   : playMode === 'spring' && springTension <= 0.005
-                  ? 'bg-gradient-to-r from-[#2b2218] to-[#1c140d] border-[#6b543c] opacity-80'
-                  : 'bg-gradient-to-r from-[#2a1e12] via-[#362717] to-[#1e150d] border-[#8a6838] hover:border-[#bfa175]'
+                  ? 'bg-gradient-to-r from-[#261c12] to-[#181008] border-[#5a422d] opacity-80'
+                  : 'bg-gradient-to-r from-[#24180c] via-[#322212] to-[#1a1007] border-[#8a6838] hover:border-[#caa460]'
               }`}
               title={
                 playMode === 'spring' && springTension <= 0.005
@@ -620,47 +631,55 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
                   : 'Click to release mechanical brake (Play)'
               }
             >
-              {/* Recessed Machine Track Groove */}
-              <div className="absolute inset-x-3 inset-y-3 rounded-lg bg-[#140e08] border border-[#523c24]/90 shadow-inner flex items-center justify-between px-4">
+              {/* Recessed Machine Milled Brass Track */}
+              <div className="absolute inset-x-2.5 inset-y-2.5 rounded-xl brass-milled-track border border-[#523c24] shadow-inner flex items-center justify-between px-3 sm:px-4">
+                {/* Stop Detent Notch (Left) */}
+                <div className="w-1 h-5 rounded-full bg-[#0a0603] border-r border-[#3d2a15]" />
+
                 {/* Left (STOP / LOCKED) Engraving */}
                 <div className="flex items-center space-x-1.5 z-0">
-                  <Lock className={`w-3.5 h-3.5 ${!isPlaying ? 'text-[#e68470]' : 'text-[#6b5846]'}`} />
-                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${!isPlaying ? 'text-[#faebd4]' : 'text-[#6b5846]'}`}>
-                    Stop (Brake)
+                  <Lock className={`w-3.5 h-3.5 ${!isPlaying ? 'text-[#e68470]' : 'text-[#524233]'}`} />
+                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${!isPlaying ? 'text-[#faebd4]' : 'text-[#524233]'}`}>
+                    STOP (BRAKE)
                   </span>
                 </div>
 
-                {/* Right (PLAY / RELEASED) Engraving */}
+                {/* Right (RUN / RELEASED) Engraving */}
                 <div className="flex items-center space-x-1.5 z-0">
-                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${isPlaying ? 'text-[#f0c465]' : 'text-[#6b5846]'}`}>
-                    Play (Release)
+                  <span className={`text-[10px] sm:text-xs font-serif font-bold uppercase tracking-wider ${isPlaying ? 'text-[#f0c465]' : 'text-[#524233]'}`}>
+                    RUN (RELEASE)
                   </span>
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${isPlaying ? 'text-[#f0c465]' : 'text-[#6b5846]'}`} />
+                  <Wind className={`w-3.5 h-3.5 ${isPlaying ? 'text-[#f0c465]' : 'text-[#524233]'}`} />
                 </div>
+
+                {/* Run Detent Notch (Right) */}
+                <div className="w-1 h-5 rounded-full bg-[#0a0603] border-l border-[#3d2a15]" />
               </div>
 
-              {/* Physical Sliding Brass Lever Knob */}
+              {/* Physical Machined Brass Sliding Lever Handle */}
               <div
-                className={`relative z-10 w-[48%] h-full rounded-lg bg-gradient-to-b from-[#f3e198] via-[#dfbf6d] to-[#96722d] border-2 border-[#fff2b8] shadow-[0_4px_12px_rgba(0,0,0,0.7)] flex items-center justify-center transition-transform duration-200 ease-out ${
+                className={`relative z-10 w-[48%] h-full rounded-xl bg-gradient-to-b from-[#fdf2b8] via-[#dfbf6d] to-[#8d6924] border-2 border-[#fff7c7] shadow-[0_6px_16px_rgba(0,0,0,0.75)] flex items-center justify-between px-3 transition-transform duration-250 ease-out ${
                   isPlaying ? 'translate-x-[104%]' : 'translate-x-0'
                 }`}
               >
-                {/* Knurled Brass Handle Ridges */}
-                <div className="flex items-center space-x-1 px-2 py-1">
-                  <div className="w-1 h-5 rounded-full bg-[#523912] opacity-60" />
-                  <div className="w-1 h-7 rounded-full bg-[#ffffff] opacity-80" />
-                  <div className="w-1 h-7 rounded-full bg-[#523912] opacity-70" />
-                  <div className="w-1 h-5 rounded-full bg-[#ffffff] opacity-70" />
+                {/* Knurled Brass Handle Vertical Ridges */}
+                <div className="flex items-center space-x-1 py-1">
+                  <div className="w-1 h-6 rounded-full bg-[#47300c] opacity-60 shadow-2xs" />
+                  <div className="w-1 h-8 rounded-full bg-[#ffffff] opacity-85" />
+                  <div className="w-1 h-8 rounded-full bg-[#47300c] opacity-75 shadow-2xs" />
+                  <div className="w-1 h-6 rounded-full bg-[#ffffff] opacity-75" />
                 </div>
 
-                {/* Center Pivot Jewel / Status Indicator Dot */}
-                <div className={`w-3 h-3 rounded-full border-2 border-[#ffffff] shadow-sm ml-1.5 ${
-                  isPlaying
-                    ? 'bg-[#10b981] animate-pulse shadow-[0_0_8px_#34d399]'
-                    : playMode === 'spring' && springTension <= 0.005
-                    ? 'bg-[#dc2626]'
-                    : 'bg-[#a68656]'
-                }`} />
+                {/* Center Status Jewel Indicator */}
+                <div className="flex items-center space-x-1.5">
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#ffffff] shadow-sm ${
+                    isPlaying
+                      ? 'bg-[#10b981] animate-pulse shadow-[0_0_10px_#34d399]'
+                      : playMode === 'spring' && springTension <= 0.005
+                      ? 'bg-[#dc2626]'
+                      : 'bg-[#a81c1c] shadow-[0_0_6px_#ef4444]'
+                  }`} />
+                </div>
               </div>
             </div>
 
@@ -758,58 +777,74 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <button
-                id="tempo-decrease-btn"
-                onClick={() => onChangeTempoBpm?.(Math.max(40, tempoBpm - 5))}
-                title="Slow down"
-                className="p-1.5 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-
-              <input
-                id="playback-speed-slider"
-                type="range"
-                min="40"
-                max="160"
-                step="2"
-                value={tempoBpm}
-                onChange={(e) => onChangeTempoBpm?.(Number(e.target.value))}
-                className="flex-1 accent-[#8a6b3e] cursor-pointer h-2 bg-[#ded3be] rounded-lg"
-              />
-
-              <button
-                id="tempo-increase-btn"
-                onClick={() => onChangeTempoBpm?.(Math.min(160, tempoBpm + 5))}
-                title="Speed up"
-                className="p-1.5 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-
-            {/* Quick Tempo Presets */}
-            <div className="flex items-center justify-between gap-1">
-              {[
-                { label: 'Largo', bpm: 60 },
-                { label: 'Andante', bpm: 88 },
-                { label: 'Moderato', bpm: 108 },
-                { label: 'Allegro', bpm: 132 },
-              ].map((preset) => (
+            {/* Vernier Brass Scale Slider & Classical Horology Markings */}
+            <div className="flex flex-col space-y-1.5">
+              <div className="flex items-center space-x-2">
                 <button
-                  key={preset.label}
-                  id={`tempo-preset-${preset.bpm}`}
-                  onClick={() => onChangeTempoBpm?.(preset.bpm)}
-                  className={`flex-1 py-1 px-1 text-[10px] sm:text-[11px] font-serif rounded-md border transition-all cursor-pointer ${
-                    tempoBpm === preset.bpm
-                      ? 'bg-[#433422] text-[#fbf8f2] border-[#433422] font-bold shadow-xs'
-                      : 'bg-[#eee7da] hover:bg-[#e4dcce] text-[#6f5e49] border-[#ded3be]'
-                  }`}
+                  id="tempo-decrease-btn"
+                  onClick={() => onChangeTempoBpm?.(Math.max(40, tempoBpm - 5))}
+                  title="Slow down"
+                  className="p-1.5 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer active:scale-95"
                 >
-                  {preset.label} ({preset.bpm})
+                  <Minus className="w-3 h-3" />
                 </button>
-              ))}
+
+                <div className="relative flex-1 flex flex-col justify-center">
+                  <input
+                    id="playback-speed-slider"
+                    type="range"
+                    min="40"
+                    max="160"
+                    step="2"
+                    value={tempoBpm}
+                    onChange={(e) => onChangeTempoBpm?.(Number(e.target.value))}
+                    className="w-full accent-[#8a6b3e] cursor-pointer h-2 bg-gradient-to-r from-[#d8caa8] via-[#faebd4] to-[#d8caa8] rounded-lg border border-[#a68656]/60 shadow-inner"
+                  />
+                  {/* Vernier Scale Graduation Ticks */}
+                  <div className="flex justify-between px-1 pt-1 text-[8px] font-mono text-[#8a7962] pointer-events-none select-none">
+                    <span>40</span>
+                    <span>60</span>
+                    <span>88</span>
+                    <span>108</span>
+                    <span>132</span>
+                    <span>160</span>
+                  </div>
+                </div>
+
+                <button
+                  id="tempo-increase-btn"
+                  onClick={() => onChangeTempoBpm?.(Math.min(160, tempoBpm + 5))}
+                  title="Speed up"
+                  className="p-1.5 rounded-lg bg-[#eee5d3] hover:bg-[#e4d7be] text-[#5e4726] border border-[#d6be8e] transition cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Quick Horological Classical Tempo Presets */}
+              <div className="grid grid-cols-5 gap-1 pt-0.5">
+                {[
+                  { label: 'Largo', bpm: 60 },
+                  { label: 'Andante', bpm: 88 },
+                  { label: 'Moderato', bpm: 108 },
+                  { label: 'Allegro', bpm: 132 },
+                  { label: 'Presto', bpm: 152 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    id={`tempo-preset-${preset.bpm}`}
+                    onClick={() => onChangeTempoBpm?.(preset.bpm)}
+                    className={`py-1 px-0.5 text-[9px] sm:text-[10px] font-serif rounded-md border transition-all cursor-pointer text-center truncate ${
+                      tempoBpm === preset.bpm
+                        ? 'bg-[#433422] text-[#fbf8f2] border-[#433422] font-bold shadow-xs'
+                        : 'bg-[#eee7da] hover:bg-[#e4dcce] text-[#6f5e49] border-[#ded3be]'
+                    }`}
+                  >
+                    <span>{preset.label}</span>
+                    <span className="block text-[8px] font-mono opacity-80">{preset.bpm}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

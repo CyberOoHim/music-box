@@ -1991,6 +1991,170 @@ class MusicBoxAudioEngine {
     }
   }
 
+  // Synthesizes an authentic mechanical sliding clink and governor brake click
+  public playLeverClick(isReleased = true): void {
+    if (!this.ctx || !this.masterGain) {
+      this.resumeIfNeeded().catch(() => {});
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.resumeIfNeeded().catch(() => {});
+    }
+    this.cancelIdleSleep();
+    try {
+      const now = this.ctx.currentTime;
+      // 1. Friction slide scraping sound (initial movement)
+      const slideOsc = this.ctx.createOscillator();
+      const slideGain = this.ctx.createGain();
+      const slideFilter = this.ctx.createBiquadFilter();
+
+      slideOsc.type = 'triangle';
+      slideOsc.frequency.setValueAtTime(isReleased ? 320 : 480, now);
+      slideOsc.frequency.exponentialRampToValueAtTime(isReleased ? 640 : 260, now + 0.035);
+
+      slideFilter.type = 'bandpass';
+      slideFilter.frequency.setValueAtTime(isReleased ? 2400 : 1800, now);
+      slideFilter.Q.setValueAtTime(3.0, now);
+
+      slideGain.gain.setValueAtTime(0.0001, now);
+      slideGain.gain.linearRampToValueAtTime(0.12, now + 0.005);
+      slideGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+
+      slideOsc.connect(slideFilter);
+      slideFilter.connect(slideGain);
+      slideGain.connect(this.masterGain);
+
+      slideOsc.start(now);
+      slideOsc.stop(now + 0.04);
+
+      // 2. Heavy metallic detent click / latch snap (terminal stop)
+      const clickTime = now + 0.018;
+      const snapOsc = this.ctx.createOscillator();
+      const snapGain = this.ctx.createGain();
+      const snapFilter = this.ctx.createBiquadFilter();
+
+      snapOsc.type = 'sawtooth';
+      snapOsc.frequency.setValueAtTime(isReleased ? 980 : 750, clickTime);
+      snapOsc.frequency.exponentialRampToValueAtTime(140, clickTime + 0.03);
+
+      snapFilter.type = 'bandpass';
+      snapFilter.frequency.setValueAtTime(isReleased ? 3400 : 2200, clickTime);
+      snapFilter.Q.setValueAtTime(5.0, clickTime);
+
+      snapGain.gain.setValueAtTime(0.0001, clickTime);
+      snapGain.gain.linearRampToValueAtTime(isReleased ? 0.26 : 0.22, clickTime + 0.002);
+      snapGain.gain.exponentialRampToValueAtTime(0.0001, clickTime + 0.03);
+
+      snapOsc.connect(snapFilter);
+      snapFilter.connect(snapGain);
+      snapGain.connect(this.masterGain);
+
+      snapOsc.onended = () => {
+        try {
+          slideOsc.disconnect();
+          slideFilter.disconnect();
+          slideGain.disconnect();
+          snapOsc.disconnect();
+          snapFilter.disconnect();
+          snapGain.disconnect();
+        } catch {
+          // ignore
+        }
+        if (this.activeVoiceStoppers.size === 0 && !this.isMechanicalHumActive) {
+          this.scheduleIdleSleep();
+        }
+      };
+
+      snapOsc.start(clickTime);
+      snapOsc.stop(clickTime + 0.035);
+    } catch {
+      // safe fallback
+    }
+  }
+
+  // Synthesizes a sharp dual-pawl escapement ratchet tick
+  public playRatchetClick(intensity = 1.0): void {
+    if (!this.ctx || !this.masterGain) {
+      this.resumeIfNeeded().catch(() => {});
+      return;
+    }
+    if (this.ctx.state !== 'running') {
+      this.resumeIfNeeded().catch(() => {});
+    }
+    this.cancelIdleSleep();
+    try {
+      const now = this.ctx.currentTime;
+      const vol = Math.min(0.3, Math.max(0.05, 0.16 * intensity));
+
+      // Primary pawl contact tick
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      const filter1 = this.ctx.createBiquadFilter();
+
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(580, now);
+      osc1.frequency.exponentialRampToValueAtTime(220, now + 0.018);
+
+      filter1.type = 'bandpass';
+      filter1.frequency.setValueAtTime(2600, now);
+      filter1.Q.setValueAtTime(4.5, now);
+
+      gain1.gain.setValueAtTime(0.0001, now);
+      gain1.gain.linearRampToValueAtTime(vol, now + 0.001);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+
+      osc1.connect(filter1);
+      filter1.connect(gain1);
+      gain1.connect(this.masterGain);
+
+      osc1.start(now);
+      osc1.stop(now + 0.02);
+
+      // Secondary pawl micro-rebound tick (6ms later)
+      const t2 = now + 0.006;
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      const filter2 = this.ctx.createBiquadFilter();
+
+      osc2.type = 'square';
+      osc2.frequency.setValueAtTime(1120, t2);
+      osc2.frequency.exponentialRampToValueAtTime(340, t2 + 0.012);
+
+      filter2.type = 'bandpass';
+      filter2.frequency.setValueAtTime(4200, t2);
+      filter2.Q.setValueAtTime(6.0, t2);
+
+      gain2.gain.setValueAtTime(0.0001, t2);
+      gain2.gain.linearRampToValueAtTime(vol * 0.45, t2 + 0.001);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, t2 + 0.012);
+
+      osc2.connect(filter2);
+      filter2.connect(gain2);
+      gain2.connect(this.masterGain);
+
+      osc2.onended = () => {
+        try {
+          osc1.disconnect();
+          filter1.disconnect();
+          gain1.disconnect();
+          osc2.disconnect();
+          filter2.disconnect();
+          gain2.disconnect();
+        } catch {
+          // ignore
+        }
+        if (this.activeVoiceStoppers.size === 0 && !this.isMechanicalHumActive) {
+          this.scheduleIdleSleep();
+        }
+      };
+
+      osc2.start(t2);
+      osc2.stop(t2 + 0.016);
+    } catch {
+      // safe fallback
+    }
+  }
+
   // Setup gentle mechanical gear / governor whirring hum on demand
   private setupGearHum(): void {
     if (!this.ctx || !this.masterGain) return;
