@@ -51,7 +51,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         if (!isMounted) return;
         setShareData(result);
 
-        const qrUrl = await generateScoreQrCode(result.url);
+        const qrUrl = await generateScoreQrCode(result.url, {
+          title: song.title,
+          footerText: 'music-box',
+        });
         if (!isMounted) return;
         setQrCodeDataUrl(qrUrl);
       } catch (err) {
@@ -180,11 +183,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 <span className="text-xs text-[#705c43] font-serif">Compressing score...</span>
               </div>
             ) : qrCodeDataUrl ? (
-              <div className="relative group p-2 rounded-xl bg-[#fdfcf9] border-2 border-[#bfa175]/60 shadow-md">
+              <div className="relative group p-1.5 rounded-2xl bg-[#fdfcf9] border-2 border-[#bfa175]/60 shadow-md max-w-[240px]">
                 <img
                   src={qrCodeDataUrl}
                   alt={`QR Code for ${song.title}`}
-                  className="w-48 h-48 sm:w-52 sm:h-52 object-contain rounded-lg"
+                  className="w-full h-auto object-contain rounded-xl"
                 />
               </div>
             ) : (

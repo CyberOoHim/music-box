@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useId } from 'react';
 import { MusicBoxSong, COMB_SCALES_MAP } from '../types';
-import { createShareableCylinderUrl, ShareableUrlResult } from '../utils/songUrl';
+import { createShareableCylinderUrl, generateSongQrCodeImage, ShareableUrlResult } from '../utils/songUrl';
 import QRCode from 'qrcode';
 import {
   X,
@@ -52,16 +52,11 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
         setShareResult(result);
         setLoading(false);
 
-        // Generate QR code for mobile scanning
+        // Generate QR code with song title on top and 'music-box' footer
         try {
-          const qr = await QRCode.toDataURL(result.url, {
-            width: 240,
-            margin: 1.5,
-            color: {
-              dark: '#433422', // Match vintage music box brass/wood
-              light: '#fbf9f4',
-            },
-            errorCorrectionLevel: 'L',
+          const qr = await generateSongQrCodeImage(result.url, song.title, 'music-box', {
+            darkColor: '#433422',
+            lightColor: '#fbf9f4',
           });
           if (isMounted) {
             setQrDataUrl(qr);
@@ -317,11 +312,11 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
             {/* QR Code Collapsible View */}
             {showQrCode && qrDataUrl && (
               <div className="rounded-xl bg-[#f7f3ee] border border-[#e5dcce] p-4 flex flex-col items-center justify-center gap-3 text-center transition-all animate-in fade-in zoom-in-95 duration-150">
-                <div className="p-2 rounded-xl bg-white border border-[#d8cbbb] shadow-xs">
+                <div className="p-1 rounded-2xl bg-white border border-[#d8cbbb] shadow-xs max-w-[240px]">
                   <img
                     src={qrDataUrl}
                     alt={`QR Code for ${song.title}`}
-                    className="w-48 h-48 rounded-lg"
+                    className="w-full h-auto rounded-xl object-contain"
                   />
                 </div>
                 <button

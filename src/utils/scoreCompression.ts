@@ -850,16 +850,288 @@ export function sanitizeSong(song: MusicBoxSong): MusicBoxSong {
 }
 
 // ----------------------------------------------------------------------------
-// 7. QR Code Generation with Level L Error Correction
+// 7. QR Code Generation with Level L Error Correction, Song Title & Footer
 // ----------------------------------------------------------------------------
+
+export type GenerateScoreQrOptions = QRCode.QRCodeToDataURLOptions & {
+  title?: string;
+  footerText?: string;
+};
+
+/**
+ * Wraps canvas text into lines if it exceeds maxWidth.
+ */
+function wrapCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number = 2
+): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return ['Untitled Cylinder'];
+  if (ctx.measureText(trimmed).width <= maxWidth) {
+    return [trimmed];
+  }
+
+  const words = trimmed.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (ctx.measureText(testLine).width <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        let chunk = '';
+        for (const char of word) {
+          if (ctx.measureText(chunk + char).width <= maxWidth) {
+            chunk += char;
+          } else {
+            lines.push(chunk);
+            chunk = char;
+            if (lines.length >= maxLines) break;
+          }
+        }
+        currentLine = chunk;
+      }
+
+      if (lines.length >= maxLines) {
+        break;
+      }
+    }
+  }
+
+  if (currentLine && lines.length < maxLines) {
+    lines.push(currentLine);
+  }
+
+  // Add ellipsis if text was truncated
+  const accountedWords = lines.join(' ').split(/\s+/).length;
+  if (accountedWords < words.length && lines.length > 0) {
+    let last = lines[lines.length - 1];
+    while (last.length > 0 && ctx.measureText(`${last}…`).width > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    lines[lines.length - 1] = `${last}…`;
+  }
+
+  return lines;
+}
+
+/**
+ * Draws a rounded rectangle path on Canvas 2D context.
+ */
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.arcTo(x + w, y, x + w, y + radius, radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+    ctx.lineTo(x + radius, y + h);
+    ctx.arcTo(x, y + h, x, y + h - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+  }
+}
+
+/**
+ * Generates an all-in-one collectible QR code image with the song title at the top,
+ * the scannable QR code in the middle, and "music-box" footer at the bottom.
+ */
+export async function generateSongQrCodeImage(
+  url: string,
+  title?: string,
+  footerText: string = 'music-box',
+  options?: {
+    darkColor?: string;
+    lightColor?: string;
+    scale?: number;
+    errorCorrectionLevel?: QRCode.QRCodeErrorCorrectionLevel;
+  }
+): Promise<string> {
+  const darkColor = options?.darkColor || '#433422';
+  const lightColor = options?.lightColor || '#fbf9f4';
+  const displayTitle = (title || 'Music Box Cylinder').trim();
+  const displayFooter = (footerText || 'music-box').trim();
+
+  // Guard against non-browser/Node environments without DOM Canvas
+  if (typeof document === 'undefined') {
+    return QRCode.toDataURL(url, {
+      errorCorrectionLevel: options?.errorCorrectionLevel || 'L',
+      margin: 2,
+      scale: options?.scale || 6,
+      color: {
+        dark: darkColor,
+        light: lightColor,
+      },
+    });
+  }
+
+  // Wait briefly for custom fonts if available
+  if (document.fonts && document.fonts.ready) {
+    try {
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 150)),
+      ]);
+    } catch {
+      // ignore
+    }
+  }
+
+  const scale = options?.scale || 2;
+  const cardWidth = 320;
+  const qrSize = 240;
+  const qrX = (cardWidth - qrSize) / 2;
+  const maxTextWidth = cardWidth - 32;
+
+  // Create temporary offscreen canvas for QR matrix
+  const qrCanvas = document.createElement('canvas');
+  await QRCode.toCanvas(qrCanvas, url, {
+    width: qrSize * scale,
+    margin: 1.5,
+    color: {
+      dark: darkColor,
+      light: '#ffffff',
+    },
+    errorCorrectionLevel: options?.errorCorrectionLevel || 'L',
+  });
+
+  // Measure title block
+  const measureCanvas = document.createElement('canvas');
+  const measureCtx = measureCanvas.getContext('2d')!;
+  measureCtx.font = 'bold 16px "Playfair Display", "Cinzel", Georgia, serif';
+  const titleLines = wrapCanvasText(measureCtx, displayTitle, maxTextWidth, 2);
+  const titleLineHeight = 22;
+  const titleBlockHeight = titleLines.length * titleLineHeight;
+
+  // Layout calculations (logical dimensions)
+  const topPadding = 20;
+  const dividerY = topPadding + titleBlockHeight + 6;
+  const qrY = dividerY + 14;
+  const fy = qrY + qrSize + 18;
+  const bottomPadding = 18;
+  const cardHeight = fy + bottomPadding;
+
+  // Create main composite canvas
+  const mainCanvas = document.createElement('canvas');
+  mainCanvas.width = cardWidth * scale;
+  mainCanvas.height = cardHeight * scale;
+  const ctx = mainCanvas.getContext('2d')!;
+
+  ctx.scale(scale, scale);
+
+  // 1. Background Card
+  ctx.fillStyle = lightColor;
+  drawRoundedRect(ctx, 0, 0, cardWidth, cardHeight, 16);
+  ctx.fill();
+
+  // 2. Subtle Antique Inner Border
+  ctx.strokeStyle = 'rgba(180, 150, 105, 0.35)';
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, 8, 8, cardWidth - 16, cardHeight - 16, 12);
+  ctx.stroke();
+
+  // 3. Song Title at Top
+  ctx.fillStyle = darkColor;
+  ctx.font = 'bold 16px "Playfair Display", "Cinzel", Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const startTitleY = topPadding + titleLineHeight / 2;
+  titleLines.forEach((line, index) => {
+    ctx.fillText(line, cardWidth / 2, startTitleY + index * titleLineHeight);
+  });
+
+  // 4. Subtle Decorative Accent Divider
+  ctx.strokeStyle = 'rgba(180, 150, 105, 0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cardWidth / 2 - 28, dividerY);
+  ctx.lineTo(cardWidth / 2 + 28, dividerY);
+  ctx.stroke();
+
+  // Tiny center ornament
+  ctx.fillStyle = '#8a6b3e';
+  ctx.beginPath();
+  ctx.arc(cardWidth / 2, dividerY, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 5. White Rounded Panel Behind QR Code for Contrast
+  ctx.fillStyle = '#ffffff';
+  drawRoundedRect(ctx, qrX - 4, qrY - 4, qrSize + 8, qrSize + 8, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#e8dfcf';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Draw QR code
+  ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+
+  // 6. "music-box" Footer at Bottom
+  ctx.font = '600 11px "Cinzel", "Playfair Display", Georgia, serif';
+  ctx.fillStyle = '#8a6b3e';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const tw = ctx.measureText(displayFooter).width;
+  const cx = cardWidth / 2;
+
+  // Flanking antique dashes
+  ctx.strokeStyle = 'rgba(180, 150, 105, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - tw / 2 - 18, fy);
+  ctx.lineTo(cx - tw / 2 - 6, fy);
+  ctx.moveTo(cx + tw / 2 + 6, fy);
+  ctx.lineTo(cx + tw / 2 + 18, fy);
+  ctx.stroke();
+
+  ctx.fillText(displayFooter, cx, fy);
+
+  return mainCanvas.toDataURL('image/png');
+}
 
 /**
  * Generates a high-density QR Code Data URL with Level L Error Correction (~7% redundancy).
+ * If options.title is supplied, generates a card with the title on top and footer at bottom.
  */
 export async function generateScoreQrCode(
   url: string,
-  options?: QRCode.QRCodeToDataURLOptions
+  options?: GenerateScoreQrOptions
 ): Promise<string> {
+  if (options?.title) {
+    return generateSongQrCodeImage(
+      url,
+      options.title,
+      options.footerText || 'music-box',
+      {
+        darkColor: (options.color?.dark as string) || '#433422',
+        lightColor: (options.color?.light as string) || '#fbf9f4',
+        scale: typeof options.scale === 'number' ? Math.min(options.scale, 4) : 2,
+        errorCorrectionLevel: options.errorCorrectionLevel || 'L',
+      }
+    );
+  }
+
   return QRCode.toDataURL(url, {
     errorCorrectionLevel: 'L',
     margin: 2,

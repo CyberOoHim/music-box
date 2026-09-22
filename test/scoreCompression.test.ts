@@ -15,6 +15,7 @@ import {
   parseSongFromUrl,
   sanitizeSong,
   generateScoreQrCode,
+  generateSongQrCodeImage,
   MAX_URL_PAYLOAD_CHARS,
 } from '../src/utils/scoreCompression';
 import { DEFAULT_SONGS } from '../src/data/defaultSongs';
@@ -184,7 +185,15 @@ async function runTests() {
   assert(qrDataUrl.startsWith('data:image/png;base64,'), 'QR Code should be a PNG data URL');
   console.log('   ✓ Level L QR code generation passed');
 
-  console.log('\nAll 8 test suites passed with 100% success!\n');
+  // Test 9: QR Code Generation with Song Title & 'music-box' Footer
+  console.log('9. Testing QR Code Generation with Song Title & "music-box" Footer...');
+  const titledQrUrl = await generateSongQrCodeImage(customResult.url, customSong.title, 'music-box');
+  assert(titledQrUrl.startsWith('data:image/png;base64,'), 'Titled QR Code should be a PNG data URL');
+  const wrappedScoreQr = await generateScoreQrCode(customResult.url, { title: customSong.title, footerText: 'music-box' });
+  assert(wrappedScoreQr.startsWith('data:image/png;base64,'), 'Wrapped QR Code should be a PNG data URL');
+  console.log('   ✓ QR code with song title and music-box footer generation passed');
+
+  console.log('\nAll 9 test suites passed with 100% success!\n');
 }
 
 runTests().catch((err) => {
