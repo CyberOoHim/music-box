@@ -409,6 +409,10 @@ export default function App() {
   const stepTimerRef = useRef<number | null>(null);
   const lastStepTimeRef = useRef<number>(0);
   const subStepRef = useRef<number>(0);
+  const isAppActiveRef = useRef<boolean>(true);
+  const lastLoopTickRef = useRef<number>(performance.now());
+  const loopRef = useRef<((timestamp: number) => void) | null>(null);
+  const kickstartPlaybackLoopRef = useRef<() => void>(() => {});
 
   // Play & Record Studio Refs
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
@@ -431,9 +435,10 @@ export default function App() {
 
   const lastTensionSyncRef = useRef(0);
 
-  // Synchronize refs
+  // Synchronize refs & musicBoxAudio playing state
   useEffect(() => {
     isPlayingRef.current = isPlaying;
+    musicBoxAudio.setIsPlaying(isPlaying);
     currentStepRef.current = currentStep;
     currentSongRef.current = currentSong;
     combScaleIdRef.current = combScaleId;
@@ -534,10 +539,12 @@ export default function App() {
   // Robust Audio & Lifecycle management across page and app switches
   useEffect(() => {
     const handleAppResume = async () => {
-      // Reset timestamp tracker to avoid burst jumps after coming back from background
-      lastStepTimeRef.current = performance.now();
+      const now = performance.now();
+      lastStepTimeRef.current = now;
+      lastLoopTickRef.current = now;
+      isAppActiveRef.current = true;
 
-      // Ensure AudioContext is fully resumed & unlocked
+      // Ensure AudioContext is fully resumed, unlocked & healed
       await ensureAudioInitialized();
 
       // Restore mechanical hum if playback was active
@@ -547,18 +554,26 @@ export default function App() {
 
       // Ensure nature ambiance nodes are active if volume > 0
       musicBoxAudio.ensureNatureAmbianceRunning();
+
+      // Kickstart animation loop if stalled or dropped by the OS
+      kickstartPlaybackLoopRef.current();
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        musicBoxAudio.setMechanicalHum(false);
+        isAppActiveRef.current = false;
       } else {
         handleAppResume();
       }
     };
 
     const handleWindowFocus = () => {
+      isAppActiveRef.current = true;
       handleAppResume();
+    };
+
+    const handleWindowBlur = () => {
+      isAppActiveRef.current = false;
     };
 
     const handlePageShow = () => {
@@ -567,35 +582,46 @@ export default function App() {
 
     // User interaction fallback: immediately unlock/resume audio on first user touch/click/press anywhere
     const handleGlobalInteraction = () => {
+      isAppActiveRef.current = true;
       if (musicBoxAudio.isAudioSuspendedOrInterrupted()) {
         ensureAudioInitialized();
+      }
+      if (isPlayingRef.current) {
+        kickstartPlaybackLoopRef.current();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener('focusin', handleWindowFocus);
     window.addEventListener('pointerdown', handleGlobalInteraction, { capture: true, passive: true });
     window.addEventListener('touchstart', handleGlobalInteraction, { capture: true, passive: true });
     window.addEventListener('keydown', handleGlobalInteraction, { capture: true, passive: true });
+    window.addEventListener('click', handleGlobalInteraction, { capture: true, passive: true });
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener('focusin', handleWindowFocus);
       window.removeEventListener('pointerdown', handleGlobalInteraction, { capture: true });
       window.removeEventListener('touchstart', handleGlobalInteraction, { capture: true });
       window.removeEventListener('keydown', handleGlobalInteraction, { capture: true });
+      window.removeEventListener('click', handleGlobalInteraction, { capture: true });
     };
   }, [ensureAudioInitialized]);
 
-  // Main playback loop with adaptive frame pacing for iPad & battery efficiency
+  // Main playback loop with adaptive frame pacing & resilient background audio clock
   useEffect(() => {
     if (!isPlaying) {
       if (stepTimerRef.current) {
         cancelAnimationFrame(stepTimerRef.current);
         stepTimerRef.current = null;
       }
+      loopRef.current = null;
       musicBoxAudio.setMechanicalHum(false);
       setCurrentStep(currentStepRef.current);
       setSpringTension(springTensionRef.current);
@@ -605,141 +631,205 @@ export default function App() {
 
     ensureAudioInitialized();
     musicBoxAudio.setMechanicalHum(true, tempoBpm / 90);
-    lastStepTimeRef.current = performance.now();
-    let lastTickTime = performance.now();
+    const initTime = performance.now();
+    lastStepTimeRef.current = initTime;
+    lastLoopTickRef.current = initTime;
+    let lastTickTime = initTime;
     // 20 FPS in Eco mode / iPad to minimize wakeups; 30 FPS in normal mode
     const tickInterval = 1000 / (isEcoActive ? 20 : 30);
 
     const loop = (timestamp: number) => {
       if (!isPlayingRef.current) return;
+      lastLoopTickRef.current = timestamp;
 
-      const tickElapsed = timestamp - lastTickTime;
-      if (tickElapsed >= tickInterval) {
-        lastTickTime = timestamp - (tickElapsed % tickInterval);
+      try {
+        const tickElapsed = timestamp - lastTickTime;
+        if (tickElapsed >= tickInterval) {
+          lastTickTime = timestamp - (tickElapsed % tickInterval);
 
-        const elapsed = timestamp - lastStepTimeRef.current;
+          const elapsed = timestamp - lastStepTimeRef.current;
 
-        // If backgrounded for an extended period, cleanly re-sync step clock to current frame
-        if (elapsed > 1200) {
-          lastStepTimeRef.current = timestamp;
-          stepTimerRef.current = requestAnimationFrame(loop);
-          return;
-        }
-
-        let speedFactor = 1.0;
-
-        // Realistic spring unwinding physics (bypassed during multi-turn recording)
-        if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
-          const tension = springTensionRef.current;
-          if (tension <= 0.0001) {
-            isPlayingRef.current = false;
-            setIsPlaying(false);
-            musicBoxAudio.setMechanicalHum(false);
-            musicBoxAudio.scheduleIdleSleep();
+          // If backgrounded for an extended period, cleanly re-sync step clock to current frame
+          if (elapsed > 1200) {
+            lastStepTimeRef.current = timestamp;
             return;
           }
 
-          // In final ~10% tension, slow down with friction
-          if (tension < 0.1) {
-            speedFactor = Math.max(0.45, 0.45 + (tension / 0.1) * 0.55);
-          }
-        }
+          let speedFactor = 1.0;
 
-        const stepInterval = (60000 / tempoBpmRef.current / 4) / speedFactor;
-
-        // Smooth sub-step interpolation for continuous cylinder rotation
-        const total = currentSongRef.current.totalSteps;
-        const fraction = Math.min(0.999, Math.max(0, elapsed / stepInterval));
-        const subStep = (currentStepRef.current + fraction) % total;
-        notifyStepSubscribers(subStep);
-
-        if (elapsed >= stepInterval) {
-          lastStepTimeRef.current = timestamp;
-
-          // Consume tension in spring mode (100% powers 3 full song rotations)
+          // Realistic spring unwinding physics (bypassed during multi-turn recording)
           if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
-            const tensionPerStep = 1.0 / (3 * total);
-            springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
-          }
-
-          const nextStep = (currentStepRef.current + 1) % total;
-
-          // Check if a full turn rotation completed while recording
-          if (nextStep === 0 && recordingStateRef.current === 'recording-turn') {
-            const currentTurn = recordingCurrentTurnRef.current;
-            const targetTurns = recordingConfigRef.current.turns;
-
-            if (currentTurn < targetTurns) {
-              // Pause playback for inter-turn silence allowing chime harmonics to ring down
+            const tension = springTensionRef.current;
+            if (tension <= 0.0001) {
               isPlayingRef.current = false;
               setIsPlaying(false);
               musicBoxAudio.setMechanicalHum(false);
-              currentStepRef.current = 0;
-              setCurrentStep(0);
-              notifyStepSubscribers(0);
-
-              recordingStateRef.current = 'inter-turn-silence';
-              setRecordingState('inter-turn-silence');
-
-              recordingTimerRef.current = window.setTimeout(() => {
-                if (recordingStateRef.current !== 'inter-turn-silence') return;
-                const nextTurnNum = currentTurn + 1;
-                recordingCurrentTurnRef.current = nextTurnNum;
-                setRecordingCurrentTurn(nextTurnNum);
-                recordingStateRef.current = 'recording-turn';
-                setRecordingState('recording-turn');
-
-                isPlayingRef.current = true;
-                setIsPlaying(true);
-                musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
-                lastStepTimeRef.current = performance.now();
-                executeStep(0);
-              }, recordingConfigRef.current.interTurnSilence * 1000);
-
+              musicBoxAudio.scheduleIdleSleep();
               return;
-            } else {
-              // Target turns reached: pause playback and transition to lead-out
-              isPlayingRef.current = false;
-              setIsPlaying(false);
-              musicBoxAudio.setMechanicalHum(false);
-              currentStepRef.current = 0;
-              setCurrentStep(0);
-              notifyStepSubscribers(0);
+            }
 
-              recordingStateRef.current = 'lead-out';
-              setRecordingState('lead-out');
-
-              // Chime ring-out (2.0s) + lead-out padding
-              const leadOutTotalMs = (2.0 + recordingConfigRef.current.leadOutPadding) * 1000;
-              recordingTimerRef.current = window.setTimeout(() => {
-                if (recordingStateRef.current !== 'lead-out') return;
-                handleFinalizeRecordingRef.current();
-              }, leadOutTotalMs);
-
-              return;
+            // In final ~10% tension, slow down with friction
+            if (tension < 0.1) {
+              speedFactor = Math.max(0.45, 0.45 + (tension / 0.1) * 0.55);
             }
           }
 
-          currentStepRef.current = nextStep;
-          executeStep(nextStep);
-          notifyStepSubscribers(nextStep);
+          const stepInterval = (60000 / tempoBpmRef.current / 4) / speedFactor;
 
-          if (timestamp - lastTensionSyncRef.current > 500) {
-            lastTensionSyncRef.current = timestamp;
-            setSpringTension(springTensionRef.current);
-            setCurrentStep(currentStepRef.current);
+          // Smooth sub-step interpolation for continuous cylinder rotation
+          const total = currentSongRef.current.totalSteps;
+          const fraction = Math.min(0.999, Math.max(0, elapsed / stepInterval));
+          const subStep = (currentStepRef.current + fraction) % total;
+          notifyStepSubscribers(subStep);
+
+          if (elapsed >= stepInterval) {
+            lastStepTimeRef.current = timestamp;
+
+            // Consume tension in spring mode (only while app is active so away-time does not kill playback)
+            if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
+              if (isAppActiveRef.current) {
+                const tensionPerStep = 1.0 / (3 * total);
+                springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
+              }
+            }
+
+            const nextStep = (currentStepRef.current + 1) % total;
+
+            // Check if a full turn rotation completed while recording
+            if (nextStep === 0 && recordingStateRef.current === 'recording-turn') {
+              const currentTurn = recordingCurrentTurnRef.current;
+              const targetTurns = recordingConfigRef.current.turns;
+
+              if (currentTurn < targetTurns) {
+                // Pause playback for inter-turn silence allowing chime harmonics to ring down
+                isPlayingRef.current = false;
+                setIsPlaying(false);
+                musicBoxAudio.setMechanicalHum(false);
+                currentStepRef.current = 0;
+                setCurrentStep(0);
+                notifyStepSubscribers(0);
+
+                recordingStateRef.current = 'inter-turn-silence';
+                setRecordingState('inter-turn-silence');
+
+                recordingTimerRef.current = window.setTimeout(() => {
+                  if (recordingStateRef.current !== 'inter-turn-silence') return;
+                  const nextTurnNum = currentTurn + 1;
+                  recordingCurrentTurnRef.current = nextTurnNum;
+                  setRecordingCurrentTurn(nextTurnNum);
+                  recordingStateRef.current = 'recording-turn';
+                  setRecordingState('recording-turn');
+
+                  isPlayingRef.current = true;
+                  setIsPlaying(true);
+                  musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+                  const resumeTime = performance.now();
+                  lastStepTimeRef.current = resumeTime;
+                  lastLoopTickRef.current = resumeTime;
+                  executeStep(0);
+                }, recordingConfigRef.current.interTurnSilence * 1000);
+
+                return;
+              } else {
+                // Target turns reached: pause playback and transition to lead-out
+                isPlayingRef.current = false;
+                setIsPlaying(false);
+                musicBoxAudio.setMechanicalHum(false);
+                currentStepRef.current = 0;
+                setCurrentStep(0);
+                notifyStepSubscribers(0);
+
+                recordingStateRef.current = 'lead-out';
+                setRecordingState('lead-out');
+
+                // Chime ring-out (2.0s) + lead-out padding
+                const leadOutTotalMs = (2.0 + recordingConfigRef.current.leadOutPadding) * 1000;
+                recordingTimerRef.current = window.setTimeout(() => {
+                  if (recordingStateRef.current !== 'lead-out') return;
+                  handleFinalizeRecordingRef.current();
+                }, leadOutTotalMs);
+
+                return;
+              }
+            }
+
+            currentStepRef.current = nextStep;
+            executeStep(nextStep);
+            notifyStepSubscribers(nextStep);
+
+            if (timestamp - lastTensionSyncRef.current > 500) {
+              lastTensionSyncRef.current = timestamp;
+              setSpringTension(springTensionRef.current);
+              setCurrentStep(currentStepRef.current);
+            }
           }
         }
+      } finally {
+        if (isPlayingRef.current) {
+          stepTimerRef.current = requestAnimationFrame(loop);
+        }
       }
+    };
 
-      stepTimerRef.current = requestAnimationFrame(loop);
+    loopRef.current = loop;
+    kickstartPlaybackLoopRef.current = () => {
+      if (!isPlayingRef.current || !loopRef.current) return;
+      if (stepTimerRef.current) {
+        cancelAnimationFrame(stepTimerRef.current);
+        stepTimerRef.current = null;
+      }
+      const now = performance.now();
+      lastStepTimeRef.current = now;
+      lastLoopTickRef.current = now;
+      stepTimerRef.current = requestAnimationFrame(loopRef.current);
     };
 
     stepTimerRef.current = requestAnimationFrame(loop);
 
+    // Resilient background audio watchdog:
+    // If requestAnimationFrame is suspended or throttled by the OS/browser when switching apps,
+    // this watchdog guarantees that music notes continue to play and time advances accurately!
+    const watchdogInterval = window.setInterval(() => {
+      if (!isPlayingRef.current) return;
+      const now = performance.now();
+
+      // Check if AudioContext was interrupted in background and recover
+      if (musicBoxAudio.isAudioSuspendedOrInterrupted()) {
+        ensureAudioInitialized().catch(() => {});
+      }
+
+      // If requestAnimationFrame hasn't ticked in >250ms (window backgrounded or throttled)
+      const timeSinceLastRaf = now - lastLoopTickRef.current;
+      if (timeSinceLastRaf > 250) {
+        const stepInterval = (60000 / tempoBpmRef.current / 4);
+        const elapsed = now - lastStepTimeRef.current;
+
+        if (elapsed >= stepInterval) {
+          lastStepTimeRef.current = now;
+          lastLoopTickRef.current = now;
+
+          const total = currentSongRef.current.totalSteps;
+          const nextStep = (currentStepRef.current + 1) % total;
+
+          currentStepRef.current = nextStep;
+          executeStep(nextStep);
+          notifyStepSubscribers(nextStep);
+          setCurrentStep(nextStep);
+
+          // If window regained focus or visibility, kickstart the rAF loop
+          if (isAppActiveRef.current && loopRef.current) {
+            kickstartPlaybackLoopRef.current();
+          }
+        }
+      }
+    }, 120);
+
     return () => {
+      clearInterval(watchdogInterval);
+      loopRef.current = null;
       if (stepTimerRef.current) {
         cancelAnimationFrame(stepTimerRef.current);
+        stepTimerRef.current = null;
       }
     };
   }, [isPlaying, executeStep, ensureAudioInitialized, tempoBpm, isEcoActive]);

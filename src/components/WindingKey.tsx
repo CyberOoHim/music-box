@@ -170,7 +170,16 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
         startPhysicsLoopIfNeeded();
       }
     };
+
+    const handleWindowFocus = () => {
+      if (playMode === 'crank' && angularVelocityRef.current > 0.04) {
+        startPhysicsLoopIfNeeded();
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
 
     if (playMode === 'crank' && angularVelocityRef.current > 0.04) {
       startPhysicsLoopIfNeeded();
@@ -184,6 +193,8 @@ export const WindingKey: React.FC<WindingKeyProps> = React.memo(({
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
       if (reqAnimIdRef.current) {
         cancelAnimationFrame(reqAnimIdRef.current);
         reqAnimIdRef.current = null;

@@ -327,11 +327,23 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
       }
     };
 
+    const handleWindowFocus = () => {
+      if (!animId) {
+        lastRenderTime = performance.now();
+        lastCalcTime = performance.now();
+        animId = requestAnimationFrame(updateGovernor);
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
     animId = requestAnimationFrame(updateGovernor);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
       if (animId) {
         cancelAnimationFrame(animId);
       }

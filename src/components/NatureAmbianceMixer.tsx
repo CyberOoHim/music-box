@@ -184,7 +184,19 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
         animationFrameRef.current = null;
       }
     };
+
+    const handleWindowFocus = () => {
+      isTabVisible = true;
+      silentFrameCount = 0;
+      if (!animationFrameRef.current) {
+        lastRenderTime = performance.now();
+        animationFrameRef.current = requestAnimationFrame(render);
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
 
     const render = (timestamp: number) => {
       if (!isTabVisible) {
@@ -417,6 +429,8 @@ export const NatureAmbianceMixer: React.FC<NatureAmbianceMixerProps> = React.mem
     return () => {
       renderTriggerRef.current = null;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;

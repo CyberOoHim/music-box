@@ -74,9 +74,10 @@ class MusicBoxAudioEngine {
   };
   public currentMasterVolume = 0.9;
   public isInitialized = false;
+  public isPlaying = false;
 
   public async init(): Promise<void> {
-    if (this.isInitialized && this.ctx && this.ctx.state !== 'closed') {
+    if (this.isInitialized && this.ctx && this.ctx.state !== 'closed' && (this.ctx.state as string) !== 'interrupted') {
       if (this.ctx.state !== 'running') {
         try {
           await this.ctx.resume();
@@ -102,6 +103,8 @@ class MusicBoxAudioEngine {
         this.ctx.onstatechange = () => {
           if (this.ctx?.state === 'running') {
             this.ensureNatureAmbianceRunning();
+          } else if (this.isPlaying && (this.ctx?.state === 'suspended' || (this.ctx?.state as string) === 'interrupted')) {
+            this.resumeIfNeeded().catch(() => {});
           }
         };
 
@@ -255,22 +258,78 @@ class MusicBoxAudioEngine {
     }
   }
 
+  public setIsPlaying(playing: boolean): void {
+    this.isPlaying = playing;
+    if (playing) {
+      this.cancelIdleSleep();
+      this.resumeIfNeeded().catch(() => {});
+    } else {
+      this.scheduleIdleSleep();
+    }
+  }
+
   public async resumeIfNeeded(): Promise<void> {
+    this.cancelIdleSleep();
+
     if (!this.isInitialized || !this.ctx || this.ctx.state === 'closed') {
       this.isInitialized = false;
       this.initPromise = null;
       await this.init();
+      return;
     }
-    this.cancelIdleSleep();
+
     if (this.ctx && this.ctx.state !== 'running') {
       try {
         await this.ctx.resume();
       } catch {
+        // Fallback for iOS/WebKit stuck in interrupted state: suspend then resume cycle
+        try {
+          await this.ctx.suspend();
+          await this.ctx.resume();
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // If still in interrupted or closed state after resume attempt, reconstruct AudioContext
+    if (this.ctx && ((this.ctx.state as string) === 'closed' || (this.ctx.state as string) === 'interrupted')) {
+      try {
+        await this.recreateAudioContext();
+      } catch {
         // ignore
       }
     }
+
     this.unlockAudioSession();
     this.ensureNatureAmbianceRunning();
+  }
+
+  public async recreateAudioContext(): Promise<void> {
+    try {
+      if (this.ctx) {
+        try {
+          await this.ctx.close();
+        } catch {
+          // ignore
+        }
+      }
+      this.ctx = null;
+      this.isInitialized = false;
+      this.initPromise = null;
+      await this.init();
+
+      if (this.ctx && this.masterGain) {
+        this.masterGain.gain.setValueAtTime(this.currentMasterVolume, this.ctx.currentTime);
+      }
+      this.updateNatureVolumes(this.currentNatureSettings);
+      this.applyChamberPreset(this.currentPreset);
+      if (this.isMechanicalHumActive) {
+        this.setupGearHum();
+      }
+    } catch (err) {
+      console.warn('Failed to recreate AudioContext:', err);
+    }
   }
 
   public cancelIdleSleep(): void {
@@ -303,7 +362,7 @@ class MusicBoxAudioEngine {
   public scheduleIdleSleep(): void {
     this.cancelIdleSleep();
     const hasNature = Object.values(this.currentNatureSettings).some((v) => v > 0.01);
-    if (hasNature || this.isMechanicalHumActive || this.isRecording || this.activeVoiceStoppers.size > 0) {
+    if (hasNature || this.isMechanicalHumActive || this.isRecording || this.activeVoiceStoppers.size > 0 || this.isPlaying) {
       return;
     }
     // Auto-suspend AudioContext after 3.5s of complete silence to preserve battery on iPad & mobile
@@ -315,6 +374,7 @@ class MusicBoxAudioEngine {
         this.activeVoiceStoppers.size === 0 &&
         !this.isMechanicalHumActive &&
         !this.isRecording &&
+        !this.isPlaying &&
         !hasNatureNow
       ) {
         try {
