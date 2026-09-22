@@ -167,11 +167,6 @@ export default function App() {
   const [shareModalSong, setShareModalSong] = useState<MusicBoxSong | null>(null);
   const [sharedSongNotice, setSharedSongNotice] = useState<{ song: MusicBoxSong; isPreset: boolean } | null>(null);
 
-  const handleOpenShareModal = useCallback((songToShare?: MusicBoxSong) => {
-    setShareModalSong(songToShare || currentSong);
-    setIsShareModalOpen(true);
-  }, [currentSong]);
-
   // Play & Record Studio state
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');

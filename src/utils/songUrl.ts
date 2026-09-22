@@ -1,5 +1,12 @@
 import { MusicBoxSong, MusicBoxPin, CombScaleId, COMB_SCALES_MAP } from '../types';
 import { DEFAULT_SONGS } from '../data/defaultSongs';
+import {
+  generateSongShareUrl,
+  parseSongFromUrl,
+  ScoreShareResult,
+} from './scoreCompression';
+
+export * from './scoreCompression';
 
 /**
  * Ultra-compact wire format for music box scores.
@@ -258,6 +265,7 @@ export interface ShareableUrlResult {
   url: string;
   isPreset: boolean;
   presetId?: string;
+  tier?: 'preset' | 'delta' | 'compact';
   payloadSize: number;
   originalSize: number;
   compressionRatio: number;
@@ -265,45 +273,21 @@ export interface ShareableUrlResult {
 
 /**
  * Creates a shareable URL for a music box song.
- * Uses #preset=id for factory presets, or #song=payload for custom/edited cylinders.
+ * Uses #preset=id for factory presets, #song=delta for forked presets (_d: 1), or #song=compact for custom cylinders (_c: 2).
  */
 export async function createShareableCylinderUrl(
   song: MusicBoxSong,
   baseUrl?: string
 ): Promise<ShareableUrlResult> {
-  const base = baseUrl || (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '');
-
-  // 1. Check if it's an unmodified factory preset
-  if (!isSongModifiedFromPreset(song)) {
-    const url = `${base}#preset=${encodeURIComponent(song.id)}`;
-    return {
-      url,
-      isPreset: true,
-      presetId: song.id,
-      payloadSize: song.id.length,
-      originalSize: JSON.stringify(song).length,
-      compressionRatio: 98,
-    };
-  }
-
-  // 2. Custom or modified song: compact, stringify, and compress
-  const compact = packMusicBoxSong(song);
-  const jsonStr = JSON.stringify(compact);
-  const originalSize = jsonStr.length;
-
-  const compressedBytes = await compressString(jsonStr);
-  const base64UrlPayload = uint8ArrayToBase64Url(compressedBytes);
-  const url = `${base}#song=${base64UrlPayload}`;
-
-  const payloadSize = base64UrlPayload.length;
-  const compressionRatio = Math.max(0, Math.round((1 - payloadSize / Math.max(originalSize, 1)) * 100));
-
+  const res = await generateSongShareUrl(song, baseUrl);
   return {
-    url,
-    isPreset: false,
-    payloadSize,
-    originalSize,
-    compressionRatio,
+    url: res.url,
+    isPreset: res.tier === 'preset',
+    presetId: res.tier === 'preset' ? song.id : undefined,
+    tier: res.tier,
+    payloadSize: res.compressedBinaryBytes || res.urlChars,
+    originalSize: res.originalJsonBytes,
+    compressionRatio: Math.round(res.compressionRatio * 100),
   };
 }
 
@@ -358,13 +342,30 @@ export function extractCylinderParamsFromUrl(urlStringOrLocation?: Location | st
 
 /**
  * Parses and reconstructs a MusicBoxSong from the current or provided URL.
+ * Supports Tier 1 Presets, Tier 2 Preset Deltas (_d: 1), Tier 3 Compact V2 (_c: 2), and legacy v1 formats.
  */
 export async function parseCylinderFromUrl(
   urlStringOrLocation?: Location | string
 ): Promise<{ song: MusicBoxSong; isPreset: boolean } | null> {
+  const urlStr =
+    typeof urlStringOrLocation === 'string'
+      ? urlStringOrLocation
+      : urlStringOrLocation?.href || (typeof window !== 'undefined' ? window.location.href : '');
+
+  // 1. Try unified multi-tiered parser (Preset, Delta _d: 1, Compact V2 _c: 2)
+  try {
+    const score = await parseSongFromUrl(urlStr);
+    if (score) {
+      const isPreset = DEFAULT_SONGS.some((p) => p.id === score.id);
+      return { song: score, isPreset };
+    }
+  } catch (e) {
+    console.warn('parseSongFromUrl failed, trying legacy format:', e);
+  }
+
+  // 2. Fallback to legacy v1 wire format
   const { presetId, songPayload } = extractCylinderParamsFromUrl(urlStringOrLocation);
 
-  // 1. Check for Preset ID
   if (presetId) {
     const preset = DEFAULT_SONGS.find((s) => s.id === presetId);
     if (preset) {
@@ -372,22 +373,23 @@ export async function parseCylinderFromUrl(
     }
   }
 
-  // 2. Check for Compressed Song Payload
   if (songPayload) {
     if (songPayload.length > MAX_URL_PAYLOAD_CHARS) {
       throw new Error('Shared cylinder link exceeds maximum safe size');
     }
 
-    const compressedBytes = base64UrlToUint8Array(songPayload);
-    const jsonStr = await decompressBytes(compressedBytes);
-    const parsed = JSON.parse(jsonStr) as CompactMusicBoxWireFormat;
+    try {
+      const compressedBytes = base64UrlToUint8Array(songPayload);
+      const jsonStr = await decompressBytes(compressedBytes);
+      const parsed = JSON.parse(jsonStr) as CompactMusicBoxWireFormat;
 
-    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.p)) {
-      throw new Error('Invalid cylinder score structure in shared link');
+      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.p)) {
+        const song = unpackMusicBoxSong(parsed);
+        return { song, isPreset: false };
+      }
+    } catch {
+      // ignore
     }
-
-    const song = unpackMusicBoxSong(parsed);
-    return { song, isPreset: false };
   }
 
   return null;

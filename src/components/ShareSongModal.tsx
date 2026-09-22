@@ -7,6 +7,7 @@ import {
   Share2,
   Copy,
   Check,
+  Download,
   ExternalLink,
   QrCode,
   Sparkles,
@@ -60,7 +61,7 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
               dark: '#433422', // Match vintage music box brass/wood
               light: '#fbf9f4',
             },
-            errorCorrectionLevel: 'M',
+            errorCorrectionLevel: 'L',
           });
           if (isMounted) {
             setQrDataUrl(qr);
@@ -133,50 +134,61 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
 
   const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
 
+  const handleDownloadQr = () => {
+    if (!qrDataUrl) return;
+    const a = document.createElement('a');
+    a.href = qrDataUrl;
+    a.download = `${song.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_qr.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Saved QR Code (.png)', 'success');
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#fcfbf8] border border-[#d8cbbb] shadow-[0_12px_48px_rgba(67,52,34,0.22)] text-[#2d2419] p-5 sm:p-7 space-y-5"
+        className="relative w-full max-w-lg bg-[#fbf9f4] border-2 border-[#d8cbbb] rounded-3xl shadow-2xl p-5 sm:p-6 text-[#433422] space-y-4 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#e5dcce] pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#8a6b3e]/10 border border-[#8a6b3e]/30 flex items-center justify-center text-[#8a6b3e] shadow-xs">
-              <Share2 className="w-5 h-5" />
+        <div className="flex items-start justify-between gap-3 border-b border-[#e5dcce] pb-3.5">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-[#8a6b3e]/15 flex items-center justify-center text-[#8a6b3e]">
+                <Share2 className="w-4 h-4" />
+              </div>
+              <h3 className="text-base sm:text-lg font-serif font-bold text-[#433422]">
+                Share Music Box Cylinder
+              </h3>
             </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-serif font-bold text-[#433422] flex items-center gap-2">
-                <span>Share Cylinder Link</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-sans font-medium bg-[#f0eae1] text-[#75644e] border border-[#d8cbbb]">
-                  Zero Server / Instant
-                </span>
-              </h2>
-              <p className="text-xs text-[#75644e] font-serif-sub italic mt-0.5">
-                Share this custom music box cylinder with anyone via a direct, self-contained link.
-              </p>
-            </div>
+            <p className="text-xs text-[#75644e] font-serif-sub italic">
+              Share directly via compressed URL hash or high-density Level L QR code.
+            </p>
           </div>
+
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#8a6b3e] hover:bg-[#8a6b3e]/10 hover:text-[#433422] transition-colors"
-            title="Close"
+            className="p-1.5 rounded-xl hover:bg-[#ede6da] text-[#8a765e] hover:text-[#433422] transition cursor-pointer"
+            title="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Cylinder Preview Card */}
-        <div className="rounded-xl bg-[#f7f3ee] border border-[#e5dcce] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        {/* Cylinder Card Preview */}
+        <div className="rounded-2xl bg-[#f4ece1] border border-[#d8cbbb] p-3.5 flex items-center justify-between gap-3 shadow-inner">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <Music className="w-4 h-4 text-[#8a6b3e]" />
-              <span className="font-serif font-bold text-[#433422] text-base">{song.title}</span>
+              <h4 className="font-serif font-bold text-sm text-[#433422] leading-tight">
+                {song.title}
+              </h4>
               {song.isAiGenerated && (
-                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100/80 text-amber-800 border border-amber-300 font-sans">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-serif bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1">
                   <Sparkles className="w-2.5 h-2.5" /> AI
                 </span>
               )}
@@ -195,14 +207,19 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
           {/* Type Badge */}
           {shareResult && (
             <div className="shrink-0">
-              {shareResult.isPreset ? (
+              {shareResult.tier === 'preset' || shareResult.isPreset ? (
                 <span className="text-[11px] px-2.5 py-1 rounded-full font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                  Standard Preset
+                  Tier 1: Factory Preset (&lt; 60 chars)
+                </span>
+              ) : shareResult.tier === 'delta' ? (
+                <span className="text-[11px] px-2.5 py-1 rounded-full font-medium bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
+                  <span>Tier 2: Preset Delta (_d: 1)</span>
+                  <span className="font-bold">(-{shareResult.compressionRatio}%)</span>
                 </span>
               ) : (
                 <span className="text-[11px] px-2.5 py-1 rounded-full font-medium bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                  <span>Compressed</span>
-                  <span className="font-bold">({shareResult.payloadSize} B)</span>
+                  <span>Tier 3: Compact V2 (_c: 2)</span>
+                  <span className="font-bold">(-{shareResult.compressionRatio}%)</span>
                 </span>
               )}
             </div>
@@ -307,6 +324,14 @@ export const ShareSongModal: React.FC<ShareSongModalProps> = ({
                     className="w-48 h-48 rounded-lg"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadQr}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-[#d8cbbb] text-[#5c4a35] hover:bg-[#f4ece1] text-xs font-serif flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#8a6b3e]" />
+                  <span>Save QR Image (.png)</span>
+                </button>
                 <div className="space-y-0.5">
                   <p className="text-xs font-serif font-bold text-[#433422]">
                     Scan with your mobile camera
