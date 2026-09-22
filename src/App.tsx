@@ -23,6 +23,8 @@ import { GeminiComposerModal } from './components/GeminiComposerModal';
 import { NatureAmbianceMixer } from './components/NatureAmbianceMixer';
 import { SongLibrary } from './components/SongLibrary';
 import { ImportExportModal } from './components/ImportExportModal';
+import { ShareModal } from './components/ShareModal';
+import { parseSongFromUrl } from './utils/scoreCompression';
 import {
   PlayRecordModal,
   RecordingState,
@@ -60,6 +62,7 @@ import {
   Pause,
   Radio,
   Share2,
+  QrCode,
 } from 'lucide-react';
 
 type TabView = 'movement' | 'editor' | 'nature' | 'library';
@@ -163,6 +166,11 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareModalSong, setShareModalSong] = useState<MusicBoxSong | null>(null);
   const [sharedSongNotice, setSharedSongNotice] = useState<{ song: MusicBoxSong; isPreset: boolean } | null>(null);
+
+  const handleOpenShareModal = useCallback((songToShare?: MusicBoxSong) => {
+    setShareModalSong(songToShare || currentSong);
+    setIsShareModalOpen(true);
+  }, [currentSong]);
 
   // Play & Record Studio state
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
@@ -331,6 +339,68 @@ export default function App() {
       console.warn('Could not save custom songs to localStorage', e);
     }
   }, []);
+
+  // Hydrate shared score from URL hash (#song=... / #preset=...) or search params
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const rawHash = window.location.hash || '';
+    const rawSearch = window.location.search || '';
+    if (!rawHash && !rawSearch) return;
+
+    if (
+      rawHash.includes('#song=') ||
+      rawHash.includes('#preset=') ||
+      rawHash.includes('#data=') ||
+      rawSearch.includes('song=') ||
+      rawSearch.includes('preset=')
+    ) {
+      (async () => {
+        try {
+          const importedSong = await parseSongFromUrl();
+          if (importedSong) {
+            setSongs((prev) => {
+              const exists = prev.some(
+                (s) =>
+                  s.id === importedSong.id ||
+                  (s.title === importedSong.title && s.pins.length === importedSong.pins.length)
+              );
+              const updated = exists ? prev : [importedSong, ...prev];
+              persistCustomSongs(updated);
+              return updated;
+            });
+            setCurrentSong(importedSong);
+            if (importedSong.combScaleId) {
+              setCombScaleId(importedSong.combScaleId);
+            }
+            if (importedSong.tempoBpm) {
+              setTempoBpm(importedSong.tempoBpm);
+            }
+            showToast(`Shared score loaded: "${importedSong.title}"`, 'success');
+          }
+        } catch (e) {
+          console.error('Failed to hydrate shared score from URL:', e);
+          showToast('Could not decode shared score from URL', 'warn');
+        } finally {
+          // Clean URL address bar to remove long payload hash and prevent overwrite on refresh
+          try {
+            if (window.history && window.history.replaceState) {
+              const cleanPath = window.location.pathname;
+              const searchParams = new URLSearchParams(window.location.search);
+              searchParams.delete('song');
+              searchParams.delete('preset');
+              searchParams.delete('data');
+              const newSearch = searchParams.toString();
+              const cleanUrl = `${cleanPath}${newSearch ? '?' + newSearch : ''}`;
+              window.history.replaceState(null, '', cleanUrl);
+            }
+          } catch {
+            // ignore history errors
+          }
+        }
+      })();
+    }
+  }, [persistCustomSongs, showToast]);
 
   // Refs for audio scheduling
   const isPlayingRef = useRef(isPlaying);

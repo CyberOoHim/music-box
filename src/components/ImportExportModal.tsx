@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Plus,
   Radio,
+  QrCode,
   Share2,
 } from 'lucide-react';
 
@@ -34,7 +35,7 @@ interface ImportExportModalProps {
   onRestoreSettingsDefault: () => void;
   showToast: (msg: string, type?: 'success' | 'info' | 'warn') => void;
   onOpenRecordModal?: () => void;
-  onOpenShareModal?: (song: MusicBoxSong) => void;
+  onOpenShareModal?: (song?: MusicBoxSong) => void;
 }
 
 type ModalTab = 'export' | 'import' | 'restore';
@@ -370,14 +371,15 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
                   {onOpenShareModal && (
                     <button
                       id="export-share-url-btn"
+                      type="button"
                       onClick={() => {
-                        onOpenShareModal(currentSong);
                         onClose();
+                        onOpenShareModal(currentSong);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-[#8a6b3e] hover:bg-[#725730] text-[#fbf8f2] text-xs font-serif font-semibold flex items-center space-x-1.5 transition shadow-2xs"
+                      className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#c4a675] via-[#dfcd9f] to-[#b8955e] hover:from-[#bfa170] hover:to-[#ae8b54] text-[#2d2419] text-xs font-serif font-bold flex items-center space-x-1.5 transition shadow-2xs border border-[#ae8b54]/40 cursor-pointer"
                     >
-                      <Share2 className="w-3.5 h-3.5" />
-                      <span>Share via URL / QR Code</span>
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>Share Link & QR Code</span>
                     </button>
                   )}
 
