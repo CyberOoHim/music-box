@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan to eliminate >1000MB video file bloat and iPad thermal overheating during recording. Configures 24 FPS vintage pacing, background canvas layer caching, client-side bitrate capping, battery saver auto-dim live monitor, and server-side H.264 MP4 optimization to deliver 5–10 MB recordings while keeping the iPad cool.",
+  "updatedAt": "2026-10-15T07:23:29.202566500Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

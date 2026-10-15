@@ -23,8 +23,6 @@ import { GeminiComposerModal } from './components/GeminiComposerModal';
 import { NatureAmbianceMixer } from './components/NatureAmbianceMixer';
 import { SongLibrary } from './components/SongLibrary';
 import { ImportExportModal } from './components/ImportExportModal';
-import { ShareModal } from './components/ShareModal';
-import { parseSongFromUrl } from './utils/scoreCompression';
 import {
   PlayRecordModal,
   RecordingState,
@@ -36,7 +34,13 @@ import {
   encodeWav,
   encodeMp3,
   cleanupRecordedSession,
+  formatFileSize,
 } from './audio/audioRecorder';
+import {
+  VideoRecorder,
+  RecordedVideoSession,
+  cleanupRecordedVideoSession,
+} from './audio/videoRecorder';
 import { ShareSongModal } from './components/ShareSongModal';
 import {
   parseCylinderFromUrl,
@@ -62,7 +66,6 @@ import {
   Pause,
   Radio,
   Share2,
-  QrCode,
 } from 'lucide-react';
 
 type TabView = 'movement' | 'editor' | 'nature' | 'library';
@@ -181,6 +184,8 @@ export default function App() {
   const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
   const [recordingPeakLevel, setRecordingPeakLevel] = useState(0);
   const [recordedSession, setRecordedSession] = useState<RecordedAudioSession | null>(null);
+  const [recordedVideoSession, setRecordedVideoSession] = useState<RecordedVideoSession | null>(null);
+  const [activeRecordingMode, setActiveRecordingMode] = useState<'audio' | 'video'>('video');
   // Gemini AI Status & Client API Key
   const [clientApiKey, setClientApiKey] = useState<string>(() => {
     try {
@@ -335,68 +340,6 @@ export default function App() {
     }
   }, []);
 
-  // Hydrate shared score from URL hash (#song=... / #preset=...) or search params
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const rawHash = window.location.hash || '';
-    const rawSearch = window.location.search || '';
-    if (!rawHash && !rawSearch) return;
-
-    if (
-      rawHash.includes('#song=') ||
-      rawHash.includes('#preset=') ||
-      rawHash.includes('#data=') ||
-      rawSearch.includes('song=') ||
-      rawSearch.includes('preset=')
-    ) {
-      (async () => {
-        try {
-          const importedSong = await parseSongFromUrl();
-          if (importedSong) {
-            setSongs((prev) => {
-              const exists = prev.some(
-                (s) =>
-                  s.id === importedSong.id ||
-                  (s.title === importedSong.title && s.pins.length === importedSong.pins.length)
-              );
-              const updated = exists ? prev : [importedSong, ...prev];
-              persistCustomSongs(updated);
-              return updated;
-            });
-            setCurrentSong(importedSong);
-            if (importedSong.combScaleId) {
-              setCombScaleId(importedSong.combScaleId);
-            }
-            if (importedSong.tempoBpm) {
-              setTempoBpm(importedSong.tempoBpm);
-            }
-            showToast(`Shared score loaded: "${importedSong.title}"`, 'success');
-          }
-        } catch (e) {
-          console.error('Failed to hydrate shared score from URL:', e);
-          showToast('Could not decode shared score from URL', 'warn');
-        } finally {
-          // Clean URL address bar to remove long payload hash and prevent overwrite on refresh
-          try {
-            if (window.history && window.history.replaceState) {
-              const cleanPath = window.location.pathname;
-              const searchParams = new URLSearchParams(window.location.search);
-              searchParams.delete('song');
-              searchParams.delete('preset');
-              searchParams.delete('data');
-              const newSearch = searchParams.toString();
-              const cleanUrl = `${cleanPath}${newSearch ? '?' + newSearch : ''}`;
-              window.history.replaceState(null, '', cleanUrl);
-            }
-          } catch {
-            // ignore history errors
-          }
-        }
-      })();
-    }
-  }, [persistCustomSongs, showToast]);
-
   // Refs for audio scheduling
   const isPlayingRef = useRef(isPlaying);
   const currentStepRef = useRef(currentStep);
@@ -409,13 +352,12 @@ export default function App() {
   const stepTimerRef = useRef<number | null>(null);
   const lastStepTimeRef = useRef<number>(0);
   const subStepRef = useRef<number>(0);
-  const isAppActiveRef = useRef<boolean>(true);
-  const lastLoopTickRef = useRef<number>(performance.now());
-  const loopRef = useRef<((timestamp: number) => void) | null>(null);
-  const kickstartPlaybackLoopRef = useRef<() => void>(() => {});
 
   // Play & Record Studio Refs
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const videoRecorderRef = useRef<VideoRecorder | null>(null);
+  const liveRecordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeTinesRef = useRef<Set<number>>(new Set());
   const recordingStateRef = useRef<RecordingState>('idle');
   const recordingConfigRef = useRef<PlayRecordConfig>(recordingConfig);
   const recordingCurrentTurnRef = useRef<number>(1);
@@ -435,10 +377,9 @@ export default function App() {
 
   const lastTensionSyncRef = useRef(0);
 
-  // Synchronize refs & musicBoxAudio playing state
+  // Synchronize refs
   useEffect(() => {
     isPlayingRef.current = isPlaying;
-    musicBoxAudio.setIsPlaying(isPlaying);
     currentStepRef.current = currentStep;
     currentSongRef.current = currentSong;
     combScaleIdRef.current = combScaleId;
@@ -483,6 +424,7 @@ export default function App() {
     setActiveTines((prev) => {
       const next = new Set(prev);
       tines.forEach((idx) => next.add(idx));
+      activeTinesRef.current = next;
       return next;
     });
 
@@ -493,6 +435,7 @@ export default function App() {
           if (!prev.has(tineIndex)) return prev;
           const next = new Set(prev);
           next.delete(tineIndex);
+          activeTinesRef.current = next;
           return next;
         });
       }, 120);
@@ -539,12 +482,10 @@ export default function App() {
   // Robust Audio & Lifecycle management across page and app switches
   useEffect(() => {
     const handleAppResume = async () => {
-      const now = performance.now();
-      lastStepTimeRef.current = now;
-      lastLoopTickRef.current = now;
-      isAppActiveRef.current = true;
+      // Reset timestamp tracker to avoid burst jumps after coming back from background
+      lastStepTimeRef.current = performance.now();
 
-      // Ensure AudioContext is fully resumed, unlocked & healed
+      // Ensure AudioContext is fully resumed & unlocked
       await ensureAudioInitialized();
 
       // Restore mechanical hum if playback was active
@@ -554,26 +495,18 @@ export default function App() {
 
       // Ensure nature ambiance nodes are active if volume > 0
       musicBoxAudio.ensureNatureAmbianceRunning();
-
-      // Kickstart animation loop if stalled or dropped by the OS
-      kickstartPlaybackLoopRef.current();
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        isAppActiveRef.current = false;
+        musicBoxAudio.setMechanicalHum(false);
       } else {
         handleAppResume();
       }
     };
 
     const handleWindowFocus = () => {
-      isAppActiveRef.current = true;
       handleAppResume();
-    };
-
-    const handleWindowBlur = () => {
-      isAppActiveRef.current = false;
     };
 
     const handlePageShow = () => {
@@ -582,46 +515,35 @@ export default function App() {
 
     // User interaction fallback: immediately unlock/resume audio on first user touch/click/press anywhere
     const handleGlobalInteraction = () => {
-      isAppActiveRef.current = true;
       if (musicBoxAudio.isAudioSuspendedOrInterrupted()) {
         ensureAudioInitialized();
-      }
-      if (isPlayingRef.current) {
-        kickstartPlaybackLoopRef.current();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('pageshow', handlePageShow);
-    document.addEventListener('focusin', handleWindowFocus);
     window.addEventListener('pointerdown', handleGlobalInteraction, { capture: true, passive: true });
     window.addEventListener('touchstart', handleGlobalInteraction, { capture: true, passive: true });
     window.addEventListener('keydown', handleGlobalInteraction, { capture: true, passive: true });
-    window.addEventListener('click', handleGlobalInteraction, { capture: true, passive: true });
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleWindowFocus);
-      window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('pageshow', handlePageShow);
-      document.removeEventListener('focusin', handleWindowFocus);
       window.removeEventListener('pointerdown', handleGlobalInteraction, { capture: true });
       window.removeEventListener('touchstart', handleGlobalInteraction, { capture: true });
       window.removeEventListener('keydown', handleGlobalInteraction, { capture: true });
-      window.removeEventListener('click', handleGlobalInteraction, { capture: true });
     };
   }, [ensureAudioInitialized]);
 
-  // Main playback loop with adaptive frame pacing & resilient background audio clock
+  // Main playback loop with adaptive frame pacing for iPad & battery efficiency
   useEffect(() => {
     if (!isPlaying) {
       if (stepTimerRef.current) {
         cancelAnimationFrame(stepTimerRef.current);
         stepTimerRef.current = null;
       }
-      loopRef.current = null;
       musicBoxAudio.setMechanicalHum(false);
       setCurrentStep(currentStepRef.current);
       setSpringTension(springTensionRef.current);
@@ -631,205 +553,143 @@ export default function App() {
 
     ensureAudioInitialized();
     musicBoxAudio.setMechanicalHum(true, tempoBpm / 90);
-    const initTime = performance.now();
-    lastStepTimeRef.current = initTime;
-    lastLoopTickRef.current = initTime;
-    let lastTickTime = initTime;
+    lastStepTimeRef.current = performance.now();
+    let lastTickTime = performance.now();
     // 20 FPS in Eco mode / iPad to minimize wakeups; 30 FPS in normal mode
     const tickInterval = 1000 / (isEcoActive ? 20 : 30);
 
     const loop = (timestamp: number) => {
       if (!isPlayingRef.current) return;
-      lastLoopTickRef.current = timestamp;
 
-      try {
-        const tickElapsed = timestamp - lastTickTime;
-        if (tickElapsed >= tickInterval) {
-          lastTickTime = timestamp - (tickElapsed % tickInterval);
+      const tickElapsed = timestamp - lastTickTime;
+      if (tickElapsed >= tickInterval) {
+        lastTickTime = timestamp - (tickElapsed % tickInterval);
 
-          const elapsed = timestamp - lastStepTimeRef.current;
+        const elapsed = timestamp - lastStepTimeRef.current;
 
-          // If backgrounded for an extended period, cleanly re-sync step clock to current frame
-          if (elapsed > 1200) {
-            lastStepTimeRef.current = timestamp;
+        // If backgrounded for an extended period, cleanly re-sync step clock to current frame
+        if (elapsed > 1200) {
+          lastStepTimeRef.current = timestamp;
+          stepTimerRef.current = requestAnimationFrame(loop);
+          return;
+        }
+
+        let speedFactor = 1.0;
+
+        // Realistic spring unwinding physics (bypassed during multi-turn recording)
+        if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
+          const tension = springTensionRef.current;
+          if (tension <= 0.0001) {
+            isPlayingRef.current = false;
+            setIsPlaying(false);
+            musicBoxAudio.setMechanicalHum(false);
+            musicBoxAudio.scheduleIdleSleep();
             return;
           }
 
-          let speedFactor = 1.0;
+          // In final ~10% tension, slow down with friction
+          if (tension < 0.1) {
+            speedFactor = Math.max(0.45, 0.45 + (tension / 0.1) * 0.55);
+          }
+        }
 
-          // Realistic spring unwinding physics (bypassed during multi-turn recording)
+        const stepInterval = (60000 / tempoBpmRef.current / 4) / speedFactor;
+
+        // Smooth sub-step interpolation for continuous cylinder rotation
+        const total = currentSongRef.current.totalSteps;
+        const fraction = Math.min(0.999, Math.max(0, elapsed / stepInterval));
+        const subStep = (currentStepRef.current + fraction) % total;
+        subStepRef.current = subStep;
+        notifyStepSubscribers(subStep);
+
+        if (elapsed >= stepInterval) {
+          lastStepTimeRef.current = timestamp;
+
+          // Consume tension in spring mode (100% powers 3 full song rotations)
           if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
-            const tension = springTensionRef.current;
-            if (tension <= 0.0001) {
+            const tensionPerStep = 1.0 / (3 * total);
+            springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
+          }
+
+          const nextStep = (currentStepRef.current + 1) % total;
+
+          // Check if a full turn rotation completed while recording
+          if (nextStep === 0 && recordingStateRef.current === 'recording-turn') {
+            const currentTurn = recordingCurrentTurnRef.current;
+            const targetTurns = recordingConfigRef.current.turns;
+
+            if (currentTurn < targetTurns) {
+              // Pause playback for inter-turn silence allowing chime harmonics to ring down
               isPlayingRef.current = false;
               setIsPlaying(false);
               musicBoxAudio.setMechanicalHum(false);
-              musicBoxAudio.scheduleIdleSleep();
+              currentStepRef.current = 0;
+              setCurrentStep(0);
+              notifyStepSubscribers(0);
+
+              recordingStateRef.current = 'inter-turn-silence';
+              setRecordingState('inter-turn-silence');
+
+              recordingTimerRef.current = window.setTimeout(() => {
+                if (recordingStateRef.current !== 'inter-turn-silence') return;
+                const nextTurnNum = currentTurn + 1;
+                recordingCurrentTurnRef.current = nextTurnNum;
+                setRecordingCurrentTurn(nextTurnNum);
+                recordingStateRef.current = 'recording-turn';
+                setRecordingState('recording-turn');
+
+                isPlayingRef.current = true;
+                setIsPlaying(true);
+                musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
+                lastStepTimeRef.current = performance.now();
+                executeStep(0);
+              }, recordingConfigRef.current.interTurnSilence * 1000);
+
+              return;
+            } else {
+              // Target turns reached: pause playback and transition to lead-out
+              isPlayingRef.current = false;
+              setIsPlaying(false);
+              musicBoxAudio.setMechanicalHum(false);
+              currentStepRef.current = 0;
+              setCurrentStep(0);
+              notifyStepSubscribers(0);
+
+              recordingStateRef.current = 'lead-out';
+              setRecordingState('lead-out');
+
+              // Chime ring-out (2.0s) + lead-out padding
+              const leadOutTotalMs = (2.0 + recordingConfigRef.current.leadOutPadding) * 1000;
+              recordingTimerRef.current = window.setTimeout(() => {
+                if (recordingStateRef.current !== 'lead-out') return;
+                handleFinalizeRecordingRef.current();
+              }, leadOutTotalMs);
+
               return;
             }
-
-            // In final ~10% tension, slow down with friction
-            if (tension < 0.1) {
-              speedFactor = Math.max(0.45, 0.45 + (tension / 0.1) * 0.55);
-            }
           }
 
-          const stepInterval = (60000 / tempoBpmRef.current / 4) / speedFactor;
+          currentStepRef.current = nextStep;
+          subStepRef.current = nextStep;
+          executeStep(nextStep);
+          notifyStepSubscribers(nextStep);
 
-          // Smooth sub-step interpolation for continuous cylinder rotation
-          const total = currentSongRef.current.totalSteps;
-          const fraction = Math.min(0.999, Math.max(0, elapsed / stepInterval));
-          const subStep = (currentStepRef.current + fraction) % total;
-          notifyStepSubscribers(subStep);
-
-          if (elapsed >= stepInterval) {
-            lastStepTimeRef.current = timestamp;
-
-            // Consume tension in spring mode (only while app is active so away-time does not kill playback)
-            if (playModeRef.current === 'spring' && recordingStateRef.current === 'idle') {
-              if (isAppActiveRef.current) {
-                const tensionPerStep = 1.0 / (3 * total);
-                springTensionRef.current = Math.max(0, springTensionRef.current - tensionPerStep);
-              }
-            }
-
-            const nextStep = (currentStepRef.current + 1) % total;
-
-            // Check if a full turn rotation completed while recording
-            if (nextStep === 0 && recordingStateRef.current === 'recording-turn') {
-              const currentTurn = recordingCurrentTurnRef.current;
-              const targetTurns = recordingConfigRef.current.turns;
-
-              if (currentTurn < targetTurns) {
-                // Pause playback for inter-turn silence allowing chime harmonics to ring down
-                isPlayingRef.current = false;
-                setIsPlaying(false);
-                musicBoxAudio.setMechanicalHum(false);
-                currentStepRef.current = 0;
-                setCurrentStep(0);
-                notifyStepSubscribers(0);
-
-                recordingStateRef.current = 'inter-turn-silence';
-                setRecordingState('inter-turn-silence');
-
-                recordingTimerRef.current = window.setTimeout(() => {
-                  if (recordingStateRef.current !== 'inter-turn-silence') return;
-                  const nextTurnNum = currentTurn + 1;
-                  recordingCurrentTurnRef.current = nextTurnNum;
-                  setRecordingCurrentTurn(nextTurnNum);
-                  recordingStateRef.current = 'recording-turn';
-                  setRecordingState('recording-turn');
-
-                  isPlayingRef.current = true;
-                  setIsPlaying(true);
-                  musicBoxAudio.setMechanicalHum(true, tempoBpmRef.current / 90);
-                  const resumeTime = performance.now();
-                  lastStepTimeRef.current = resumeTime;
-                  lastLoopTickRef.current = resumeTime;
-                  executeStep(0);
-                }, recordingConfigRef.current.interTurnSilence * 1000);
-
-                return;
-              } else {
-                // Target turns reached: pause playback and transition to lead-out
-                isPlayingRef.current = false;
-                setIsPlaying(false);
-                musicBoxAudio.setMechanicalHum(false);
-                currentStepRef.current = 0;
-                setCurrentStep(0);
-                notifyStepSubscribers(0);
-
-                recordingStateRef.current = 'lead-out';
-                setRecordingState('lead-out');
-
-                // Chime ring-out (2.0s) + lead-out padding
-                const leadOutTotalMs = (2.0 + recordingConfigRef.current.leadOutPadding) * 1000;
-                recordingTimerRef.current = window.setTimeout(() => {
-                  if (recordingStateRef.current !== 'lead-out') return;
-                  handleFinalizeRecordingRef.current();
-                }, leadOutTotalMs);
-
-                return;
-              }
-            }
-
-            currentStepRef.current = nextStep;
-            executeStep(nextStep);
-            notifyStepSubscribers(nextStep);
-
-            if (timestamp - lastTensionSyncRef.current > 500) {
-              lastTensionSyncRef.current = timestamp;
-              setSpringTension(springTensionRef.current);
-              setCurrentStep(currentStepRef.current);
-            }
+          if (timestamp - lastTensionSyncRef.current > 500) {
+            lastTensionSyncRef.current = timestamp;
+            setSpringTension(springTensionRef.current);
+            setCurrentStep(currentStepRef.current);
           }
         }
-      } finally {
-        if (isPlayingRef.current) {
-          stepTimerRef.current = requestAnimationFrame(loop);
-        }
       }
-    };
 
-    loopRef.current = loop;
-    kickstartPlaybackLoopRef.current = () => {
-      if (!isPlayingRef.current || !loopRef.current) return;
-      if (stepTimerRef.current) {
-        cancelAnimationFrame(stepTimerRef.current);
-        stepTimerRef.current = null;
-      }
-      const now = performance.now();
-      lastStepTimeRef.current = now;
-      lastLoopTickRef.current = now;
-      stepTimerRef.current = requestAnimationFrame(loopRef.current);
+      stepTimerRef.current = requestAnimationFrame(loop);
     };
 
     stepTimerRef.current = requestAnimationFrame(loop);
 
-    // Resilient background audio watchdog:
-    // If requestAnimationFrame is suspended or throttled by the OS/browser when switching apps,
-    // this watchdog guarantees that music notes continue to play and time advances accurately!
-    const watchdogInterval = window.setInterval(() => {
-      if (!isPlayingRef.current) return;
-      const now = performance.now();
-
-      // Check if AudioContext was interrupted in background and recover
-      if (musicBoxAudio.isAudioSuspendedOrInterrupted()) {
-        ensureAudioInitialized().catch(() => {});
-      }
-
-      // If requestAnimationFrame hasn't ticked in >250ms (window backgrounded or throttled)
-      const timeSinceLastRaf = now - lastLoopTickRef.current;
-      if (timeSinceLastRaf > 250) {
-        const stepInterval = (60000 / tempoBpmRef.current / 4);
-        const elapsed = now - lastStepTimeRef.current;
-
-        if (elapsed >= stepInterval) {
-          lastStepTimeRef.current = now;
-          lastLoopTickRef.current = now;
-
-          const total = currentSongRef.current.totalSteps;
-          const nextStep = (currentStepRef.current + 1) % total;
-
-          currentStepRef.current = nextStep;
-          executeStep(nextStep);
-          notifyStepSubscribers(nextStep);
-          setCurrentStep(nextStep);
-
-          // If window regained focus or visibility, kickstart the rAF loop
-          if (isAppActiveRef.current && loopRef.current) {
-            kickstartPlaybackLoopRef.current();
-          }
-        }
-      }
-    }, 120);
-
     return () => {
-      clearInterval(watchdogInterval);
-      loopRef.current = null;
       if (stepTimerRef.current) {
         cancelAnimationFrame(stepTimerRef.current);
-        stepTimerRef.current = null;
       }
     };
   }, [isPlaying, executeStep, ensureAudioInitialized, tempoBpm, isEcoActive]);
@@ -975,6 +835,23 @@ export default function App() {
   // ==========================================
   // PLAY & RECORD STUDIO HANDLERS
   // ==========================================
+  const estimatedTotalSeconds = useMemo(() => {
+    const totalSteps = currentSong.totalSteps || 64;
+    const bpm = tempoBpm || 88;
+    const turnDuration = (totalSteps * 15) / bpm;
+    const numTurns = recordingConfig.turns;
+    const songPlayTime = numTurns * turnDuration;
+    const pauses = (numTurns - 1) * recordingConfig.interTurnSilence;
+    const ringout = 2.0;
+    return (
+      recordingConfig.leadInPadding +
+      songPlayTime +
+      pauses +
+      ringout +
+      recordingConfig.leadOutPadding
+    );
+  }, [currentSong, tempoBpm, recordingConfig]);
+
   const handleFinalizeRecording = useCallback(async () => {
     if (elapsedIntervalRef.current) {
       clearInterval(elapsedIntervalRef.current);
@@ -990,6 +867,30 @@ export default function App() {
     musicBoxAudio.setMechanicalHum(false);
     musicBoxAudio.setRecording(false);
 
+    // 1. If Video Recorder is active
+    if (videoRecorderRef.current) {
+      recordingStateRef.current = 'encoding';
+      setRecordingState('encoding');
+      try {
+        const videoSession = await videoRecorderRef.current.stop();
+        videoRecorderRef.current = null;
+        setRecordedVideoSession(videoSession);
+        recordingStateRef.current = 'complete';
+        setRecordingState('complete');
+        showToast(
+          `Video recording complete: "${currentSongRef.current.title}" (${videoSession.format.toUpperCase()} • ${formatFileSize(videoSession.fileSizeBytes)})`,
+          'success'
+        );
+      } catch (err) {
+        console.error('Video recording encoding failed:', err);
+        showToast('Failed to finalize video recording', 'warn');
+        recordingStateRef.current = 'idle';
+        setRecordingState('idle');
+      }
+      return;
+    }
+
+    // 2. If Audio Recorder is active
     if (!audioRecorderRef.current) {
       recordingStateRef.current = 'idle';
       setRecordingState('idle');
@@ -1051,6 +952,10 @@ export default function App() {
         cleanupRecordedSession(recordedSession);
         setRecordedSession(null);
       }
+      if (recordedVideoSession) {
+        cleanupRecordedVideoSession(recordedVideoSession);
+        setRecordedVideoSession(null);
+      }
       if (recordingTimerRef.current) {
         clearTimeout(recordingTimerRef.current);
         recordingTimerRef.current = null;
@@ -1063,7 +968,13 @@ export default function App() {
         audioRecorderRef.current.cancel();
         audioRecorderRef.current = null;
       }
+      if (videoRecorderRef.current) {
+        videoRecorderRef.current.cancel();
+        videoRecorderRef.current = null;
+      }
 
+      const recMode = config.recordingMode || 'video';
+      setActiveRecordingMode(recMode);
       recordingConfigRef.current = config;
       setRecordingConfig(config);
 
@@ -1090,14 +1001,49 @@ export default function App() {
         return;
       }
 
-      // 5. Initialize recorder and start capturing
-      const recorder = new AudioRecorder();
-      recorder.start({
-        sourceNode,
-        audioContext: audioCtx,
-        onLevelUpdate: (level) => setRecordingPeakLevel(level),
-      });
-      audioRecorderRef.current = recorder;
+      // 5. Initialize recorder based on chosen mode
+      if (recMode === 'video') {
+        const vRecorder = new VideoRecorder();
+        const activeScaleId = currentSongRef.current.combScaleId || combScaleIdRef.current || 'romantic-flat';
+        vRecorder.start({
+          sourceNode,
+          audioContext: audioCtx,
+          song: currentSongRef.current,
+          chamberPreset: SOUND_CHAMBER_PRESETS[soundPresetRef.current]?.name || soundPresetRef.current,
+          turns: config.turns,
+          tempoBpm: tempoBpmRef.current,
+          combScaleId: activeScaleId,
+          compressionProfile: config.videoCompression || 'compact',
+          preferredFormat: config.preferredFormat || 'mp4',
+          onLevelUpdate: (level) => setRecordingPeakLevel(level),
+          onFrameRendered: (canvas) => {
+            const liveCanvas = liveRecordingCanvasRef.current;
+            if (liveCanvas) {
+              const liveCtx = liveCanvas.getContext('2d');
+              if (liveCtx) {
+                liveCtx.drawImage(canvas, 0, 0, liveCanvas.width, liveCanvas.height);
+              }
+            }
+          },
+          getPlaybackState: () => ({
+            smoothStep: subStepRef.current,
+            currentTurn: recordingCurrentTurnRef.current,
+            activeTines: activeTinesRef.current,
+            elapsedSeconds: (Date.now() - recordingStartTimeRef.current) / 1000,
+            estimatedTotalSeconds: estimatedTotalSeconds,
+            recordingState: recordingStateRef.current,
+          }),
+        });
+        videoRecorderRef.current = vRecorder;
+      } else {
+        const recorder = new AudioRecorder();
+        recorder.start({
+          sourceNode,
+          audioContext: audioCtx,
+          onLevelUpdate: (level) => setRecordingPeakLevel(level),
+        });
+        audioRecorderRef.current = recorder;
+      }
 
       // 6. Set state to lead-in
       recordingStateRef.current = 'lead-in';
@@ -1127,7 +1073,7 @@ export default function App() {
         executeStep(0);
       }, config.leadInPadding * 1000);
     },
-    [recordedSession, showToast, executeStep, notifyStepSubscribers]
+    [recordedSession, recordedVideoSession, estimatedTotalSeconds, showToast, executeStep, notifyStepSubscribers]
   );
 
   const handleStopEarlyAndExport = useCallback(() => {
@@ -1149,6 +1095,10 @@ export default function App() {
       audioRecorderRef.current.cancel();
       audioRecorderRef.current = null;
     }
+    if (videoRecorderRef.current) {
+      videoRecorderRef.current.cancel();
+      videoRecorderRef.current = null;
+    }
 
     isPlayingRef.current = false;
     setIsPlaying(false);
@@ -1168,17 +1118,24 @@ export default function App() {
       cleanupRecordedSession(recordedSession);
       setRecordedSession(null);
     }
+    if (recordedVideoSession) {
+      cleanupRecordedVideoSession(recordedVideoSession);
+      setRecordedVideoSession(null);
+    }
     recordingStateRef.current = 'idle';
     setRecordingState('idle');
     setRecordingPeakLevel(0);
     setRecordingElapsedSeconds(0);
-  }, [recordedSession]);
+  }, [recordedSession, recordedVideoSession]);
 
   // Clean up recorded session on unmount
   useEffect(() => {
     return () => {
       if (recordedSession) {
         cleanupRecordedSession(recordedSession);
+      }
+      if (recordedVideoSession) {
+        cleanupRecordedVideoSession(recordedVideoSession);
       }
       if (elapsedIntervalRef.current) {
         clearInterval(elapsedIntervalRef.current);
@@ -1189,25 +1146,11 @@ export default function App() {
       if (audioRecorderRef.current) {
         audioRecorderRef.current.cancel();
       }
+      if (videoRecorderRef.current) {
+        videoRecorderRef.current.cancel();
+      }
     };
-  }, [recordedSession]);
-
-  const estimatedTotalSeconds = useMemo(() => {
-    const totalSteps = currentSong.totalSteps || 64;
-    const bpm = tempoBpm || 88;
-    const turnDuration = (totalSteps * 15) / bpm;
-    const numTurns = recordingConfig.turns;
-    const songPlayTime = numTurns * turnDuration;
-    const pauses = (numTurns - 1) * recordingConfig.interTurnSilence;
-    const ringout = 2.0;
-    return (
-      recordingConfig.leadInPadding +
-      songPlayTime +
-      pauses +
-      ringout +
-      recordingConfig.leadOutPadding
-    );
-  }, [currentSong, tempoBpm, recordingConfig]);
+  }, [recordedSession, recordedVideoSession]);
 
   // Winding action
   const handleWindSpring = (added: number) => {
@@ -2143,11 +2086,11 @@ export default function App() {
             <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span
-                  className="w-3 h-3 rounded-full"
+                  className="w-3 h-3 rounded-full border border-[#433422]/30 shadow-2xs"
                   style={{ backgroundColor: SOUND_CHAMBER_PRESETS[soundPreset]?.color || '#a68656' }}
                 />
                 <span className="text-xs font-serif font-bold text-[#433422]">
-                  Sound Chamber:
+                  Acoustic Chamber:
                 </span>
                 <span className="text-xs font-serif text-[#8a6b3e] font-semibold">
                   {SOUND_CHAMBER_PRESETS[soundPreset]?.name}
@@ -2162,10 +2105,13 @@ export default function App() {
                     <button
                       key={preset.id}
                       id={`quick-chamber-${preset.id}`}
-                      onClick={() => handleChangeSoundPreset(presetKey)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-serif font-medium border transition-all ${
+                      onClick={() => {
+                        musicBoxAudio.playLeverClick(true);
+                        handleChangeSoundPreset(presetKey);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-serif font-medium border transition-all cursor-pointer whitespace-nowrap ${
                         isSelected
-                          ? 'bg-[#433422] text-[#fbf8f2] border-[#433422] shadow-xs'
+                          ? 'bg-gradient-to-b from-[#433422] to-[#261c10] text-[#fae7b5] border-[#8a6838] font-bold shadow-xs'
                           : 'bg-[#f8f5ee] hover:bg-[#eae2d3] text-[#6f5e49] border-[#ded3be]'
                       }`}
                     >
@@ -2179,30 +2125,26 @@ export default function App() {
             {/* Active Song Banner & Controls (Right above the Music Box Movement Deck) */}
             <div className="w-full max-w-4xl mx-auto rounded-2xl bg-[#fcfbf8] border border-[#e5dcce] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_4px_24px_rgba(67,52,34,0.06)]">
               <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  {/* Category tag (omitted if AI to avoid redundancy with Model badge) */}
-                  {!(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
-                    <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-[#f4efe4] text-[#8a6b3e] border border-[#d8caa8]">
-                      {currentSong.category.toUpperCase()}
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#7a6448]">
+                  {!(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) ? (
+                    <span className="font-mono font-semibold text-[#8a6b3e] uppercase">
+                      {currentSong.category}
                     </span>
-                  )}
-                  {/* Gemini / AI Model Badge */}
-                  {(currentSong.isAiGenerated || currentSong.category === 'ai' || currentSong.modelUsed) && (
-                    <span className="text-xs font-serif px-2 py-0.5 rounded bg-[#ebd7ba] text-[#7a4f15] border border-[#d6be8e] flex items-center gap-1 font-semibold">
+                  ) : (
+                    <span className="font-serif text-[#7a4f15] flex items-center gap-1 font-semibold">
                       <Sparkles className="w-3 h-3 text-[#8a6b3e]" />
                       {formatModelDisplayName(currentSong.modelUsed, true)}
                     </span>
                   )}
-                  {/* Comb Scale Badge */}
+                  <span aria-hidden="true">·</span>
                   <span
-                    className="text-[11px] font-sans px-2 py-0.5 rounded bg-[#f5efe3] text-[#7a5c2e] border border-[#ded3be] font-medium flex items-center gap-1"
+                    className="font-sans text-[#6e5536] font-medium"
                     title={`Comb Profile: ${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.name || 'Romantic Flat'} (${COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.tinesCount || 22} Tines)`}
                   >
-                    <Sliders className="w-3 h-3 text-[#bfa175]" />
                     {COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.shortLabel || 'Romantic Flat 22N'} ({COMB_SCALES_MAP[currentSong.combScaleId || combScaleId]?.rangeLabel || 'C5–Bb6'})
                   </span>
-                  {/* Step / Measure Badge */}
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#f0e9dc] text-[#6e5838] border border-[#ded3be] font-medium">
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono text-[#6e5838] tabular-nums">
                     {currentSong.totalSteps || 64} Steps ({Math.max(1, Math.round((currentSong.totalSteps || 64) / 16))}m)
                   </span>
                 </div>
@@ -2216,12 +2158,12 @@ export default function App() {
                 )}
               </div>
 
-              {/* Quick Tempo, Play/Pause & Rewind Controls */}
+              {/* Quick Tempo, Play/Pause & Rewind Hardware Controls */}
               <div className="flex items-center space-x-2.5 sm:space-x-3.5 w-full sm:w-auto justify-between sm:justify-end">
                 <div className="flex flex-col items-end space-y-1">
                   <div className="flex items-center space-x-2 text-xs">
                     <span className="text-[#84735c]">Tempo:</span>
-                    <span className="font-mono text-[#8a6b3e] font-bold">{tempoBpm} BPM</span>
+                    <span className="font-mono text-[#8a6b3e] font-bold tabular-nums">{tempoBpm} BPM</span>
                   </div>
                   <input
                     type="range"
@@ -2234,15 +2176,18 @@ export default function App() {
                   />
                 </div>
 
-                {/* Quick Play/Pause Control Button */}
+                {/* Quick Mechanical Play/Pause Control Button */}
                 <button
                   id="top-banner-play-btn"
-                  onClick={handleTogglePlay}
-                  title={isPlaying ? 'Engage Brake (Pause)' : 'Release Brake (Play)'}
-                  className={`p-2.5 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer ${
+                  onClick={() => {
+                    musicBoxAudio.playLeverClick(!isPlaying);
+                    handleTogglePlay();
+                  }}
+                  title={isPlaying ? 'Engage Governor Brake (Pause)' : 'Release Governor Brake (Play)'}
+                  className={`p-2.5 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer active:scale-95 ${
                     isPlaying
-                      ? 'bg-gradient-to-r from-[#d6be8e] via-[#f0c465] to-[#c99432] text-[#1c1208] border-[#f3e18a] shadow-[0_0_10px_rgba(240,196,101,0.5)]'
-                      : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419]'
+                      ? 'bg-gradient-to-b from-[#fae29c] via-[#e2b44d] to-[#9e6f18] text-[#1c1208] border-[#fff2b8] shadow-[0_2px_10px_rgba(240,196,101,0.45)]'
+                      : 'bg-gradient-to-b from-[#f7f2e8] to-[#e4d9c5] hover:from-[#efe7d8] hover:to-[#d9cbb2] border-[#c9b799] text-[#433422]'
                   }`}
                 >
                   {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
@@ -2252,8 +2197,8 @@ export default function App() {
                 <button
                   id="top-banner-record-btn"
                   onClick={() => setIsRecordModalOpen(true)}
-                  title="Play & Record Studio (.wav / .mp3)"
-                  className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#ebd9c8] border border-[#ded3be] text-[#8a2d1d] hover:text-[#a8321e] transition shadow-xs cursor-pointer flex items-center justify-center group"
+                  title="Play & Record Studio (Video .mp4/.webm & Audio .wav/.mp3)"
+                  className="p-2.5 rounded-xl bg-gradient-to-b from-[#f7f2e8] to-[#e4d9c5] hover:from-[#f2e2da] hover:to-[#e0c8bc] border border-[#c9b799] text-[#8a2d1d] hover:text-[#a8321e] transition shadow-xs cursor-pointer flex items-center justify-center group active:scale-95"
                 >
                   <span className="relative flex items-center justify-center">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#c0392b] group-hover:scale-110 transition-transform" />
@@ -2262,9 +2207,12 @@ export default function App() {
 
                 <button
                   id="rewind-step-btn"
-                  onClick={handleRewind}
-                  title="Rewind to beginning"
-                  className="p-2.5 rounded-xl bg-[#f4eee4] hover:bg-[#eae2d3] border border-[#ded3be] text-[#5e4c36] hover:text-[#2d2419] transition shadow-xs cursor-pointer"
+                  onClick={() => {
+                    musicBoxAudio.playRatchetClick(0.7);
+                    handleRewind();
+                  }}
+                  title="Rewind cylinder to step 1"
+                  className="p-2.5 rounded-xl bg-gradient-to-b from-[#f7f2e8] to-[#e4d9c5] hover:from-[#efe7d8] hover:to-[#d9cbb2] border border-[#c9b799] text-[#433422] transition shadow-xs cursor-pointer active:scale-95"
                 >
                   <RotateCcw className="w-4 h-4" />
                 </button>
@@ -2284,6 +2232,7 @@ export default function App() {
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
               powerSaveMode={powerSaveMode}
+              soundPreset={soundPreset}
               onChangeCombScale={handleChangeCombScale}
               onPluckTine={handlePluckTine}
               onSubscribeStep={handleSubscribeStep}
@@ -2459,6 +2408,7 @@ export default function App() {
         onClose={() => setIsRecordModalOpen(false)}
         currentSong={currentSong}
         chamberPreset={soundPreset}
+        combScaleId={combScaleId}
         recordingState={recordingState}
         recordingCurrentTurn={recordingCurrentTurn}
         recordingTargetTurns={recordingConfig.turns}
@@ -2466,6 +2416,11 @@ export default function App() {
         estimatedTotalSeconds={estimatedTotalSeconds}
         peakLevel={recordingPeakLevel}
         recordedSession={recordedSession}
+        recordedVideoSession={recordedVideoSession}
+        activeRecordingMode={activeRecordingMode}
+        onRegisterLiveFrameMonitor={(canvas) => {
+          liveRecordingCanvasRef.current = canvas;
+        }}
         onStartRecording={handleStartRecording}
         onStopEarlyAndExport={handleStopEarlyAndExport}
         onCancelRecording={handleCancelRecording}

@@ -1,6 +1,9 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -540,6 +543,94 @@ Generate a creative title, a short lyrical/poetic note about how the melody evok
   const fallbackSong = generateProceduralMusic(sanitizedPrompt, style, totalSteps, combScaleId);
   return res.json(fallbackSong);
 });
+
+const execFileAsync = promisify(execFile);
+
+// Video Transmuxer & Fast H.264 Encoder for Guaranteed Native iPad / QuickTime / Photos Playback
+app.post(
+  '/api/video/convert-to-ipad-mp4',
+  express.raw({ type: ['video/*', 'application/octet-stream', 'application/x-binary'], limit: '250mb' }),
+  async (req, res) => {
+    const inputBuffer = req.body;
+    if (!Buffer.isBuffer(inputBuffer) || inputBuffer.length === 0) {
+      return res.status(400).json({ error: 'No video payload received for MP4 conversion.' });
+    }
+
+    const songTitleHeader = req.headers['x-song-title'];
+    const rawSongTitle = typeof songTitleHeader === 'string'
+      ? decodeURIComponent(songTitleHeader)
+      : 'music_box_master';
+    const sanitizedTitle = rawSongTitle.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '_');
+
+    const tempId = `mb_vid_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const tmpDir = os.tmpdir();
+    const inputPath = path.join(tmpDir, `${tempId}_in.video`);
+    const outputPath = path.join(tmpDir, `${tempId}_out.mp4`);
+
+    try {
+      await fs.promises.writeFile(inputPath, inputBuffer);
+
+      // FFmpeg with strict Apple iPadOS / iOS / QuickTime / Photos compliance & compact 5-10MB target:
+      // - 24 FPS vintage horological frame rate
+      // - H.264 video with yuv420p pixel format (mandatory for Apple devices)
+      // - High Profile, level 4.1, CRF 23, capped at 2.2 Mbps maxrate
+      // - AAC stereo audio at 192k, 44.1kHz
+      // - +faststart moves 'moov' atom to the head of the file for instant streaming & scrubbing
+      const ffmpegArgs = [
+        '-y',
+        '-i',
+        inputPath,
+        '-r',
+        '24',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-maxrate',
+        '2.2M',
+        '-bufsize',
+        '4.4M',
+        '-pix_fmt',
+        'yuv420p',
+        '-profile:v',
+        'high',
+        '-level',
+        '4.1',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '44100',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ];
+
+      await execFileAsync('ffmpeg', ffmpegArgs);
+
+      const mp4Buffer = await fs.promises.readFile(outputPath);
+
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Length', mp4Buffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedTitle}_ipad.mp4"`);
+      res.setHeader('X-iPad-Compatible', 'true');
+      return res.send(mp4Buffer);
+    } catch (err) {
+      console.error('[Video Converter] FFmpeg conversion failed:', err);
+      return res.status(500).json({
+        error: 'Failed to convert video to iPad MP4 format.',
+        details: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      // Clean up temporary files
+      fs.promises.unlink(inputPath).catch(() => {});
+      fs.promises.unlink(outputPath).catch(() => {});
+    }
+  }
+);
 
 async function startServer() {
   // Shield: Block direct requests to server bundle, sourcemaps, or environment files
