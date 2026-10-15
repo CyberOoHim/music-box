@@ -121,31 +121,6 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
   // Live recording canvas ref for real-time video stream monitoring
   const liveRecordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Auto-dim power saver after 10 seconds of active recording to protect iPad battery and prevent heat
-  const [isAutoDimmed, setIsAutoDimmed] = useState(false);
-  const lastInteractionTimeRef = useRef<number>(Date.now());
-
-  useEffect(() => {
-    if (!isRecordingActive || activeRecordingMode !== 'video') {
-      setIsAutoDimmed(false);
-      return;
-    }
-
-    lastInteractionTimeRef.current = Date.now();
-    const interval = setInterval(() => {
-      if (Date.now() - lastInteractionTimeRef.current > 10000) {
-        setIsAutoDimmed(true);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isRecordingActive, activeRecordingMode]);
-
-  const wakeMonitor = () => {
-    lastInteractionTimeRef.current = Date.now();
-    setIsAutoDimmed(false);
-  };
-
   // Register the live canvas exactly on mount/unmount so the recorder mirror
   // callback fires once per canvas lifetime instead of on every render
   const handleLiveCanvasRef = useCallback(
@@ -157,14 +132,6 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
     },
     [onRegisterLiveFrameMonitor]
   );
-
-  // Flag the live canvas while dimmed so the recorder mirror can skip redundant copies
-  useEffect(() => {
-    const canvas = liveRecordingCanvasRef.current;
-    if (canvas) {
-      canvas.dataset.dimmed = isAutoDimmed ? 'true' : 'false';
-    }
-  }, [isAutoDimmed, isRecordingActive]);
 
   // Calculate single turn duration based on steps and tempo
   const turnDurationSeconds = useMemo(() => {
@@ -762,30 +729,15 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                     </div>
                   </div>
                   <div
-                    onClick={wakeMonitor}
-                    className="relative w-full aspect-[16/9] rounded-lg overflow-hidden border border-[#523b26] bg-[#090604] cursor-pointer group"
-                    title={isAutoDimmed ? 'Tap to wake monitor' : 'Live video monitor'}
+                    className="relative w-full aspect-[16/9] rounded-lg overflow-hidden border border-[#523b26] bg-[#090604]"
+                    title="Live video monitor"
                   >
                     <canvas
                       ref={handleLiveCanvasRef}
                       width={1280}
                       height={720}
-                      className={`w-full h-full object-contain block transition-opacity duration-500 ${
-                        isAutoDimmed ? 'opacity-35' : 'opacity-100'
-                      }`}
+                      className="w-full h-full object-contain block opacity-100"
                     />
-                    {isAutoDimmed && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[1px] p-4 text-center select-none">
-                        <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-[#20170f]/95 border border-[#bfa175] shadow-lg text-[#faebd4] text-xs font-serif">
-                          <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="font-bold text-emerald-400">Eco Power Saver Active</span>
-                          <span className="text-[#caa87c]">· Tap to Wake Monitor</span>
-                        </div>
-                        <span className="text-[10.5px] text-[#dfcd9f]/80 mt-1.5 font-mono">
-                          Recording steadily at 24 FPS · iPad battery protected
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

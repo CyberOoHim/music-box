@@ -1017,11 +1017,9 @@ export default function App() {
           preferredFormat: config.preferredFormat || 'mp4',
           onLevelUpdate: (level) => setRecordingPeakLevel(level),
           onFrameRendered: (canvas) => {
-            // Skip the modal mirror copy when the page is hidden or the
-            // monitor is auto-dimmed: the pixels would be invisible anyway
             if (document.hidden) return;
             const liveCanvas = liveRecordingCanvasRef.current;
-            if (!liveCanvas || liveCanvas.dataset.dimmed === 'true') return;
+            if (!liveCanvas) return;
             const liveCtx = liveCanvas.getContext('2d');
             if (liveCtx) {
               liveCtx.drawImage(canvas, 0, 0, liveCanvas.width, liveCanvas.height);

@@ -1,72 +1,51 @@
-# 2D Music Box Visual Alignment for Recorded Video
+# Uninterrupted Live Video Recording & iOS 24 FPS Power Management
 
-Aligns the 2D horological mechanism in recorded videos to achieve an exact 1:1 visual and geometric match with the main page 2D blueprint (`MusicBoxMovement`), correcting part placements (mainspring, speed governor, gear train, cylinder, journal bearings) and restoring authentic wide graded steel comb tines with acoustic undercut and damper nibs.
+Removes the disruptive center "Eco Power Saver Active" overlay and canvas dimming from the Play & Record Studio, providing a continuous, crystal-clear live view of the spinning music box. Maintains optimal thermal management and battery protection on iPadOS/iOS by enforcing strict 24 FPS pacing and single-pass static background canvas caching under the hood.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following directions were confirmed during interactive clarification and govern the plan:
+> The following user preferences were confirmed and govern this implementation:
 
-- **Confirmed Decision 1 (Visual Alignment)**: Exact 1:1 visual match with identical layout, geometric coordinates ($780 \times 285$ horological blueprint), and comb anatomy matching the main page 2D view.
-- **Confirmed Decision 2 (Frame Composition)**: Retain the parchment song title card on top while hosting the authentic $780 \times 285$ movement in the burl-walnut cradle below within the 720p HD frame.
-- **Confirmed Decision 3 (Mechanical Animation Details)**: Full horological animation fidelity in the video canvas, including the spinning 4-blade governor butterfly fan, detent ratchet detents, revolving brass cylinder pins, tine tip deflection, contact sparks, and vibrating bass lead counterweights.
+- **Confirmed Decision 1 (Uninterrupted Live Preview)**: Completely remove the center "Eco Power Saver Active" banner overlay and the 50% opacity dimming. The live video monitor stays 100% clear, responsive, and visible throughout the entire recording session.
+- **Confirmed Decision 2 (iOS Power Management Strategy)**: Silent background caching and strictly enforced 24 FPS pacing when on iOS/iPadOS, preventing thermal throttling without interrupting the user's recording experience.
+- **Confirmed Decision 3 (Mirror Delivery)**: Continuous, synchronous 24 FPS live frame mirroring to the modal canvas without artificial pauses or frozen states.
 
 ---
 
 ## 1. Overview & Core Concept
 
-When users export or record performances to video, the rendered 2D music box mechanism currently deviates significantly from the main page:
-1. **Mislocated Horological Components**: The speed governor and butterfly fan were placed on the far-right edge ($x = 815$), whereas in authentic Sankyo 18N music boxes and on the main page, both the mainspring barrel ($x = 92, y = 88$) and governor gear train ($x = 96, y = 186$) reside on the left side, driving the cylinder from the left while the right side features a journal bearing with a ruby endstone.
-2. **Thin / Needle-like Combs**: The video canvas tapered tines down to 35% width ($<7\text{px}$), producing sharp needle-like prongs rather than authentic, thick spring-steel cantilever tines ($18\text{--}26\text{px}$) with lead tuning counterweights, feather damper nibs, and a sloped comb base plate.
-3. **Missing Bedplate & Rosette Details**: The video canvas omitted the circular acoustic resonance rosette, cast brass bedplate beveled gradient, and authentic drive gear meshing.
+Currently, after 10 seconds of active video recording, `PlayRecordModal` triggers an auto-dim timer that:
+1. Places a large, opaque floating overlay banner (`⚡ Eco Power Saver Active · Tap to Wake Monitor`) across the center of the viewport, obscuring the moving cylinder, pins, and vibrating tines.
+2. Dims the live canvas to 35% opacity.
+3. Sets `data-dimmed="true"`, which causes `onFrameRendered` in `App.tsx` to stop pushing video frames to the live monitor, making users believe the recording was stalled or frozen.
 
-This plan establishes a unified 2D horological rendering architecture where the video recorder Canvas engine executes the exact same coordinate math, graduated tine geometry, and mechanical placement as the main page SVG view.
+In reality, iPad heating is primarily caused by unthrottled 60/120 Hz render loops and full-screen multi-gradient redraws. Because the recording engine already utilizes a **pre-rendered static background cache canvas** and a **strictly paced 24 FPS cinematic clock**, the overlay and screen freeze are completely unnecessary.
+
+This update removes the intrusive banner and dimming entirely, ensuring the live recording view is always uninterrupted and clear, while locking the recording loop to 24 FPS on iOS.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### A. Video Frame Composition (720p HD / 1280 × 720)
-- **Top Section ($y = 16\dots 170$)**: The cream parchment title card with traditional Chinese crimson seal stamp ("安"), song title, composer, arranged style, and live turn progress indicator.
-- **Bottom Section ($y = 182\dots 704$)**: The burl-walnut cradle featuring antique brass corner brackets, horological status ribbon, and the authentic $780 \times 285$ horological movement substrate.
-
-### B. Authentic 2D Horological Movement Geometry ($780 \times 285$)
-- **Cast Brass Bedplate**: Warm brass radial gradient with beveled inner border, acoustic resonance chamber rosette at $(470, 142)$, and stamped traditional plaque ("聲 盒 仔 · 18001").
-- **Top-Left Mainspring Assembly ($x = 92, y = 88$)**: Coiled blued-steel mainspring, 16-tooth ratchet wheel rotating in sync with playback, detent click pawl, and central winding arbor.
-- **Lower-Left Governor & Gear Train ($x = 96, y = 186$)**:
-  - Meshing intermediate nylon/bronze gear at $(96, 186)$.
-  - Helical worm screw spindle with dual ruby jewel bearings at $(120, 182)$.
-  - High-speed 4-blade butterfly governor fan at $(142, 180)$ spinning during playback.
-  - Mechanical whip brake lever at $(142, 216)$ disengaged during playback and resting on fan when stopped.
-- **Central Brass Cylinder Drum ($x = 190\dots 750$, $w = 560$, $h = 105$, $y = 36$)**:
-  - Left pillow block bearing stand ($x = 162$) and bronze involute spur drive gear ($x = 174\dots 190$).
-  - Rotating lathe polishing reflection lines and stamped patent mark `18001`.
-  - Right axle journal bearing stand ($x = 750\dots 768$) with chrome slotted screw and ruby endstone cap.
-  - Pin beads revolving in 3D orthographic projection ($R = 52.5$, strike line at $y = 133$).
-- **Authentic Graded Spring-Steel Comb ($x = 190\dots 750$)**:
-  - Wide rectangular cantilever beams ($tineWidth = \text{slotW} \times (0.84 - frac \times 0.26)$, $18\text{--}26\text{px}$).
-  - All tine tips meet the strike line at $y = 133$.
-  - Sloped comb root line ascending from $y = 230$ (low bass) to $y = 208$ (high treble).
-  - Tine features: lead tuning counterweights soldered underneath bass tines, white specular bevel stripe, contact tip bevel, and feather damper nibs.
-  - Brushed steel comb base plate with acoustic angled undercut ($180, 228 \to 760, 206 \to 756, 260 \to 184, 260$) secured by 3 slotted mounting screws.
+### A. Live Recording HUD Viewport
+- **Clean, Unblocked Viewport**: The live recording viewport displays the crisp 720p HD composition (parchment title card, burl-walnut cradle, revolving brass cylinder, and vibrating steel comb) continuously without any floating banners or obstructive modals.
+- **Header Status Indicator**: The header strip quietly displays `24 FPS Eco · 1280 × 720 HD` in the top right, providing clear reassurance of active power optimization without obscuring the canvas.
+- **Smooth Visual Continuity**: The animated mechanism never dims or freezes; every note strike, rotating gear, and whirring butterfly fan remains visible from Turn 1 to the final ring-out.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-### Decision 1: Shared Mathematical Model & Unified Coordinate System
-- **Chosen Approach**: Calibrate the canvas video renderer to project the exact $780 \times 285$ coordinate system of `MusicBoxMovement` onto the deck area ($scale = \min(deckW / 780, deckH / 285)$).
-- **Why**: Eliminates layout divergence forever. Every tine width, pin position, gear center, and bearing coordinate uses the identical mathematical formulas.
-- **Alternatives Considered**: Manually tweaking the old $920 \times 280$ canvas drawing (rejected because it would leave subtle misalignments and maintain two disparate layout systems).
+### Decision 1: Silent Architectural Power Management vs Visual Dimming
+- **Chosen Approach**: Remove all client-facing dimming states and floating banners. Rely entirely on architectural power savers: 24 FPS delta-pacing ($41.67\text{ ms}$ interval), pre-rendered static background canvas caching ($>70\%$ draw call reduction), and $1.0\text{--}1.4\text{ Mbps}$ bitrate clamping.
+- **Why**: Eliminates user confusion and visual disruption while delivering identical thermal protection and battery savings.
+- **Alternatives Considered**: Smaller corner notification badge (rejected because the user explicitly requested zero overlay and an uninterrupted live video view).
 
-### Decision 2: True Wide Comb Tines vs Narrowed Needles
-- **Chosen Approach**: Draw full rectangular cantilever beams ($18\text{--}26\text{px}$ wide) with tip contact bevels and damper nibs, exactly like the main page SVG.
-- **Why**: Real musical box combs are thick, finely ground tempered steel reeds that vibrate acoustically; thin needles look unphysical and flimsy.
-- **Alternatives Considered**: Slightly widening the old trapezoids (rejected; fails the user's explicit requirement for exact 1:1 match).
-
-### Decision 3: Preserving Static Background Cache Performance
-- **Chosen Approach**: Include the static bedplate, rosette, brass plate, mounting bolts, and comb base plate in the pre-rendered static background cache canvas. Dynamic per-frame operations only draw the revolving cylinder surface, pins, vibrating tines, rotating ratchet, and spinning butterfly fan.
-- **Why**: Guarantees visual perfection without compromising iPad thermal stability or causing frame drops at 24 FPS.
+### Decision 2: Universal iOS 24 FPS Lock
+- **Chosen Approach**: Ensure all iOS / iPadOS recording pipelines consistently lock to 24 FPS vintage horological rate with no ProMotion 120 Hz bursts or unthrottled redraws.
+- **Why**: Matches the user's directive ("Just always 24 fps when on iOS") and guarantees zero overheating during long 2- or 3-turn recordings.
+- **Alternatives Considered**: Variable framerate (rejected due to iOS QuickTime audio-video drift).
 
 ---
 
@@ -74,43 +53,30 @@ This plan establishes a unified 2D horological rendering architecture where the 
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│             Shared 780 × 285 Horological Blueprint Model               │
-│                                                                        │
-│   (92, 88) Mainspring Barrel       (190, 36) Drum [560 × 105]  (750)   │
-│   ┌──────────────────────┐         ┌────────────────────────┐  Axle    │
-│   │ Coiled Spring & Pawl │         │ Revolving Pins on Lathe│  Journal │
-│   └──────────────────────┘         └────────────────────────┘  Bearing │
-│   (96, 186) Governor Unit          (190, 133) Strike Line              │
-│   ┌──────────────────────┐         ││││││││││││││││││ Wide Tines       │
-│   │ Nylon Gear & Fan     │         (180, 228) -> (760, 206) Root       │
-│   └──────────────────────┘         [Sloped Comb Base Plate]            │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │
-           ┌─────────────────────────┴─────────────────────────┐
-           ▼                                                   ▼
-┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
-│ Main Page View: MusicBoxMovement.tsx │  │ Video Recording Engine:              │
-│ - SVG DOM Nodes                      │  │ videoRecorder.ts                     │
-│ - ViewBox: 0 0 780 285               │  │ - Static BG Cache Canvas (720p)      │
-│ - Interactive CSS & Hover states     │  │ - Dynamic 24 FPS Canvas Redraw       │
-│ - 3D / 2D Tab Toggle                 │  │ - Exact 780×285 Coordinate Mapping   │
-└──────────────────────────────────────┘  └──────────────────────────────────────┘
+│                        iPadOS / WebKit Client                          │
+├────────────────────────────────────────────────────────────────────────┤
+│  [24 FPS Throttled RAF Clock] (41.67ms tick)                           │
+│             │                                                          │
+│             ▼                                                          │
+│  [Offscreen 720p Canvas] ──► [Pre-Rendered Static BG Cache] (1 draw)   │
+│    - Dynamic Cylinder & Pins                                           │
+│    - Whirring Butterfly Fan & Gears                                    │
+│    - Vibrating Steel Reeds                                             │
+│             │                                                          │
+│             ├──► captureStream(24) ──► MediaRecorder (1.0 - 1.4 Mbps)  │
+│             │                                                          │
+│             └──► onFrameRendered ──► Live Modal Canvas                 │
+│                                      (Always 100% visible, no overlay) │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component & State Mapping
 
-1. **`src/audio/videoRecorder.ts`**:
-   - Update `renderStaticBackgroundAndDeck`:
-     - Change coordinate viewport to $780 \times 285$ scaled to inner deck dimensions.
-     - Render cast brass bedplate with radial gradient, beveled border, rosette chamber at $(470, 142)$, and 4 corner bolts.
-     - Render left pillow block bearing at $(162, 54)$ and right axle journal bearing stand at $(750, 30)$ with ruby endstone.
-     - Render sloped brushed steel comb base plate ($180, 228 \to 760, 206 \to 756, 260 \to 184, 260$) with 3 slotted mounting screws and engraved tuning stamp.
-     - Render static governor mounting bracket and ruby bearings at $(142, 180)$.
-   - Update `renderCompositeVideoFrame`:
-     - Set `targetViewW = 780` and `targetViewH = 285`.
-     - Relocate mainspring barrel to $(92, 88)$, drawing rotating ratchet wheel and steel click pawl.
-     - Relocate speed governor and gear train to $(96, 186)$, drawing nylon gear, helical worm spindle, spinning 4-blade butterfly fan, and stop brake wire.
-     - Align cylinder drum to $x = 190, y = 36, w = 560, h = 105$, left drive gear to $x = 174..190$, strike line to $y = 133$, and cylinder radius $R = 52.5$.
-     - Render wide graded steel comb tines ($18\text{--}26\text{px}$) with specular bevel stripe, feather damper nibs, under-tine lead counterweights on bass tines, active pluck glow/offset, and strike sparks.
-2. **`test/videoPinMapping.test.ts`**:
-   - Update test assertions to verify pin coordinate mapping and tine width calculations match the $780 \times 285$ geometry.
+1. **`src/components/PlayRecordModal.tsx`**:
+   - Remove `isAutoDimmed` state, `lastInteractionTimeRef`, 10-second `setInterval` check, and `wakeMonitor` handler.
+   - Remove the `isAutoDimmed ? 'opacity-35' : 'opacity-100'` class switch on the canvas; canvas remains `opacity-100`.
+   - Remove the `{isAutoDimmed && (<div className="absolute inset-0 ...">...</div>)}` overlay block.
+   - Remove `canvas.dataset.dimmed` synchronization.
+2. **`src/App.tsx`**:
+   - Update `onFrameRendered`: remove the `liveCanvas.dataset.dimmed === 'true'` check so frames continuously stream to the modal preview without interruption.
+   - Verify that recording configuration consistently enforces 24 FPS on iOS devices.
