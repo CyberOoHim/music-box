@@ -170,13 +170,6 @@ function createLatheBrassTexture(maxAnisotropy: number): THREE.CanvasTexture {
       ctx.fillRect(x, 0, 1, 512);
     }
 
-    // Subtle Maker's Stamp on cylinder
-    ctx.save();
-    ctx.translate(460, 120);
-    ctx.fillStyle = 'rgba(65, 42, 10, 0.55)';
-    ctx.font = 'bold 20px monospace';
-    ctx.fillText('18001', 0, 0);
-    ctx.restore();
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -202,7 +195,7 @@ function createBedplatePlaqueTexture(maxAnisotropy: number): THREE.CanvasTexture
     ctx.font = 'bold 28px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('聲 盒 仔 · 18001', 128, 33);
+    ctx.fillText('聲 盒 仔', 128, 33);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -1000,7 +993,7 @@ export const MusicBox3DViewport: React.FC<MusicBox3DViewportProps> = React.memo(
     rightJournalCap.position.set(2.39, 0.62, -0.35);
     bedplateGroup.add(rightJournalCap);
 
-    // Maker's Plaque ("聲 盒 仔 · 18001")
+    // Maker's Plaque ("聲 盒 仔")
     const plaqueMesh = new THREE.Mesh(
       new THREE.BoxGeometry(1.15, 0.04, 0.32),
       new THREE.MeshStandardMaterial({ map: plaqueTex, metalness: 0.5, roughness: 0.4 })

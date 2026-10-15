@@ -6,27 +6,27 @@ async function runTests() {
 
   // Test 1: Centered slot mapping matches the main 2D view formula
   console.log('1. Testing pinSlotX centered-slot mapping...');
-  const drumLeft = 200;
-  const drumWidth = 570;
-  const tinesCount = 22;
-  const slotW = drumWidth / tinesCount;
-  for (const tineIndex of [0, 10, 21]) {
-    const expected = drumLeft + (tineIndex + 0.5) * slotW;
-    assert.strictEqual(
-      pinSlotX(drumLeft, drumWidth, tineIndex, tinesCount),
-      expected,
-      `tine ${tineIndex} must sit in its centered slot`
+  for (const [drumLeft, drumWidth] of [[190, 560], [200, 570]]) {
+    const tinesCount = 18;
+    const slotW = drumWidth / tinesCount;
+    for (const tineIndex of [0, 9, 17]) {
+      const expected = drumLeft + (tineIndex + 0.5) * slotW;
+      assert.strictEqual(
+        pinSlotX(drumLeft, drumWidth, tineIndex, tinesCount),
+        expected,
+        `tine ${tineIndex} must sit in its centered slot on drum ${drumLeft}/${drumWidth}`
+      );
+    }
+    // First and last columns stay inside the drum bounds
+    assert(
+      pinSlotX(drumLeft, drumWidth, 0, tinesCount) > drumLeft,
+      'first column must be inside the drum left edge'
+    );
+    assert(
+      pinSlotX(drumLeft, drumWidth, tinesCount - 1, tinesCount) < drumLeft + drumWidth,
+      'last column must be inside the drum right edge'
     );
   }
-  // First and last columns stay inside the drum bounds
-  assert(
-    pinSlotX(drumLeft, drumWidth, 0, tinesCount) > drumLeft,
-    'first column must be inside the drum left edge'
-  );
-  assert(
-    pinSlotX(drumLeft, drumWidth, tinesCount - 1, tinesCount) < drumLeft + drumWidth,
-    'last column must be inside the drum right edge'
-  );
   console.log('   ✓ pinSlotX centered-slot mapping passed');
 
   // Test 2: Wrap-aware strike delta at the turn boundary

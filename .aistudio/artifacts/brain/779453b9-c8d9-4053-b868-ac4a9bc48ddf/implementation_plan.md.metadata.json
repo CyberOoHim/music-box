@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to eliminate >1000MB video file bloat and iPad thermal overheating during recording. Configures 24 FPS vintage pacing, background canvas layer caching, client-side bitrate capping, battery saver auto-dim live monitor, and server-side H.264 MP4 optimization to deliver 5–10 MB recordings while keeping the iPad cool.",
-  "updatedAt": "2026-10-15T07:23:29.202566500Z",
+  "summary": "Implementation plan for fixing the 2D music box mechanism in recorded video to achieve an exact 1:1 visual match with the main page 2D blueprint, correcting part placements (left-side mainspring and lower-left governor gear train, right journal bearing), restoring authentic wide graded steel comb tines with damper nibs and sloped acoustic base, and synchronizing mechanical animations.",
+  "updatedAt": "2026-10-15T10:44:42.483140500Z",
   "requestFeedback": true,
   "userFacing": true
 }

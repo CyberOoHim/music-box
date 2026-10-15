@@ -881,12 +881,12 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                 opacity="0.65"
               />
 
-              {/* Traditional Cast Inscription Plaque ("聲 盒 仔" & Authentic Seal) */}
+              {/* Traditional Cast Inscription Plaque ("聲 盒 仔") */}
               <g transform="translate(36, 236)">
                 <rect
                   x="0"
                   y="0"
-                  width="122"
+                  width="96"
                   height="22"
                   rx="4"
                   fill="#422d10"
@@ -894,7 +894,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   strokeWidth="1.2"
                 />
                 <text
-                  x="66"
+                  x="48"
                   y="15"
                   textAnchor="middle"
                   fill="#f8e5ab"
@@ -903,11 +903,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   fontWeight="bold"
                   letterSpacing="3"
                 >
-                  聲 盒 仔 · 18001
-                </text>
-                <circle cx="11" cy="11" r="5.5" fill="#d4af62" opacity="0.8" />
-                <text x="11" y="14" textAnchor="middle" fill="#2d1c08" fontSize="8" fontWeight="bold">
-                  安
+                  聲 盒 仔
                 </text>
               </g>
 
@@ -1202,18 +1198,6 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
                   />
                 ))}
 
-                {/* Stamped Model Number (18001 Sankyo Patent Mark) */}
-                <text
-                  x={drumLeft + drumWidth - 36}
-                  y={drumTop + 22}
-                  fill="#5c3f14"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                  opacity="0.85"
-                >
-                  18001
-                </text>
 
                 {/* Dynamic Vertical Tine Alignment Grid Guides */}
                 {Array.from({ length: tinesCount }).map((_, tIdx) => {

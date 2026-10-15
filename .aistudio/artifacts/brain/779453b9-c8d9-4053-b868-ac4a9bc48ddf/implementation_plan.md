@@ -1,62 +1,72 @@
-# Music Box Studio: iPad Power Saving & Video File Size Optimization
+# 2D Music Box Visual Alignment for Recorded Video
 
-Resolves the issue where video recordings swelled to over 1000 MB per turn and caused severe iPad thermal throttling. Upgrades the recording pipeline with 24 FPS vintage rate pacing, dual-layer background canvas caching, client-side bitrate clamping (1.4–1.8 Mbps), smart battery-saver display dimming, and fast H.264 MP4 export producing pristine 5–10 MB video files.
+Aligns the 2D horological mechanism in recorded videos to achieve an exact 1:1 visual and geometric match with the main page 2D blueprint (`MusicBoxMovement`), correcting part placements (mainspring, speed governor, gear train, cylinder, journal bearings) and restoring authentic wide graded steel comb tines with acoustic undercut and damper nibs.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following technical directions and UX preferences were confirmed during clarification:
+> The following directions were confirmed during interactive clarification and govern the plan:
 
-- **Confirmed Decision 1 (Video Resolution & Target File Size)**: 720p HD ($1280 \times 720$) with efficient H.264 compression targeting **5 to 10 MB** per turn (down from >1000 MB).
-- **Confirmed Decision 2 (Thermal & Frame Rate Optimization)**: **24 FPS** vintage cinematic rate, eliminating concurrent timers and leveraging pre-rendered static background canvas caching to slash iPad GPU/CPU draw calls by over 70%.
-- **Confirmed Decision 3 (Live Screen Monitor UX)**: Real-time 720p stream preview with **battery saver auto-dim** after 10 seconds of recording, providing an instant tap-to-wake control and low-power thermal state badge.
+- **Confirmed Decision 1 (Visual Alignment)**: Exact 1:1 visual match with identical layout, geometric coordinates ($780 \times 285$ horological blueprint), and comb anatomy matching the main page 2D view.
+- **Confirmed Decision 2 (Frame Composition)**: Retain the parchment song title card on top while hosting the authentic $780 \times 285$ movement in the burl-walnut cradle below within the 720p HD frame.
+- **Confirmed Decision 3 (Mechanical Animation Details)**: Full horological animation fidelity in the video canvas, including the spinning 4-blade governor butterfly fan, detent ratchet detents, revolving brass cylinder pins, tine tip deflection, contact sparks, and vibrating bass lead counterweights.
 
 ---
 
 ## 1. Overview & Core Concept
 
-When recording on Apple iPadOS, Safari WebKit's `canvas.captureStream()` combined with dual unthrottled `requestAnimationFrame` (120 Hz on ProMotion iPads) and `setInterval(33ms)` caused uncompressed intra-frame spikes, while simultaneously hammering the GPU with 150 heavy multi-gradient woodgrain and shadow redraws per second.
+When users export or record performances to video, the rendered 2D music box mechanism currently deviates significantly from the main page:
+1. **Mislocated Horological Components**: The speed governor and butterfly fan were placed on the far-right edge ($x = 815$), whereas in authentic Sankyo 18N music boxes and on the main page, both the mainspring barrel ($x = 92, y = 88$) and governor gear train ($x = 96, y = 186$) reside on the left side, driving the cylinder from the left while the right side features a journal bearing with a ruby endstone.
+2. **Thin / Needle-like Combs**: The video canvas tapered tines down to 35% width ($<7\text{px}$), producing sharp needle-like prongs rather than authentic, thick spring-steel cantilever tines ($18\text{--}26\text{px}$) with lead tuning counterweights, feather damper nibs, and a sloped comb base plate.
+3. **Missing Bedplate & Rosette Details**: The video canvas omitted the circular acoustic resonance rosette, cast brass bedplate beveled gradient, and authentic drive gear meshing.
 
-This upgrade establishes a production-grade, thermally stable recording engine:
-1. **Precise Frame Rate Pacing (24 FPS)**: A single RAF loop with a timestamp delta accumulator ($41.67\text{ ms}$ tick interval) guarantees consistent 24 FPS delivery without double-sampling or CPU pegging.
-2. **Dual-Layer Background Canvas Caching**: Static elements (the burl walnut soundboard cradle, brass chassis bedplate, patent inscription badge, and ratchet pawl brackets) are rendered **once** to an offscreen cache canvas and transferred via `drawImage()`, redrawing only the moving cylinder drum, pins, flywheel, and comb vibration.
-3. **Strict Client Bitrate Allocation**: Constrains `MediaRecorder` video bitrate to $1.4\text{ Mbps}$ (audio $192\text{ kbps}$ AAC), keeping raw client captures at $\approx 5\text{--}8\text{ MB}$ for a 30-second turn.
-4. **Server Transcoder Hardening**: Increases `express.raw` payload limit to $250\text{ MB}$, adds FFmpeg `-crf 23 -maxrate 2.2M -bufsize 4.4M` constraints, and streams back certified Apple H.264/AAC `+faststart` MP4s playable directly in iPad Safari, Photos, and Files.
-5. **Battery-Saver Live Monitor HUD**: After 10 seconds of continuous recording, the live monitor gently dims by 50% and reduces canvas preview blits to conserve iPad battery and display power, with full instant touch-to-wake.
+This plan establishes a unified 2D horological rendering architecture where the video recorder Canvas engine executes the exact same coordinate math, graduated tine geometry, and mechanical placement as the main page SVG view.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### A. Recording HUD & Thermal Management
-- **Pre-Recording Status**: Clear indicator specifying `720p · 24 FPS Eco · ~6 MB Target` so users know the recording is lightweight and heat-conscious.
-- **Active Recording Monitor**: Crisp $16:9$ viewport in the modal showing the moving cylinder, sparkling tines, and governor fan.
-- **Battery-Saver Auto-Dim Indicator**: After 10 seconds, a subtle ambient indicator appears (`⚡ Power Saver Active · Tap to brighten`) with smooth opacity easing (`opacity-45`), significantly reducing iPad OLED/mini-LED power consumption.
-- **Instant Touch-to-Wake**: Tapping anywhere on the preview restores full monitor brightness.
+### A. Video Frame Composition (720p HD / 1280 × 720)
+- **Top Section ($y = 16\dots 170$)**: The cream parchment title card with traditional Chinese crimson seal stamp ("安"), song title, composer, arranged style, and live turn progress indicator.
+- **Bottom Section ($y = 182\dots 704$)**: The burl-walnut cradle featuring antique brass corner brackets, horological status ribbon, and the authentic $780 \times 285$ horological movement substrate.
 
-### B. Post-Recording Export & Verification
-- **Video Specs Card**: Displays exact duration, resolution ($1280 \times 720$), frame rate ($24\text{ FPS}$), and verified file size (e.g., `6.4 MB · iPad & Apple Certified`).
-- **Instant Playback**: Built-in HTML5 video player with native QuickTime/Safari streaming.
-- **Direct Download**: Single-click download button saving `.mp4` directly into iPad Photos / Files app.
+### B. Authentic 2D Horological Movement Geometry ($780 \times 285$)
+- **Cast Brass Bedplate**: Warm brass radial gradient with beveled inner border, acoustic resonance chamber rosette at $(470, 142)$, and stamped traditional plaque ("聲 盒 仔 · 18001").
+- **Top-Left Mainspring Assembly ($x = 92, y = 88$)**: Coiled blued-steel mainspring, 16-tooth ratchet wheel rotating in sync with playback, detent click pawl, and central winding arbor.
+- **Lower-Left Governor & Gear Train ($x = 96, y = 186$)**:
+  - Meshing intermediate nylon/bronze gear at $(96, 186)$.
+  - Helical worm screw spindle with dual ruby jewel bearings at $(120, 182)$.
+  - High-speed 4-blade butterfly governor fan at $(142, 180)$ spinning during playback.
+  - Mechanical whip brake lever at $(142, 216)$ disengaged during playback and resting on fan when stopped.
+- **Central Brass Cylinder Drum ($x = 190\dots 750$, $w = 560$, $h = 105$, $y = 36$)**:
+  - Left pillow block bearing stand ($x = 162$) and bronze involute spur drive gear ($x = 174\dots 190$).
+  - Rotating lathe polishing reflection lines and stamped patent mark `18001`.
+  - Right axle journal bearing stand ($x = 750\dots 768$) with chrome slotted screw and ruby endstone cap.
+  - Pin beads revolving in 3D orthographic projection ($R = 52.5$, strike line at $y = 133$).
+- **Authentic Graded Spring-Steel Comb ($x = 190\dots 750$)**:
+  - Wide rectangular cantilever beams ($tineWidth = \text{slotW} \times (0.84 - frac \times 0.26)$, $18\text{--}26\text{px}$).
+  - All tine tips meet the strike line at $y = 133$.
+  - Sloped comb root line ascending from $y = 230$ (low bass) to $y = 208$ (high treble).
+  - Tine features: lead tuning counterweights soldered underneath bass tines, white specular bevel stripe, contact tip bevel, and feather damper nibs.
+  - Brushed steel comb base plate with acoustic angled undercut ($180, 228 \to 760, 206 \to 756, 260 \to 184, 260$) secured by 3 slotted mounting screws.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-### Decision 1: Static Background Layer Caching vs. Dynamic Redraw
-- **Chosen Approach**: Pre-render the walnut cradle, shadows, patent plate, and frame into a dedicated 720p cache canvas at initialization, then blit it with a single `ctx.drawImage(bgCanvas, 0, 0)` call before drawing dynamic components.
-- **Why**: Recomputing radial gradients, drop shadows, and complex bezier curves 24–120 times a second is the primary cause of iPad GPU heating. Caching drops per-frame draw operations from $\approx 140$ calls to $\approx 25$ calls.
-- **Alternatives Considered**: Dropping visual details entirely (rejected because the user explicitly requested heirloom visual parity with the main page).
+### Decision 1: Shared Mathematical Model & Unified Coordinate System
+- **Chosen Approach**: Calibrate the canvas video renderer to project the exact $780 \times 285$ coordinate system of `MusicBoxMovement` onto the deck area ($scale = \min(deckW / 780, deckH / 285)$).
+- **Why**: Eliminates layout divergence forever. Every tine width, pin position, gear center, and bearing coordinate uses the identical mathematical formulas.
+- **Alternatives Considered**: Manually tweaking the old $920 \times 280$ canvas drawing (rejected because it would leave subtle misalignments and maintain two disparate layout systems).
 
-### Decision 2: 24 FPS Vintage Rate vs. 30/60 FPS
-- **Chosen Approach**: Lock video recording and frame generation to exactly 24 FPS ($41.67\text{ ms}$).
-- **Why**: 24 FPS matches classic cinematic horological footage, reduces encoding load and data throughput by 20% compared to 30 FPS (and 60% compared to 60 FPS), and keeps total file size well within 5–10 MB.
-- **Alternatives Considered**: Variable framerate (rejected due to iOS QuickTime sync drift issues).
+### Decision 2: True Wide Comb Tines vs Narrowed Needles
+- **Chosen Approach**: Draw full rectangular cantilever beams ($18\text{--}26\text{px}$ wide) with tip contact bevels and damper nibs, exactly like the main page SVG.
+- **Why**: Real musical box combs are thick, finely ground tempered steel reeds that vibrate acoustically; thin needles look unphysical and flimsy.
+- **Alternatives Considered**: Slightly widening the old trapezoids (rejected; fails the user's explicit requirement for exact 1:1 match).
 
-### Decision 3: Single Managed RAF with Strict Delta-Throttle
-- **Chosen Approach**: Eliminate the redundant `setInterval(33ms)` and throttle `requestAnimationFrame` using `if (now - lastFrameTime < 41.0) return;`.
-- **Why**: Running both RAF and setInterval caused redundant frame pushes and race conditions on 120 Hz ProMotion iPad displays.
-- **Alternatives Considered**: Web Worker offscreen canvas (rejected due to WebKit Safari iOS compatibility limitations with OffscreenCanvas `transferControlToOffscreen` in audio contexts).
+### Decision 3: Preserving Static Background Cache Performance
+- **Chosen Approach**: Include the static bedplate, rosette, brass plate, mounting bolts, and comb base plate in the pre-rendered static background cache canvas. Dynamic per-frame operations only draw the revolving cylinder surface, pins, vibrating tines, rotating ratchet, and spinning butterfly fan.
+- **Why**: Guarantees visual perfection without compromising iPad thermal stability or causing frame drops at 24 FPS.
 
 ---
 
@@ -64,43 +74,43 @@ This upgrade establishes a production-grade, thermally stable recording engine:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        iPad Safari / WebKit Client                     │
-├────────────────────────────────────────────────────────────────────────┤
-│  [MusicBoxAudio] ────► [Mastering Chain] ──► [MediaStreamDestination]  │
-│                                                       │ (AudioTrack)   │
-│  [Static BG Cache Canvas]                             ▼                │
-│             │                                 [Combined Stream]        │
-│             ▼ (drawImage)                             │                │
-│  [Active 720p Canvas] ──► [captureStream(0)] ──► [VideoTrack]          │
-│    - 24 FPS RAF Pacer         (requestFrame on render)│                │
-│    - Dynamic Cylinder & Pins                          │                │
-│    - High-Speed Flywheel                              ▼                │
-│    - Auto-Dim Power Saver                     [MediaRecorder]          │
-│                                            (1.4 Mbps H.264/WebM)       │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Upload Blob (5-8 MB)
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                     Express Backend Transcoder                         │
-├────────────────────────────────────────────────────────────────────────┤
-│  POST /api/video/convert-to-ipad-mp4 (limit: 250MB)                    │
-│    - FFmpeg: libx264, yuv420p, high 4.1, -crf 23, -maxrate 2.2M        │
-│    - AAC stereo 192k, 44.1kHz                                          │
-│    - movflags +faststart (moov atom moved to front)                    │
-│    - Output: Native Apple MP4 (5–10 MB guaranteed)                     │
-└────────────────────────────────────────────────────────────────────────┘
+│             Shared 780 × 285 Horological Blueprint Model               │
+│                                                                        │
+│   (92, 88) Mainspring Barrel       (190, 36) Drum [560 × 105]  (750)   │
+│   ┌──────────────────────┐         ┌────────────────────────┐  Axle    │
+│   │ Coiled Spring & Pawl │         │ Revolving Pins on Lathe│  Journal │
+│   └──────────────────────┘         └────────────────────────┘  Bearing │
+│   (96, 186) Governor Unit          (190, 133) Strike Line              │
+│   ┌──────────────────────┐         ││││││││││││││││││ Wide Tines       │
+│   │ Nylon Gear & Fan     │         (180, 228) -> (760, 206) Root       │
+│   └──────────────────────┘         [Sloped Comb Base Plate]            │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │
+           ┌─────────────────────────┴─────────────────────────┐
+           ▼                                                   ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
+│ Main Page View: MusicBoxMovement.tsx │  │ Video Recording Engine:              │
+│ - SVG DOM Nodes                      │  │ videoRecorder.ts                     │
+│ - ViewBox: 0 0 780 285               │  │ - Static BG Cache Canvas (720p)      │
+│ - Interactive CSS & Hover states     │  │ - Dynamic 24 FPS Canvas Redraw       │
+│ - 3D / 2D Tab Toggle                 │  │ - Exact 780×285 Coordinate Mapping   │
+└──────────────────────────────────────┘  └──────────────────────────────────────┘
 ```
 
 ### Component & State Mapping
 
 1. **`src/audio/videoRecorder.ts`**:
-   - `buildStaticBackgroundCache(width, height)`: Pre-renders walnut texture, shadow vignettes, screws, and patent placard.
-   - `start(options)`: Initializes single throttled RAF loop ($24\text{ FPS}$), attaches 0-framerate stream (`captureStream(0)`), registers throttled `videoTrack.requestFrame()`, sets video bitrate to $1.4\text{ Mbps}$.
-   - Cleans up and unbinds timers on stop.
-2. **`server.ts`**:
-   - Update express raw limit to `250mb` to safely process incoming high-definition streams.
-   - Tune FFmpeg parameters: `-crf 23 -preset veryfast -maxrate 2.2M -bufsize 4.4M` to enforce strict 5–10 MB output boundaries.
-3. **`src/components/PlayRecordModal.tsx`**:
-   - Live stream preview container with 10-second idle timer triggering power-saving opacity reduction.
-   - Tap-to-wake interactive listener and power-saving status tag.
-   - Updated specs badge reflecting lightweight 5–10 MB H.264 MP4 export.
+   - Update `renderStaticBackgroundAndDeck`:
+     - Change coordinate viewport to $780 \times 285$ scaled to inner deck dimensions.
+     - Render cast brass bedplate with radial gradient, beveled border, rosette chamber at $(470, 142)$, and 4 corner bolts.
+     - Render left pillow block bearing at $(162, 54)$ and right axle journal bearing stand at $(750, 30)$ with ruby endstone.
+     - Render sloped brushed steel comb base plate ($180, 228 \to 760, 206 \to 756, 260 \to 184, 260$) with 3 slotted mounting screws and engraved tuning stamp.
+     - Render static governor mounting bracket and ruby bearings at $(142, 180)$.
+   - Update `renderCompositeVideoFrame`:
+     - Set `targetViewW = 780` and `targetViewH = 285`.
+     - Relocate mainspring barrel to $(92, 88)$, drawing rotating ratchet wheel and steel click pawl.
+     - Relocate speed governor and gear train to $(96, 186)$, drawing nylon gear, helical worm spindle, spinning 4-blade butterfly fan, and stop brake wire.
+     - Align cylinder drum to $x = 190, y = 36, w = 560, h = 105$, left drive gear to $x = 174..190$, strike line to $y = 133$, and cylinder radius $R = 52.5$.
+     - Render wide graded steel comb tines ($18\text{--}26\text{px}$) with specular bevel stripe, feather damper nibs, under-tine lead counterweights on bass tines, active pluck glow/offset, and strike sparks.
+2. **`test/videoPinMapping.test.ts`**:
+   - Update test assertions to verify pin coordinate mapping and tine width calculations match the $780 \times 285$ geometry.
