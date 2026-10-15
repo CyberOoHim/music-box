@@ -161,7 +161,7 @@ export function renderStaticBackgroundAndDeck(
   ctx.fillRect(0, 0, width, 220);
 
   // =========================================================================
-  // SECTION 1: PARCHMENT SONG TITLE CARD (Exact Main Page Top Banner)
+  // SECTION 1: PARCHMENT SONG TITLE CARD (main-page-style banner, canvas redraw)
   // =========================================================================
   const cardX = 32;
   const cardY = 16;
@@ -395,6 +395,57 @@ export function renderStaticBackgroundAndDeck(
   ctx.fillText('聲 盒 仔 · MODEL 18001 · 24 FPS', plaqueX + plaqueW / 2, plaqueY + plaqueH / 2 + 0.5);
 
   ctx.restore();
+}
+
+/**
+ * Centered drum slot X for a tine/pin column. Must match the main 2D view
+ * (`MusicBoxMovement`), where columns are centered slots across the drum width.
+ */
+export function pinSlotX(
+  drumLeft: number,
+  drumWidth: number,
+  tineIndex: number,
+  tinesCount: number
+): number {
+  return drumLeft + (tineIndex + 0.5) * (drumWidth / Math.max(1, tinesCount));
+}
+
+/**
+ * Wrap-aware step delta in (-totalSteps/2, totalSteps/2], matching the main
+ * 2D view so strikes at the turn boundary (e.g. pin step 0 at smoothStep 63.9)
+ * are still detected.
+ */
+export function wrapStepDelta(pinStep: number, smoothStep: number, totalSteps: number): number {
+  const total = Math.max(1, totalSteps);
+  let delta = (pinStep - smoothStep) % total;
+  if (delta < -total / 2) delta += total;
+  if (delta > total / 2) delta -= total;
+  return delta;
+}
+
+/**
+ * Graduated comb tine width: bass tines wide, treble tines finely tapered,
+ * proportional to the drum slot like the main 2D view (not a fixed pixel range).
+ */
+export function combTineWidth(
+  drumWidth: number,
+  tinesCount: number,
+  tineIndex: number
+): number {
+  const slotW = drumWidth / Math.max(1, tinesCount);
+  const frac = tineIndex / Math.max(1, tinesCount - 1);
+  return Math.max(4.5, slotW * (0.84 - frac * 0.26));
+}
+
+/**
+ * Strike test shared by pins and comb tines (matches the main 2D view threshold).
+ */
+export function isPinStriking(
+  activeTines: Set<number>,
+  tineIndex: number,
+  strikeDelta: number
+): boolean {
+  return activeTines.has(tineIndex) && Math.abs(strikeDelta) < 0.65;
 }
 
 /**
@@ -748,13 +799,16 @@ export function renderCompositeVideoFrame(
     const cosA = Math.cos(angle);
     const sinA = Math.sin(angle);
 
-    // Visible on front half of revolving cylinder
-    if (cosA > -0.15) {
+    // Visible on the front face of the revolving cylinder (~145-degree window, like the main view)
+    if (cosA > 0.3) {
       const tineIdx = pin.tineIndex >= 0 && pin.tineIndex < tinesCount ? pin.tineIndex : 0;
-      const pinX = drumLeft + 20 + tineIdx * (drumWidth - 40) / Math.max(1, tinesCount - 1);
+      // Centered slot mapping, identical to the main 2D view, so pins sit over their tines
+      const pinX = pinSlotX(drumLeft, drumWidth, tineIdx, tinesCount);
       const pinY = drumTop + drumRadius + sinA * (drumRadius * 0.92);
 
-      const isStriking = activeTines.has(tineIdx) && Math.abs(pinRelStep) < 0.6;
+      // Wrap-aware strike test so turn-boundary strikes still flash (matches main view)
+      const strikeDelta = wrapStepDelta(pin.step, smoothStep, totalSteps);
+      const isStriking = isPinStriking(activeTines, tineIdx, strikeDelta);
       const pinRadius = Math.max(2.2, 3.8 * (0.5 + 0.5 * cosA));
 
       // 3D Pin Shading
@@ -795,12 +849,13 @@ export function renderCompositeVideoFrame(
   const combTinesTop = drumTop + drumRadius;
 
   for (let i = 0; i < tinesCount; i++) {
-    const tineX = drumLeft + 20 + i * (drumWidth - 40) / Math.max(1, tinesCount - 1);
+    // Same centered slot mapping as the pins above and the main 2D view
+    const tineX = pinSlotX(drumLeft, drumWidth, i, tinesCount);
     const isActive = activeTines.has(i);
 
     // Dynamic pluck deflection and decay
     const pluckOffset = isActive ? -3.5 : 0;
-    const tineWidth = Math.max(4.5, 9.5 - (i / tinesCount) * 4); // low notes wider, high notes narrower
+    const tineWidth = combTineWidth(drumWidth, tinesCount, i); // low notes wider, high notes narrower
 
     ctx.save();
     // Steel Tine Body
@@ -841,11 +896,11 @@ export function renderCompositeVideoFrame(
       ctx.stroke();
     }
 
-    // Spark Particles on Contact Strike
+    // Spark Particles on Contact Strike (deterministic offsets: stable frame-to-frame for cleaner encoding)
     if (isActive) {
       for (let s = 0; s < 3; s++) {
-        const sx = tineX + (Math.random() - 0.5) * 8;
-        const sy = combTinesTop + pluckOffset + (Math.random() - 0.5) * 6;
+        const sx = tineX + Math.sin(s * 12.9898 + smoothStep * 78.233) * 4;
+        const sy = combTinesTop + pluckOffset + Math.cos(s * 39.425 + smoothStep * 37.719) * 3;
         ctx.beginPath();
         ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
         ctx.fillStyle = s % 2 === 0 ? '#ffffff' : '#ffd54f';
@@ -1223,40 +1278,33 @@ export class VideoRecorder {
     this.startTime = performance.now();
     this.turn1StartTime = 0;
 
-    // 7. Thermal-Optimized 24 FPS Animation Loop with strict timestamp delta pacing
+    // 7. Thermal-Optimized timeout-paced 24 FPS loop (wakes only when a frame is due)
     const totalSteps = options.song.totalSteps || 64;
     const tempoBpm = Math.max(30, options.tempoBpm || 88);
     const stepDurationSec = (60 / tempoBpm) / 4;
 
     const TARGET_FPS = 24;
     const FRAME_INTERVAL_MS = 1000 / TARGET_FPS; // 41.67 ms
-    let lastRenderTime = 0;
     let lastAnimTime = performance.now();
     let lastKnownTurn = 1;
 
     const videoTrack = this.streamTracks.find((t) => t.kind === 'video') as any;
 
-    const renderLoop = (timestamp: number) => {
+    // Timeout-paced 24 FPS loop: wakes only when a frame is due, unlike
+    // filter-inside-requestAnimationFrame which still fires at display refresh (up to 120 Hz)
+    const tick = () => {
       if (!this.isRecordingInternal || !this.ctx || !this.canvas) return;
+      const frameStart = performance.now();
 
-      this.animFrameId = requestAnimationFrame(renderLoop);
-
-      // Strict frame rate pacing: prevents 120Hz ProMotion displays from overheating
-      const elapsedSinceRender = timestamp - lastRenderTime;
-      if (elapsedSinceRender < FRAME_INTERVAL_MS - 3) {
-        return;
-      }
-      lastRenderTime = timestamp;
-
-      const dtSec = Math.min(0.08, (timestamp - lastAnimTime) / 1000);
-      lastAnimTime = timestamp;
+      const dtSec = Math.min(0.08, (frameStart - lastAnimTime) / 1000);
+      lastAnimTime = frameStart;
 
       const state = options.getPlaybackState();
-      const elapsedTotalSec = (timestamp - this.startTime) / 1000;
+      const elapsedTotalSec = (frameStart - this.startTime) / 1000;
 
       if (state.recordingState === 'recording-turn') {
         if (this.turn1StartTime === 0 || state.currentTurn !== lastKnownTurn) {
-          this.turn1StartTime = timestamp;
+          this.turn1StartTime = frameStart;
           lastKnownTurn = state.currentTurn;
         }
       }
@@ -1266,14 +1314,15 @@ export class VideoRecorder {
       const isOperating = state.recordingState === 'recording-turn';
 
       if (isOperating) {
-        const turnElapsedSec = Math.max(0, (timestamp - this.turn1StartTime) / 1000);
+        const turnElapsedSec = Math.max(0, (frameStart - this.turn1StartTime) / 1000);
         const calculatedStep = (turnElapsedSec / stepDurationSec) % totalSteps;
         continuousStep = state.smoothStep !== undefined && state.smoothStep > 0
           ? state.smoothStep
           : calculatedStep;
 
-        // Advance governor flywheel at ~20 rps
-        this.flywheelAngleInternal = (this.flywheelAngleInternal + dtSec * 20 * Math.PI * 2) % (Math.PI * 2);
+        // Advance governor flywheel with the same tempo-driven speed as the main 2D view
+        const govSpeed = (tempoBpm / 90) * Math.PI * 3.8;
+        this.flywheelAngleInternal = (this.flywheelAngleInternal + dtSec * govSpeed) % (Math.PI * 2);
       }
 
       // Render composite frame with pre-cached static background
@@ -1306,16 +1355,20 @@ export class VideoRecorder {
           // ignore
         }
       }
+
+      // Schedule the next frame; waking only when due keeps iPad power draw low
+      const frameCost = performance.now() - frameStart;
+      this.animFrameId = window.setTimeout(tick, Math.max(0, FRAME_INTERVAL_MS - frameCost));
     };
 
-    this.animFrameId = requestAnimationFrame(renderLoop);
+    this.animFrameId = window.setTimeout(tick, FRAME_INTERVAL_MS);
   }
 
   public async stop(): Promise<RecordedVideoSession> {
     this.isRecordingInternal = false;
 
     if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
+      clearTimeout(this.animFrameId);
       this.animFrameId = null;
     }
 
@@ -1332,19 +1385,25 @@ export class VideoRecorder {
           const durationSeconds = (performance.now() - this.startTime) / 1000;
           const songTitle = this.options?.song.title || 'Music Box Performance';
 
-          // Convert to certified Apple iPadOS / iOS / QuickTime faststart MP4 (5-10MB target)
+          // Convert to certified Apple iPadOS / iOS / QuickTime faststart MP4 (5-10MB target).
+          // An explicit WebM choice skips conversion so the format is honored as-is.
           let finalBlob = rawBlob;
           let finalFormat: 'mp4' | 'webm' = this.detectedFormat;
           let finalMime = rawMimeType;
           let isIpadNative = false;
 
+          const preferWebm = this.options?.preferredFormat === 'webm';
           try {
-            const converted = await convertBlobToIpadMp4(rawBlob, songTitle);
-            if (converted && converted.size > 2000) {
-              finalBlob = converted;
-              finalFormat = 'mp4';
-              finalMime = 'video/mp4';
-              isIpadNative = true;
+            if (!preferWebm) {
+              const converted = await convertBlobToIpadMp4(rawBlob, songTitle);
+              // Only adopt the result when it really is MP4: the fallback path
+              // returns the original blob untouched, which must keep its own label.
+              if (converted && converted.size > 2000 && converted.type.includes('mp4')) {
+                finalBlob = converted;
+                finalFormat = 'mp4';
+                finalMime = 'video/mp4';
+                isIpadNative = true;
+              }
             }
           } catch (convErr) {
             console.warn('[VideoRecorder] iPad conversion step error:', convErr);
@@ -1387,7 +1446,7 @@ export class VideoRecorder {
   public cancel(): void {
     this.isRecordingInternal = false;
     if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
+      clearTimeout(this.animFrameId);
       this.animFrameId = null;
     }
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {

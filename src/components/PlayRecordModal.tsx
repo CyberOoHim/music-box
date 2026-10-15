@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MusicBoxSong, SoundChamberPreset, SOUND_CHAMBER_PRESETS, CombScaleId } from '../types';
 import { RecordedAudioSession, formatTime, formatFileSize } from '../audio/audioRecorder';
 import {
@@ -146,11 +146,25 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
     setIsAutoDimmed(false);
   };
 
+  // Register the live canvas exactly on mount/unmount so the recorder mirror
+  // callback fires once per canvas lifetime instead of on every render
+  const handleLiveCanvasRef = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      liveRecordingCanvasRef.current = canvas;
+      if (onRegisterLiveFrameMonitor) {
+        onRegisterLiveFrameMonitor(canvas);
+      }
+    },
+    [onRegisterLiveFrameMonitor]
+  );
+
+  // Flag the live canvas while dimmed so the recorder mirror can skip redundant copies
   useEffect(() => {
-    if (onRegisterLiveFrameMonitor) {
-      onRegisterLiveFrameMonitor(liveRecordingCanvasRef.current);
+    const canvas = liveRecordingCanvasRef.current;
+    if (canvas) {
+      canvas.dataset.dimmed = isAutoDimmed ? 'true' : 'false';
     }
-  });
+  }, [isAutoDimmed, isRecordingActive]);
 
   // Calculate single turn duration based on steps and tempo
   const turnDurationSeconds = useMemo(() => {
@@ -483,7 +497,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                     <span>iPad Power Saving & 5–10 MB Compact Size Mode</span>
                   </div>
                   <p className="text-[11px] text-[#33532c] font-serif-sub">
-                    Configured for 24 FPS vintage horological pacing with pre-rendered background caching and 1.4 Mbps bitrate. Eliminates iPad overheating and keeps 1-turn recordings at a lightweight 5–10 MB (down from &gt;1000 MB).
+                    Configured for 24 FPS vintage horological pacing with pre-rendered background caching and a 1.0 Mbps compact bitrate (default). Eliminates iPad overheating and keeps 1-turn recordings at a lightweight 5–10 MB (down from &gt;1000 MB).
                   </p>
                 </div>
               )}
@@ -545,7 +559,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                     <button
                       type="button"
                       onClick={() => setVideoCompression('compact')}
@@ -564,7 +578,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                         </span>
                       </div>
                       <p className={`text-[10px] font-serif-sub pt-1 ${videoCompression === 'compact' ? 'text-[#dfcd9f]' : 'text-[#8a765e]'}`}>
-                        ~1.2 Mbps video bitrate. Compact ~6–9 MB per min. Instant download & fast playback.
+                        ~1.0 Mbps video bitrate. Compact ~9 MB per min. Instant download & fast playback.
                       </p>
                     </button>
 
@@ -581,7 +595,24 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                         Balanced HD Quality
                       </span>
                       <p className={`text-[10px] font-serif-sub pt-1 ${videoCompression === 'balanced' ? 'text-[#dfcd9f]' : 'text-[#8a765e]'}`}>
-                        ~1.8 Mbps video bitrate. High definition metallic reflections.
+                        ~1.4 Mbps video bitrate. High definition metallic reflections (~12 MB per min).
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setVideoCompression('high')}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        videoCompression === 'high'
+                          ? 'bg-[#433422] text-[#fdfcf9] border-[#433422] shadow-xs'
+                          : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36]'
+                      }`}
+                    >
+                      <span className="font-serif font-bold text-xs block">
+                        High Detail Archive
+                      </span>
+                      <p className={`text-[10px] font-serif-sub pt-1 ${videoCompression === 'high' ? 'text-[#dfcd9f]' : 'text-[#8a765e]'}`}>
+                        ~2.0 Mbps video bitrate. Maximum sharpness for archiving (~16 MB per min).
                       </p>
                     </button>
                   </div>
@@ -736,7 +767,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                     title={isAutoDimmed ? 'Tap to wake monitor' : 'Live video monitor'}
                   >
                     <canvas
-                      ref={liveRecordingCanvasRef}
+                      ref={handleLiveCanvasRef}
                       width={1280}
                       height={720}
                       className={`w-full h-full object-contain block transition-opacity duration-500 ${

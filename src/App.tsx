@@ -701,7 +701,7 @@ export default function App() {
     const nextMode = modes[nextIdx];
     setPowerSaveMode(nextMode);
     if (nextMode === 'battery-saver') {
-      showToast('Eco Battery Saver Active • 30 FPS pacing, lightweight glows & Web Audio auto-sleep', 'info');
+      showToast('Eco Battery Saver Active • 20 FPS pacing, lightweight glows & Web Audio auto-sleep', 'info');
     } else if (nextMode === 'balanced') {
       showToast('Balanced Mode • Standard adaptive graphics', 'info');
     } else if (nextMode === 'performance') {
@@ -1017,12 +1017,14 @@ export default function App() {
           preferredFormat: config.preferredFormat || 'mp4',
           onLevelUpdate: (level) => setRecordingPeakLevel(level),
           onFrameRendered: (canvas) => {
+            // Skip the modal mirror copy when the page is hidden or the
+            // monitor is auto-dimmed: the pixels would be invisible anyway
+            if (document.hidden) return;
             const liveCanvas = liveRecordingCanvasRef.current;
-            if (liveCanvas) {
-              const liveCtx = liveCanvas.getContext('2d');
-              if (liveCtx) {
-                liveCtx.drawImage(canvas, 0, 0, liveCanvas.width, liveCanvas.height);
-              }
+            if (!liveCanvas || liveCanvas.dataset.dimmed === 'true') return;
+            const liveCtx = liveCanvas.getContext('2d');
+            if (liveCtx) {
+              liveCtx.drawImage(canvas, 0, 0, liveCanvas.width, liveCanvas.height);
             }
           },
           getPlaybackState: () => ({
@@ -1112,6 +1114,11 @@ export default function App() {
     setRecordingElapsedSeconds(0);
     showToast('Recording cancelled', 'info');
   }, [showToast]);
+
+  // Stable live-monitor registration so the record modal registers its canvas once per mount
+  const handleRegisterLiveFrameMonitor = useCallback((canvas: HTMLCanvasElement | null) => {
+    liveRecordingCanvasRef.current = canvas;
+  }, []);
 
   const handleRecordAgain = useCallback(() => {
     if (recordedSession) {
@@ -2232,6 +2239,7 @@ export default function App() {
               combScaleId={currentSong.combScaleId || combScaleId}
               customTines={currentSong.customTines}
               powerSaveMode={powerSaveMode}
+              ecoActive={isEcoActive}
               soundPreset={soundPreset}
               onChangeCombScale={handleChangeCombScale}
               onPluckTine={handlePluckTine}
@@ -2418,9 +2426,7 @@ export default function App() {
         recordedSession={recordedSession}
         recordedVideoSession={recordedVideoSession}
         activeRecordingMode={activeRecordingMode}
-        onRegisterLiveFrameMonitor={(canvas) => {
-          liveRecordingCanvasRef.current = canvas;
-        }}
+        onRegisterLiveFrameMonitor={handleRegisterLiveFrameMonitor}
         onStartRecording={handleStartRecording}
         onStopEarlyAndExport={handleStopEarlyAndExport}
         onCancelRecording={handleCancelRecording}

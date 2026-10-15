@@ -44,6 +44,7 @@ interface MusicBoxMovementProps {
   combScaleId?: CombScaleId;
   customTines?: TineNote[];
   powerSaveMode?: PowerSaveMode;
+  ecoActive?: boolean;
   soundPreset?: SoundChamberPreset;
   onChangeCombScale?: (scaleId: CombScaleId) => void;
   onPluckTine: (tineIndex: number) => void;
@@ -69,6 +70,7 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   combScaleId = 'sankyo-18',
   customTines,
   powerSaveMode = 'auto',
+  ecoActive,
   soundPreset = 'gold-sankyo',
   onChangeCombScale,
   onPluckTine,
@@ -86,12 +88,14 @@ export const MusicBoxMovement: React.FC<MusicBoxMovementProps> = React.memo(({
   const ratchetWheelSvgRef = useRef<SVGGElement | null>(null);
   const governorAngleRef = useRef<number>(0);
 
-  // Dynamic Eco / Power Saver Mode check for iPad & low-power configurations
+  // Dynamic Eco / Power Saver Mode check for iPad & low-power configurations.
+  // A parent-provided resolved value wins so recording and preview agree (e.g. low-battery desktop).
   const isEco = useMemo(() => {
+    if (typeof ecoActive === 'boolean') return ecoActive;
     if (powerSaveMode === 'battery-saver') return true;
     if (powerSaveMode === 'performance') return false;
     return isIpadOrMobileDevice();
-  }, [powerSaveMode]);
+  }, [ecoActive, powerSaveMode]);
 
   // Miniature Rotary Jog Dial State & Handlers
   const miniJogRef = useRef<HTMLDivElement | null>(null);
