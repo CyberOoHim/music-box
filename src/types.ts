@@ -486,6 +486,16 @@ export interface UserSettings {
   currentSongId?: string;
   fontZoom: number; // e.g. 100 (percentage)
   powerSaveMode?: PowerSaveMode;
+  recordingSettings?: {
+    modalTab?: 'audio' | 'video';
+    turns?: 1 | 2 | 3;
+    interTurnSilence?: number;
+    leadInPadding?: number;
+    leadOutPadding?: number;
+    includeAmbiance?: boolean;
+    videoCompression?: 'compact' | 'balanced' | 'high';
+    preferredFormat?: 'mp4' | 'webm';
+  };
 }
 
 export interface MusicBoxExportBundle {

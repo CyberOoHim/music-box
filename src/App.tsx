@@ -27,6 +27,9 @@ import {
   PlayRecordModal,
   RecordingState,
   PlayRecordConfig,
+  loadSavedRecordingSettings,
+  RECORDING_SETTINGS_STORAGE_KEY,
+  DEFAULT_RECORDING_SETTINGS,
 } from './components/PlayRecordModal';
 import {
   AudioRecorder,
@@ -170,22 +173,30 @@ export default function App() {
   const [shareModalSong, setShareModalSong] = useState<MusicBoxSong | null>(null);
   const [sharedSongNotice, setSharedSongNotice] = useState<{ song: MusicBoxSong; isPreset: boolean } | null>(null);
 
-  // Play & Record Studio state
+  // Play & Record Studio state with persistence
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
-  const [recordingConfig, setRecordingConfig] = useState<PlayRecordConfig>({
-    turns: 2,
-    interTurnSilence: 1.5,
-    leadInPadding: 1.0,
-    leadOutPadding: 1.5,
-    includeAmbiance: false,
+  const [recordingConfig, setRecordingConfig] = useState<PlayRecordConfig>(() => {
+    const saved = loadSavedRecordingSettings();
+    return {
+      turns: saved.turns, // 1 turn by default
+      interTurnSilence: saved.interTurnSilence,
+      leadInPadding: saved.leadInPadding,
+      leadOutPadding: saved.leadOutPadding,
+      includeAmbiance: saved.includeAmbiance,
+      recordingMode: saved.modalTab,
+      videoCompression: saved.videoCompression, // 'balanced' by default
+      preferredFormat: saved.preferredFormat,
+    };
   });
   const [recordingCurrentTurn, setRecordingCurrentTurn] = useState(1);
   const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
   const [recordingPeakLevel, setRecordingPeakLevel] = useState(0);
   const [recordedSession, setRecordedSession] = useState<RecordedAudioSession | null>(null);
   const [recordedVideoSession, setRecordedVideoSession] = useState<RecordedVideoSession | null>(null);
-  const [activeRecordingMode, setActiveRecordingMode] = useState<'audio' | 'video'>('video');
+  const [activeRecordingMode, setActiveRecordingMode] = useState<'audio' | 'video'>(() => {
+    return recordingConfig.recordingMode || 'video';
+  });
   // Gemini AI Status & Client API Key
   const [clientApiKey, setClientApiKey] = useState<string>(() => {
     try {
@@ -1013,7 +1024,7 @@ export default function App() {
           turns: config.turns,
           tempoBpm: tempoBpmRef.current,
           combScaleId: activeScaleId,
-          compressionProfile: config.videoCompression || 'compact',
+          compressionProfile: config.videoCompression || 'balanced',
           preferredFormat: config.preferredFormat || 'mp4',
           onLevelUpdate: (level) => setRecordingPeakLevel(level),
           onFrameRendered: (canvas) => {
@@ -1658,6 +1669,19 @@ export default function App() {
     if (newSettings.playMode) {
       handleSwitchPlayMode(newSettings.playMode);
     }
+    if (newSettings.recordingSettings) {
+      try {
+        const current = loadSavedRecordingSettings();
+        const merged = { ...current, ...newSettings.recordingSettings };
+        localStorage.setItem(RECORDING_SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+        setRecordingConfig((prev) => ({
+          ...prev,
+          ...newSettings.recordingSettings,
+        }));
+      } catch (e) {
+        console.warn('Could not save recording settings from bundle', e);
+      }
+    }
   }, [handleSwitchPlayMode, isMuted]);
 
   // RESTORE DEFAULTS: 1. Full Factory Reset
@@ -1665,6 +1689,7 @@ export default function App() {
     localStorage.removeItem('musicbox_saved_songs');
     localStorage.removeItem('musicbox_custom_songs');
     localStorage.removeItem('musicbox_user_settings');
+    localStorage.removeItem(RECORDING_SETTINGS_STORAGE_KEY);
 
     setSongs(DEFAULT_SONGS);
     setCurrentSong(DEFAULT_SONGS[0]);
@@ -1679,6 +1704,17 @@ export default function App() {
     setPowerSaveMode('auto');
     setCurrentStep(0);
     setIsPlaying(false);
+    setRecordingConfig({
+      turns: DEFAULT_RECORDING_SETTINGS.turns,
+      interTurnSilence: DEFAULT_RECORDING_SETTINGS.interTurnSilence,
+      leadInPadding: DEFAULT_RECORDING_SETTINGS.leadInPadding,
+      leadOutPadding: DEFAULT_RECORDING_SETTINGS.leadOutPadding,
+      includeAmbiance: DEFAULT_RECORDING_SETTINGS.includeAmbiance,
+      recordingMode: DEFAULT_RECORDING_SETTINGS.modalTab,
+      videoCompression: DEFAULT_RECORDING_SETTINGS.videoCompression,
+      preferredFormat: DEFAULT_RECORDING_SETTINGS.preferredFormat,
+    });
+    setActiveRecordingMode(DEFAULT_RECORDING_SETTINGS.modalTab);
 
     musicBoxAudio.applyChamberPreset('gold-sankyo');
     musicBoxAudio.updateNatureVolumes(DEFAULT_NATURE_SETTINGS);
@@ -1698,6 +1734,9 @@ export default function App() {
 
   // RESTORE DEFAULTS: 3. Settings Only
   const handleRestoreSettingsDefault = useCallback(() => {
+    localStorage.removeItem('musicbox_user_settings');
+    localStorage.removeItem(RECORDING_SETTINGS_STORAGE_KEY);
+
     setSoundPreset('gold-sankyo');
     setNatureSettings(DEFAULT_NATURE_SETTINGS);
     setMasterVolume(0.9);
@@ -1705,6 +1744,17 @@ export default function App() {
     setPlayMode('continuous');
     setFontZoom(100);
     setPowerSaveMode('auto');
+    setRecordingConfig({
+      turns: DEFAULT_RECORDING_SETTINGS.turns,
+      interTurnSilence: DEFAULT_RECORDING_SETTINGS.interTurnSilence,
+      leadInPadding: DEFAULT_RECORDING_SETTINGS.leadInPadding,
+      leadOutPadding: DEFAULT_RECORDING_SETTINGS.leadOutPadding,
+      includeAmbiance: DEFAULT_RECORDING_SETTINGS.includeAmbiance,
+      recordingMode: DEFAULT_RECORDING_SETTINGS.modalTab,
+      videoCompression: DEFAULT_RECORDING_SETTINGS.videoCompression,
+      preferredFormat: DEFAULT_RECORDING_SETTINGS.preferredFormat,
+    });
+    setActiveRecordingMode(DEFAULT_RECORDING_SETTINGS.modalTab);
 
     musicBoxAudio.applyChamberPreset('gold-sankyo');
     musicBoxAudio.updateNatureVolumes(DEFAULT_NATURE_SETTINGS);

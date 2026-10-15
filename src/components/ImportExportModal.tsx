@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { MusicBoxSong, UserSettings, MusicBoxExportBundle, COMB_SCALES_MAP, formatModelDisplayName } from '../types';
 import { DEFAULT_SONGS } from '../data/defaultSongs';
+import { loadSavedRecordingSettings } from './PlayRecordModal';
 import {
   X,
   Download,
@@ -97,7 +98,10 @@ export const ImportExportModal: React.FC<ImportExportModalProps> = ({
       exportedAt: Date.now(),
       appName: 'Mechanical Music Box',
       songs: songsToExport,
-      settings: userSettings,
+      settings: {
+        ...userSettings,
+        recordingSettings: loadSavedRecordingSettings(),
+      },
     };
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

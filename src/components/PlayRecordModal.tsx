@@ -48,6 +48,98 @@ export interface PlayRecordConfig {
   preferredFormat?: 'mp4' | 'webm';
 }
 
+export interface RecordingModalSettings {
+  modalTab: 'audio' | 'video';
+  turns: 1 | 2 | 3;
+  interTurnSilence: number;
+  leadInPadding: number;
+  leadOutPadding: number;
+  includeAmbiance: boolean;
+  videoCompression: VideoCompressionProfile;
+  preferredFormat: 'mp4' | 'webm';
+}
+
+export const RECORDING_SETTINGS_STORAGE_KEY = 'musicbox_recording_settings';
+
+export const DEFAULT_RECORDING_SETTINGS: RecordingModalSettings = {
+  modalTab: 'video',
+  turns: 1, // Default at one turn
+  interTurnSilence: 1.5,
+  leadInPadding: 1.0,
+  leadOutPadding: 1.5,
+  includeAmbiance: false,
+  videoCompression: 'balanced', // Default at balanced video recording quality
+  preferredFormat: 'mp4',
+};
+
+export function loadSavedRecordingSettings(): RecordingModalSettings {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return DEFAULT_RECORDING_SETTINGS;
+  }
+  try {
+    const raw = localStorage.getItem(RECORDING_SETTINGS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const turns: 1 | 2 | 3 =
+          parsed.turns === 1 || parsed.turns === 2 || parsed.turns === 3
+            ? parsed.turns
+            : DEFAULT_RECORDING_SETTINGS.turns;
+        const videoCompression: VideoCompressionProfile =
+          parsed.videoCompression === 'compact' ||
+          parsed.videoCompression === 'balanced' ||
+          parsed.videoCompression === 'high'
+            ? parsed.videoCompression
+            : DEFAULT_RECORDING_SETTINGS.videoCompression;
+        const modalTab: 'audio' | 'video' =
+          parsed.modalTab === 'audio' || parsed.modalTab === 'video'
+            ? parsed.modalTab
+            : DEFAULT_RECORDING_SETTINGS.modalTab;
+        const preferredFormat: 'mp4' | 'webm' =
+          parsed.preferredFormat === 'webm' || parsed.preferredFormat === 'mp4'
+            ? parsed.preferredFormat
+            : DEFAULT_RECORDING_SETTINGS.preferredFormat;
+        const interTurnSilence =
+          typeof parsed.interTurnSilence === 'number' &&
+          !isNaN(parsed.interTurnSilence) &&
+          parsed.interTurnSilence >= 0.5 &&
+          parsed.interTurnSilence <= 5.0
+            ? parsed.interTurnSilence
+            : DEFAULT_RECORDING_SETTINGS.interTurnSilence;
+        const leadInPadding =
+          typeof parsed.leadInPadding === 'number' &&
+          !isNaN(parsed.leadInPadding) &&
+          parsed.leadInPadding >= 0 &&
+          parsed.leadInPadding <= 5.0
+            ? parsed.leadInPadding
+            : DEFAULT_RECORDING_SETTINGS.leadInPadding;
+        const leadOutPadding =
+          typeof parsed.leadOutPadding === 'number' &&
+          !isNaN(parsed.leadOutPadding) &&
+          parsed.leadOutPadding >= 0 &&
+          parsed.leadOutPadding <= 5.0
+            ? parsed.leadOutPadding
+            : DEFAULT_RECORDING_SETTINGS.leadOutPadding;
+        const includeAmbiance = Boolean(parsed.includeAmbiance);
+
+        return {
+          modalTab,
+          turns,
+          interTurnSilence,
+          leadInPadding,
+          leadOutPadding,
+          includeAmbiance,
+          videoCompression,
+          preferredFormat,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load saved recording settings', e);
+  }
+  return DEFAULT_RECORDING_SETTINGS;
+}
+
 interface PlayRecordModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -91,18 +183,51 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
   onCancelRecording,
   onRecordAgain,
 }) => {
-  // Modal internal active tab: 'video' by default
-  const [modalTab, setModalTab] = useState<'audio' | 'video'>('video');
+  // Load persistent recording settings (defaults: 1 turn, balanced video compression)
+  const [initialSettings] = useState<RecordingModalSettings>(() => loadSavedRecordingSettings());
 
-  // Configuration state
-  const [turns, setTurns] = useState<1 | 2 | 3>(2);
-  const [interTurnSilence, setInterTurnSilence] = useState<number>(1.5);
-  const [leadInPadding, setLeadInPadding] = useState<number>(1.0);
-  const [leadOutPadding, setLeadOutPadding] = useState<number>(1.5);
-  const [includeAmbiance, setIncludeAmbiance] = useState<boolean>(false);
-  const [videoCompression, setVideoCompression] = useState<VideoCompressionProfile>('compact');
-  // Default to MP4 for native iPad & universal device playback
-  const [preferredFormat, setPreferredFormat] = useState<'mp4' | 'webm'>('mp4');
+  // Modal internal active tab: persisted (default: 'video')
+  const [modalTab, setModalTab] = useState<'audio' | 'video'>(initialSettings.modalTab);
+
+  // Configuration state with local storage persistence
+  const [turns, setTurns] = useState<1 | 2 | 3>(initialSettings.turns);
+  const [interTurnSilence, setInterTurnSilence] = useState<number>(initialSettings.interTurnSilence);
+  const [leadInPadding, setLeadInPadding] = useState<number>(initialSettings.leadInPadding);
+  const [leadOutPadding, setLeadOutPadding] = useState<number>(initialSettings.leadOutPadding);
+  const [includeAmbiance, setIncludeAmbiance] = useState<boolean>(initialSettings.includeAmbiance);
+  const [videoCompression, setVideoCompression] = useState<VideoCompressionProfile>(initialSettings.videoCompression);
+  // Default to MP4 for native iPad & universal device playback (persisted)
+  const [preferredFormat, setPreferredFormat] = useState<'mp4' | 'webm'>(initialSettings.preferredFormat);
+
+  // Persist recording modal UI settings to localStorage whenever changed in idle state
+  useEffect(() => {
+    if (recordingState !== 'idle') return;
+    try {
+      const settingsToSave: RecordingModalSettings = {
+        modalTab,
+        turns,
+        interTurnSilence,
+        leadInPadding,
+        leadOutPadding,
+        includeAmbiance,
+        videoCompression,
+        preferredFormat,
+      };
+      localStorage.setItem(RECORDING_SETTINGS_STORAGE_KEY, JSON.stringify(settingsToSave));
+    } catch (e) {
+      console.warn('Failed to save musicbox_recording_settings to localStorage', e);
+    }
+  }, [
+    recordingState,
+    modalTab,
+    turns,
+    interTurnSilence,
+    leadInPadding,
+    leadOutPadding,
+    includeAmbiance,
+    videoCompression,
+    preferredFormat,
+  ]);
 
   const isRecordingActive = recordingState !== 'idle' && recordingState !== 'complete';
 
@@ -464,7 +589,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                     <span>iPad Power Saving & 5–10 MB Compact Size Mode</span>
                   </div>
                   <p className="text-[11px] text-[#33532c] font-serif-sub">
-                    Configured for 24 FPS vintage horological pacing with pre-rendered background caching and a 1.0 Mbps compact bitrate (default). Eliminates iPad overheating and keeps 1-turn recordings at a lightweight 5–10 MB (down from &gt;1000 MB).
+                    Configured for 24 FPS vintage horological pacing with pre-rendered background caching and a balanced 1.4 Mbps bitrate. Eliminates iPad overheating and keeps 1-turn recordings at a lightweight 5–10 MB (down from &gt;1000 MB).
                   </p>
                 </div>
               )}
@@ -541,7 +666,7 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                           High Compression (Small File)
                         </span>
                         <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#faebd4] text-[#8a6b3e] font-bold">
-                          Recommended
+                          Smallest Size
                         </span>
                       </div>
                       <p className={`text-[10px] font-serif-sub pt-1 ${videoCompression === 'compact' ? 'text-[#dfcd9f]' : 'text-[#8a765e]'}`}>
@@ -558,9 +683,14 @@ export const PlayRecordModal: React.FC<PlayRecordModalProps> = ({
                           : 'bg-[#f4eee4] hover:bg-[#eae2d3] border-[#ded3be] text-[#5e4c36]'
                       }`}
                     >
-                      <span className="font-serif font-bold text-xs block">
-                        Balanced HD Quality
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-serif font-bold text-xs block">
+                          Balanced HD Quality
+                        </span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#faebd4] text-[#8a6b3e] font-bold">
+                          Recommended
+                        </span>
+                      </div>
                       <p className={`text-[10px] font-serif-sub pt-1 ${videoCompression === 'balanced' ? 'text-[#dfcd9f]' : 'text-[#8a765e]'}`}>
                         ~1.4 Mbps video bitrate. High definition metallic reflections (~12 MB per min).
                       </p>
